@@ -1,8 +1,8 @@
-//! What `Scored` and `Random` share: trying their nodes in an order settled
-//! as they start, until one succeeds.
+//! What `Scored` and `Random` share: trying their nodes in an order settled as
+//! they start, until one succeeds.
 
 use super::Behaviour;
-use crate::behave::{Context, Status};
+use crate::behaviour::{Context, Status};
 
 /// An order to try nodes in, and how far along it is.
 #[derive(Default)]
@@ -29,8 +29,8 @@ impl Order {
         self.at = 0;
     }
 
-    /// Ticks `items` in order, from where it got to, until one succeeds;
-    /// `node` finds each one's node.
+    /// Ticks `items` in order, from where it got to, until one succeeds; `node`
+    /// finds each one's node.
     pub(super) fn tick<T>(
         &mut self,
         items: &mut [T],

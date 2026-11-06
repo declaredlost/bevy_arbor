@@ -1,5 +1,8 @@
-/// How a node's doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use bevy::prelude::*;
+
+/// How a node is doing after a tick: still running, succeeded, or failed.
+#[derive(Reflect, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[reflect(Debug, PartialEq, Hash)]
 pub enum Status {
     /// Not done yet: ticked again next time.
     Running,
@@ -22,7 +25,8 @@ impl Status {
 }
 
 /// How something ended: a node, a tree, or a task.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Reflect, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[reflect(Debug, PartialEq, Hash)]
 pub enum Outcome {
     /// It worked.
     Success,
@@ -39,8 +43,8 @@ impl Outcome {
 }
 
 impl From<bool> for Outcome {
-    /// [`Success`](Self::Success) for `true`, [`Failure`](Self::Failure)
-    /// for `false`.
+    /// [`Success`](Self::Success) for `true`, [`Failure`](Self::Failure) for
+    /// `false`.
     fn from(success: bool) -> Self {
         if success {
             Self::Success

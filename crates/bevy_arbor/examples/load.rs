@@ -1,6 +1,6 @@
-//! What ticking trees costs, with a tree shaped like a monster's: a
-//! `Select` of four guards, the last branch's task running, so every guard
-//! is asked every tick.
+//! What ticking trees costs, with a tree shaped like a monster's: a `Select` of
+//! four guards, the last branch's task running, so every guard is asked every
+//! tick.
 //!
 //! `cargo run --release -p bevy_arbor --example load`
 

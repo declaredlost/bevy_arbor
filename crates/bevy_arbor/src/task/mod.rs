@@ -3,5 +3,5 @@
 mod components;
 mod params;
 
-pub use self::components::{Graceful, Task};
+pub use self::components::{AgentTasks, Graceful, Task, TaskEnded, TaskOf};
 pub use self::params::Tasks;

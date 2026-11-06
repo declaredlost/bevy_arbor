@@ -1,5 +1,4 @@
-use crate::behave::{Behave, Context, Outcome, Status};
-use crate::guard::Check;
+use crate::behaviour::{Behave, Check, Context, Outcome, Status};
 use crate::tree::TreeOutline;
 
 /// Runs a system once: what it returns is the result.

@@ -20,7 +20,7 @@ let tree = behaviour_tree! {
 commands.entity(agent).insert(BehaviourTree::new(tree));
 
 fn chase(mut tasks: Tasks<&Chase, (&Target, &mut Steer)>) {
-    tasks.each(|_, mut task, (target, mut steer)| {
+    tasks.for_each(|_, mut task, (target, mut steer)| {
         if task.elapsed() > Duration::from_secs(10) {
             task.fail();
             return;
@@ -32,6 +32,16 @@ fn chase(mut tasks: Tasks<&Chase, (&Target, &mut Steer)>) {
 
 `Wander` needs no idea of `Chase`: once `has_target` passes, the tree
 cancels it.
+
+At the root: [`ArborPlugin`], [`ArborSystems`] and the [`behaviour_tree!`]
+macro. The rest is in three modules, and [`prelude`]
+brings in what using trees takes:
+
+| Module | What's in it |
+|---|---|
+| [`tree`] | The tree on an agent: `BehaviourTree`, `TreeFinished`, `TreePaused`, `TreeTrace` |
+| [`behaviour`] | What trees are built of: `Behaviour`, `Branch`, `Guard`; and for a node of your own, `Behave`, `Context` and `Status` |
+| [`task`] | What trees spawn: `Task`, `TaskOf`, `AgentTasks`, `TaskEnded`, `Graceful`, `Tasks` |
 
 ## Nodes
 
@@ -77,7 +87,10 @@ Each tick, `Select` goes through its branches in order, asking guards:
 ## Guards
 
 Guards are read-only systems taking the agent, as they're asked every tick:
-`when` won't take one that changes anything. `act` is for what does. Bevy
+`when` won't take one that changes anything. `act` is for what does. Either
+can return a `Result<bool>`, to use `?`: an error doesn't pass (or fails the
+`act`), and goes to Bevy's error handler, as a system's would. Scores and
+rolls can return `Result<f32>` the same way. Bevy
 caches them by type, so they can't capture anything; what varies goes in as
 a parameter.
 
@@ -114,11 +127,18 @@ these: a `Timeout`, or the tree going.
 
 ## Tasks
 
-A task entity holds a [`Task`] and your bundle. Report with `succeed` or
-`fail`, as many times as you like: the first counts, and the tree reads it
-on its next tick. Cancelling despawns the entity, so clean up in an
-`On<Remove, _>` observer if a task has anything to undo. [`Tasks`] pairs
-each task with what you want of its agent.
+A task entity holds a [`Task`], your bundle, and a [`TaskOf`]: a Bevy
+relationship to its agent, whose [`AgentTasks`] list the tasks it's running.
+Despawning the agent despawns them. Report with `succeed` or `fail`, as many
+times as you like: the first counts, and the tree reads it on its next tick.
+
+As the tree takes a task away, [`TaskEnded`] is triggered on it, with how it
+went, or `None` if it was cancelled; then it's despawned. Clean up there,
+or in an `On<Remove, _>` observer, if a task has anything to undo.
+
+[`Tasks`] pairs each task with what you want of its agent:
+`tasks.for_each(|data, task, agent| ..)`. It's a shortcut for a query of
+tasks and one of agents, paired by `TaskOf`, which you can write yourself.
 
 `task.elapsed()` is how long the task has been running, by the clock the
 tree ticks on, whichever schedule your task system runs in.
@@ -145,7 +165,7 @@ anything. Two things are up to a node that does more than tick its child:
 
 - On a tick it doesn't tick a running child, call `child.skip(cx)`, or the
   child's hold lapses for that tick.
-- To switch away from a child that [`holds`](Behaviour::holds), tick it
+- To switch away from a child that [`holds`](behaviour::Behaviour::holds), tick it
   with `child.tick_interrupted(cx)` until it ends or stops holding, as
   `Select` and `While` do.
 
@@ -163,4 +183,21 @@ twice in a tick, so a tree that does nothing can't hang.
 ## Seeing it
 
 `BehaviourTree` displays as an outline, with `>` on what's running. An agent
-with a [`TreeTrace`] keeps that outline in it, for an inspector.
+with a [`TreeTrace`] keeps that outline in it, for an inspector, changed only
+when what's running is. `Task`, `TaskOf`, `AgentTasks`, `Graceful`,
+`TreePaused` and `TreeTrace` are reflected and registered, so inspectors
+show and edit them.
+
+[`Graceful`]: task::Graceful
+[`Task`]: task::Task
+[`Task::interrupted`]: task::Task::interrupted
+[`TaskOf`]: task::TaskOf
+[`AgentTasks`]: task::AgentTasks
+[`TaskEnded`]: task::TaskEnded
+[`Tasks`]: task::Tasks
+[`TreeFinished`]: tree::TreeFinished
+[`TreePaused`]: tree::TreePaused
+[`TreeTrace`]: tree::TreeTrace
+[`Behave`]: behaviour::Behave
+[`Behaviour`]: behaviour::Behaviour
+[`BehaviourTree`]: tree::BehaviourTree

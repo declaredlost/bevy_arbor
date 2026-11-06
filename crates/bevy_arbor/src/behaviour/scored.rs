@@ -2,11 +2,10 @@ use bevy::prelude::*;
 
 use super::Behaviour;
 use super::ordered::Order;
-use crate::behave::{Behave, Context, Status};
-use crate::guard::Check;
+use crate::behaviour::{Behave, Check, Context, Status};
 use crate::tree::TreeOutline;
 
-/// A branch of a `Scored`.
+/// A branch of a `Scored`: a node, and the system scoring it for the agent.
 pub struct ScoredBranch {
     score: Option<Check<f32>>,
     node: Behaviour,
@@ -31,8 +30,8 @@ impl ScoredBranch {
     }
 }
 
-/// Its branches from the highest score down, scored as it starts, until
-/// one succeeds.
+/// Its branches from the highest score down, scored as it starts, until one
+/// succeeds.
 pub(super) struct Scored {
     branches: Vec<ScoredBranch>,
     order: Order,
@@ -46,8 +45,8 @@ impl Scored {
         }
     }
 
-    /// The order to try them in: highest score first, and one that can't
-    /// be scored, or isn't, last.
+    /// The order to try them in: highest score first, and one that can't be
+    /// scored, or isn't, last.
     fn rank(&mut self, cx: &mut Context) -> Vec<usize> {
         let agent = cx.agent();
         let scores: Vec<f32> = self

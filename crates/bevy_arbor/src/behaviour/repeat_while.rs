@@ -1,6 +1,5 @@
 use super::Behaviour;
-use crate::behave::{Behave, Context, Status};
-use crate::guard::Guard;
+use crate::behaviour::{Behave, Context, Guard, Status};
 use crate::tree::TreeOutline;
 
 /// Its child over and over, while its guard passes.

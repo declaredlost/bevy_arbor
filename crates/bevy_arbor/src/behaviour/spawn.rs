@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::behave::{Behave, Context, Outcome, Status};
-use crate::task::{Graceful, Task};
+use crate::behaviour::{Behave, Context, Outcome, Status};
+use crate::task::{Graceful, Task, TaskEnded, TaskOf};
 use crate::tree::TreeOutline;
 
 type Insert = Box<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
@@ -40,13 +40,31 @@ impl Spawn {
         }
         let agent = cx.agent();
         self.started = cx.now();
-        let mut spawned = cx.world_mut().spawn((Task::new(agent), self.name.clone()));
+        let mut spawned =
+            cx.world_mut()
+                .spawn((Task::default(), TaskOf::new(agent), self.name.clone()));
         (self.insert)(&mut spawned);
         let task = spawned.id();
         self.graceful = spawned.contains::<Graceful>();
         self.entity = Some(task);
         task
     }
+}
+
+/// Tells `task` it's ended, as `outcome` says, if it's still there, and
+/// despawns it.
+fn end(cx: &mut Context, task: Entity, outcome: Option<Outcome>) {
+    let agent = cx.agent();
+    let world = cx.world_mut();
+    if world.get_entity(task).is_err() {
+        return;
+    }
+    world.trigger(TaskEnded {
+        entity: task,
+        agent,
+        outcome,
+    });
+    let _ = world.try_despawn(task);
 }
 
 impl Behave for Spawn {
@@ -73,13 +91,13 @@ impl Behave for Spawn {
             return Status::Running;
         };
         self.entity = None;
-        let _ = cx.world_mut().try_despawn(task);
+        end(cx, task, Some(outcome));
         outcome.into()
     }
 
     fn cancel(&mut self, cx: &mut Context) {
         if let Some(task) = self.entity.take() {
-            let _ = cx.world_mut().try_despawn(task);
+            end(cx, task, None);
         }
     }
 
@@ -101,9 +119,15 @@ mod tests {
         let npc = agent(&mut app, behaviour_tree! { task("Work", Work) });
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 1);
-        let mut tasks = app.world_mut().query::<&Task>();
-        let task = tasks.single(app.world()).unwrap();
-        assert_eq!(task.agent(), npc);
+        let of = app
+            .world_mut()
+            .query_filtered::<&TaskOf, With<Task>>()
+            .single(app.world())
+            .copied()
+            .unwrap();
+        assert_eq!(of.agent(), npc);
+        let tasks: Vec<Entity> = app.world().get::<AgentTasks>(npc).unwrap().iter().collect();
+        assert_eq!(tasks.len(), 1, "the agent knows its task");
         assert_eq!(outcome(&app, npc), None);
     }
 
@@ -166,6 +190,47 @@ mod tests {
         app.ticks(2);
         assert_eq!(app.count::<With<Work>>(), 0, "wound down");
         assert_eq!(app.count::<With<Other>>(), 1, "and on to the next");
+    }
+
+    #[test]
+    fn a_task_is_told_how_it_ended_as_it_goes() {
+        #[derive(Resource, Default)]
+        struct Ended(Vec<(&'static str, Option<Outcome>)>);
+        let mut app = app();
+        app.app_mut().init_resource::<Ended>();
+        app.app_mut().add_observer(
+            |ended: On<TaskEnded>, names: Query<&Name>, mut seen: ResMut<Ended>| {
+                let name = if names
+                    .get(ended.entity)
+                    .is_ok_and(|name| name.as_str() == "Work")
+                {
+                    "Work"
+                } else {
+                    "Other"
+                };
+                seen.0.push((name, ended.outcome));
+            },
+        );
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Sequence => {
+                    task("Work", (Work, Report::Succeed)),
+                    Select => {
+                        when(high) => Wait(100.0),
+                        task("Other", Other),
+                    },
+                }
+            },
+        );
+        app.ticks(2);
+        set(&mut app, npc, true, false);
+        app.tick();
+        assert_eq!(
+            app.world().resource::<Ended>().0,
+            [("Work", Some(Outcome::Success)), ("Other", None)],
+            "reported, then cancelled"
+        );
     }
 
     #[test]

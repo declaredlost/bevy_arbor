@@ -9,8 +9,10 @@ use bevy::prelude::*;
 
 pub(crate) use self::check::Check;
 
-/// A condition on an agent, asked every tick while it could matter. The
-/// macro writes one from `when(has_target && !calm)` or `when(within, 5.0)`.
+/// A condition on an agent, asked every tick while its branch could matter.
+///
+/// The macro writes one from `when(has_target && !calm)` or
+/// `when(within, 5.0)`.
 pub struct Guard {
     name: String,
     test: Test,
@@ -35,12 +37,16 @@ impl Not for Guard {
     }
 }
 
-/// What can be a [`Guard`]: one, or a read-only system taking the agent.
-/// Anything taking a guard takes one of these, so `has_target` and
-/// `Guard::with(within, 5.0).or(has_target)` go in alike.
+/// What a [`Guard`] can be made from: a guard, or a read-only system on the
+/// agent.
 ///
-/// A system is cached by its type, so it can't capture anything; one that
-/// does doesn't compile. What varies goes in as a parameter, with
+/// A read-only system taking the agent and returning `bool`, or a
+/// `Result<bool>` for one using `?`: an error doesn't pass, and goes to Bevy's
+/// error handler. Anything taking a guard takes one of these, so `has_target`
+/// and `Guard::with(within, 5.0).or(has_target)` go in alike.
+///
+/// A system is cached by its type, so it can't capture anything; one that does
+/// doesn't compile. What varies goes in as a parameter, with
 /// [`Guard::with`]:
 ///
 /// ```compile_fail
@@ -71,8 +77,8 @@ where
 }
 
 impl Guard {
-    /// A read-only system taking the agent and `param`: as many guards as
-    /// you like from one function.
+    /// A read-only system taking the agent and `param`: as many guards as you
+    /// like from one function.
     pub fn with<S, P, M>(system: S, param: P) -> Self
     where
         S: IntoSystem<In<(Entity, P)>, bool, M> + Copy + Send + Sync + 'static,
@@ -89,8 +95,7 @@ impl Guard {
         }
     }
 
-    /// Passes when this and `other` both do; `other` only asked if this
-    /// does.
+    /// Passes when this and `other` both do; `other` only asked if this does.
     #[must_use]
     pub fn and<M>(self, other: impl IntoGuard<M>) -> Self {
         let other = other.into_guard();
@@ -100,8 +105,7 @@ impl Guard {
         }
     }
 
-    /// Passes when this or `other` does; `other` only asked if this
-    /// doesn't.
+    /// Passes when this or `other` does; `other` only asked if this doesn't.
     #[must_use]
     pub fn or<M>(self, other: impl IntoGuard<M>) -> Self {
         let other = other.into_guard();
@@ -129,6 +133,9 @@ impl Guard {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use bevy::ecs::error::{ErrorContext, FallbackErrorHandler};
     use bevy::prelude::*;
     use bevy_harness::TestApp;
 
@@ -197,6 +204,48 @@ mod tests {
         app.tick();
         assert_eq!(acts(&app), 1, "one function, two guards");
         assert_eq!(outcome(&app, npc), Some(false));
+    }
+
+    static ERRORS: AtomicUsize = AtomicUsize::new(0);
+
+    fn count_errors(_: BevyError, _: ErrorContext) {
+        ERRORS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn broken(In(_): In<Entity>) -> Result<bool> {
+        Err("broken".into())
+    }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "an act returning a `Result`, which is what's tested"
+    )]
+    fn fine(In(_): In<Entity>, mut acts: ResMut<Acts>) -> Result<bool> {
+        acts.0 += 1;
+        Ok(true)
+    }
+
+    #[test]
+    fn a_guard_or_act_can_use_question_marks_and_an_error_counts_as_no() {
+        let mut app = app();
+        app.app_mut()
+            .insert_resource(FallbackErrorHandler(count_errors));
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Sequence => {
+                    act(fine),
+                    Select => {
+                        when(broken) => act(count),
+                        act(refuse),
+                    },
+                }
+            },
+        );
+        app.tick();
+        assert_eq!(acts(&app), 2, "`fine`, then `refuse`: `broken` said no");
+        assert_eq!(outcome(&app, npc), Some(false));
+        assert_eq!(ERRORS.load(Ordering::Relaxed), 1, "to Bevy's error handler");
     }
 
     #[test]

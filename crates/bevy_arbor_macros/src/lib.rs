@@ -1,13 +1,11 @@
-//! `behaviour_tree!`: a behaviour tree, written as its shape. Re-exported
-//! by `bevy_arbor`, whose documentation it is.
+//! `behaviour_tree!`, a behaviour tree written as its shape: see `bevy_arbor`.
 
 mod expand;
 mod parse;
 
 use proc_macro::TokenStream;
 
-/// Builds a `Behaviour` from the tree's shape. See the `bevy_arbor` crate for
-/// what each node does.
+/// Builds a `Behaviour` from the tree's shape, as `bevy_arbor` documents.
 ///
 /// ```ignore
 /// behaviour_tree! {

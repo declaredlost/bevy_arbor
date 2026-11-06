@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::behave::{Behave, Context, Status};
+use crate::behaviour::{Behave, Context, Status};
 use crate::tree::TreeOutline;
 
 /// Succeeds after its length.

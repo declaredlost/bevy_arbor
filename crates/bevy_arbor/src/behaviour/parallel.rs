@@ -1,5 +1,5 @@
 use super::Behaviour;
-use crate::behave::{Behave, Context, Status};
+use crate::behaviour::{Behave, Context, Status};
 use crate::tree::TreeOutline;
 
 /// What settles a [`Parallel`] early.

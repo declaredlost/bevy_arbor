@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::Behaviour;
-use crate::behave::{Behave, Context, Status};
+use crate::behaviour::{Behave, Context, Status};
 use crate::tree::TreeOutline;
 
 /// Its child, cancelled and failed if it takes more than its length.

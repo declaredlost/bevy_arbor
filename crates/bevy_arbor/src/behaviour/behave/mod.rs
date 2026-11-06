@@ -8,18 +8,22 @@ pub use self::context::Context;
 pub use self::status::{Outcome, Status};
 use crate::tree::TreeOutline;
 
-/// A kind of node. The built-in ones are written against this and nothing
-/// else, so a custom one can do whatever they do. Put one in a tree with
-/// `@ MyNode::new(..)`, or `Behaviour::from(..)`.
+/// A kind of node: what the built-in nodes implement, and custom ones do too.
 ///
-/// Its children are [`Behaviour`](crate::Behaviour)s. A child's hold passes
-/// up on its own; on a tick a running child isn't ticked, call
-/// [`skip`](crate::Behaviour::skip) on it, and to switch away from one that
-/// [holds](crate::Behaviour::holds), use
-/// [`tick_interrupted`](crate::Behaviour::tick_interrupted).
+/// The built-in ones are written against this and nothing else, so a custom one
+/// can do whatever they do. Put one in a tree with `@ MyNode::new(..)`, or
+/// `Behaviour::from(..)`.
+///
+/// Its children are [`Behaviour`](crate::behaviour::Behaviour)s. A child's hold
+/// passes up on its own; on a tick a running child isn't ticked, call
+/// [`skip`](crate::behaviour::Behaviour::skip) on it, and to switch away from
+/// one that [holds](crate::behaviour::Behaviour::holds), use
+/// [`tick_interrupted`](crate::behaviour::Behaviour::tick_interrupted).
 ///
 /// ```
+/// use bevy_arbor::behaviour::{Behave, Context};
 /// use bevy_arbor::prelude::*;
+/// use bevy_arbor::tree::TreeOutline;
 ///
 /// /// Runs its child `times` times, unless it fails.
 /// struct Repeat {

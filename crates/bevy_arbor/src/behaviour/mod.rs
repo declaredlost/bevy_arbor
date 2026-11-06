@@ -1,9 +1,14 @@
-//! Nodes: [`Behaviour`], and the built-in [`Behave`]s it's made of.
+//! What trees are built of: nodes, branches, guards, and custom nodes.
+//!
+//! Build trees from [`Behaviour`], its branches and the guards on them; for a
+//! node of your own, [`Behave`] and what it runs with.
 
 mod act;
+mod behave;
 mod commit;
 mod fallback;
 mod forever;
+mod guard;
 mod invert;
 mod ordered;
 mod parallel;
@@ -24,9 +29,12 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use self::act::Act;
+pub use self::behave::{Behave, Context, Outcome, Status};
 use self::commit::Commit;
 use self::fallback::Fallback;
 use self::forever::Forever;
+pub(crate) use self::guard::Check;
+pub use self::guard::{Guard, IntoGuard};
 use self::invert::Invert;
 use self::parallel::{Mode, Parallel};
 use self::random::Random;
@@ -40,12 +48,12 @@ use self::spawn::Spawn;
 use self::succeed::Succeed;
 use self::timeout::Timeout;
 use self::wait::Wait;
-use crate::behave::{Behave, Context, Status};
-use crate::guard::{Check, IntoGuard};
 use crate::tree::TreeOutline;
 
-/// A part of a tree, built by [`behaviour_tree!`](crate::behaviour_tree) or
-/// these functions, or from any [`Behave`].
+/// A part of a tree: built by the macro, these functions, or any `Behave`.
+///
+/// Built by [`behaviour_tree!`](crate::behaviour_tree), by these functions, or
+/// from any [`Behave`].
 pub struct Behaviour {
     inner: Box<dyn Behave>,
     /// Whether it was running, and holding, as of its last tick.
@@ -64,30 +72,30 @@ impl<B: Behave> From<B> for Behaviour {
 }
 
 impl Behaviour {
-    /// Runs `child` again each time it ends. Never ends itself. What ends
-    /// is started again the same tick, at most once, so a child that ends
-    /// every time can't hang the tick.
+    /// Runs `child` again each time it ends. Never ends itself. What ends is
+    /// started again the same tick, at most once, so a child that ends every
+    /// time can't hang the tick.
     #[must_use]
     pub fn forever(child: Behaviour) -> Self {
         Forever::new(child).into()
     }
 
-    /// Runs the first of `branches` whose guard passes, asking again each
-    /// tick: a guard passing cancels what's running below it, and one
-    /// stopping cancels its own branch, unless what's running
-    /// [holds](Context::hold). A branch without a guard always passes.
+    /// Runs the first of `branches` whose guard passes, asking again each tick:
+    /// a guard passing cancels what's running below it, and one stopping
+    /// cancels its own branch, unless what's running [holds](Context::hold). A
+    /// branch without a guard always passes.
     ///
-    /// A branch that fails falls through to the next, and stays out until
-    /// its guard stops passing or the `Select` restarts, so it can't restart
-    /// itself in a loop. A branch that succeeds ends the `Select`; none left
-    /// to try fails it.
+    /// A branch that fails falls through to the next, and stays out until its
+    /// guard stops passing or the `Select` restarts, so it can't restart itself
+    /// in a loop. A branch that succeeds ends the `Select`; none left to try
+    /// fails it.
     #[must_use]
     pub fn select(branches: Vec<Branch>) -> Self {
         Select::new(branches).into()
     }
 
-    /// Runs the first of `branches` whose guard passes, asking each guard
-    /// only as it gets there: what's started isn't interrupted.
+    /// Runs the first of `branches` whose guard passes, asking each guard only
+    /// as it gets there: what's started isn't interrupted.
     #[must_use]
     pub fn fallback(branches: Vec<Branch>) -> Self {
         Fallback::new(branches).into()
@@ -99,8 +107,8 @@ impl Behaviour {
         Sequence::new(children).into()
     }
 
-    /// `children` as one node: the only one, or a sequence. What the
-    /// macro builds a single-child node's body with.
+    /// `children` as one node: the only one, or a sequence. What the macro
+    /// builds a single-child node's body with.
     #[doc(hidden)]
     #[must_use]
     pub fn group(mut children: Vec<Behaviour>) -> Self {
@@ -110,38 +118,38 @@ impl Behaviour {
         Self::sequence(children)
     }
 
-    /// Runs `children` together: fails at the first failure, cancelling
-    /// the rest, and succeeds once all have.
+    /// Runs `children` together: fails at the first failure, cancelling the
+    /// rest, and succeeds once all have.
     #[must_use]
     pub fn all(children: Vec<Behaviour>) -> Self {
         Parallel::new(Mode::All, children).into()
     }
 
-    /// Runs `children` together: succeeds at the first success, cancelling
-    /// the rest, and fails once all have.
+    /// Runs `children` together: succeeds at the first success, cancelling the
+    /// rest, and fails once all have.
     #[must_use]
     pub fn any(children: Vec<Behaviour>) -> Self {
         Parallel::new(Mode::Any, children).into()
     }
 
-    /// Runs `children` together: the first to end, however it ends, settles
-    /// it, cancelling the rest.
+    /// Runs `children` together: the first to end, however it ends, settles it,
+    /// cancelling the rest.
     #[must_use]
     pub fn race(children: Vec<Behaviour>) -> Self {
         Parallel::new(Mode::Race, children).into()
     }
 
     /// Tries `branches` from the highest score down, until one succeeds,
-    /// scoring them once as it starts. A score system takes the agent, and
-    /// may change things.
+    /// scoring them once as it starts. A score system takes the agent, and may
+    /// change things.
     #[must_use]
     pub fn scored(branches: Vec<ScoredBranch>) -> Self {
         Scored::new(branches).into()
     }
 
-    /// Tries `children` in a random order, until one succeeds. `roll` is
-    /// where the randomness comes from, so it's yours: a system taking the
-    /// agent and returning a number from 0 up to 1.
+    /// Tries `children` in a random order, until one succeeds. `roll` is where
+    /// the randomness comes from, so it's yours: a system taking the agent and
+    /// returning a number from 0 up to 1.
     pub fn random<S, M>(roll: S, children: Vec<Behaviour>) -> Self
     where
         S: IntoSystem<In<Entity>, f32, M> + Copy + Send + Sync + 'static,
@@ -161,16 +169,16 @@ impl Behaviour {
         Succeed::new(child).into()
     }
 
-    /// `child`, not to be interrupted once started. Only something forcing
-    /// it, like a `Timeout` or the tree going, still stops it.
+    /// `child`, not to be interrupted once started. Only something forcing it,
+    /// like a `Timeout` or the tree going, still stops it.
     #[must_use]
     pub fn commit(child: Behaviour) -> Self {
         Commit::new(child).into()
     }
 
-    /// Runs `child` over and over while `guard` passes, cancelling it when
-    /// it stops (unless it [holds](Context::hold)): succeeds then, and fails
-    /// if `child` does. `While(guard)` in the macro.
+    /// Runs `child` over and over while `guard` passes, cancelling it when it
+    /// stops (unless it [holds](Context::hold)): succeeds then, and fails if
+    /// `child` does. `While(guard)` in the macro.
     pub fn repeat_while<M>(guard: impl IntoGuard<M>, child: Behaviour) -> Self {
         RepeatWhile::new(guard.into_guard(), child).into()
     }
@@ -181,20 +189,22 @@ impl Behaviour {
         Wait::new(length).into()
     }
 
-    /// `child`, cancelled and failed if it takes more than `length`, even
-    /// if it holds.
+    /// `child`, cancelled and failed if it takes more than `length`, even if it
+    /// holds.
     #[must_use]
     pub fn timeout(length: Duration, child: Behaviour) -> Self {
         Timeout::new(length, child).into()
     }
 
-    /// Spawns a task entity named `name` with `bundle`, and waits for it
-    /// to report.
+    /// Spawns a task entity named `name` with `bundle`, and waits for it to
+    /// report.
     pub fn task<B: Bundle + Clone>(name: impl Into<Cow<'static, str>>, bundle: B) -> Self {
         Spawn::new(name.into(), bundle).into()
     }
 
-    /// Runs `system` once on the agent: what it returns is the result.
+    /// Runs `system` once on the agent: what it returns is the result. It can
+    /// return a `Result<bool>` to use `?`: an error fails, and goes to Bevy's
+    /// error handler.
     pub fn act<S, M>(system: S) -> Self
     where
         S: IntoSystem<In<Entity>, bool, M> + Copy + Send + Sync + 'static,
@@ -223,16 +233,16 @@ impl Behaviour {
         status
     }
 
-    /// Runs it a tick asking it to stop, for a node about to switch away
-    /// from it while it [holds](Self::holds): it winds down, and ends or
-    /// stops holding when it has. What `Select` and `While` do.
+    /// Runs it a tick asking it to stop, for a node about to switch away from
+    /// it while it [holds](Self::holds): it winds down, and ends or stops
+    /// holding when it has. What `Select` and `While` do.
     pub fn tick_interrupted(&mut self, cx: &mut Context) -> Status {
         cx.interrupting(|cx| self.tick(cx))
     }
 
-    /// Keeps it holding through a tick it isn't ticked: a node that
-    /// doesn't tick a running child every time calls this on the ticks it
-    /// skips, or the child's hold lapses for them.
+    /// Keeps it holding through a tick it isn't ticked: a node that doesn't
+    /// tick a running child every time calls this on the ticks it skips, or the
+    /// child's hold lapses for them.
     pub fn skip(&self, cx: &mut Context) {
         if self.held {
             cx.hold();
@@ -266,6 +276,7 @@ mod tests {
 
     use bevy::prelude::*;
 
+    use crate::behaviour::{Behave, Context};
     use crate::prelude::*;
     use crate::testing::*;
 

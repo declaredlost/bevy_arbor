@@ -20,7 +20,7 @@ pub(crate) fn tree(input: TokenStream) -> Result<TokenStream> {
 /// The code building one node.
 fn item(item: &Item) -> Result<TokenStream> {
     let (name, args, body) = match item {
-        Item::Embed(node) => return Ok(quote! { ::bevy_arbor::Behaviour::from(#node) }),
+        Item::Embed(node) => return Ok(quote! { ::bevy_arbor::behaviour::Behaviour::from(#node) }),
         Item::Named { name, args, body } => (name, args.as_slice(), body.as_deref()),
     };
     let label = name.to_string();
@@ -44,14 +44,14 @@ fn item(item: &Item) -> Result<TokenStream> {
         ("Scored", [], Some(body)) => branches("scored", body, true),
         ("Wait", [length], None) => {
             let length = duration(length)?;
-            Ok(quote! { ::bevy_arbor::Behaviour::wait(#length) })
+            Ok(quote! { ::bevy_arbor::behaviour::Behaviour::wait(#length) })
         }
         ("task", [name, bundle], None) => {
-            Ok(quote! { ::bevy_arbor::Behaviour::task(#name, #bundle) })
+            Ok(quote! { ::bevy_arbor::behaviour::Behaviour::task(#name, #bundle) })
         }
-        ("act", [system], None) => Ok(quote! { ::bevy_arbor::Behaviour::act(#system) }),
+        ("act", [system], None) => Ok(quote! { ::bevy_arbor::behaviour::Behaviour::act(#system) }),
         ("act", [system, param], None) => {
-            Ok(quote! { ::bevy_arbor::Behaviour::act_with(#system, #param) })
+            Ok(quote! { ::bevy_arbor::behaviour::Behaviour::act_with(#system, #param) })
         }
         (
             "Forever" | "Invert" | "Succeed" | "Commit" | "Sequence" | "All" | "Any" | "Race"
@@ -94,13 +94,13 @@ fn guard(expr: &Expr) -> TokenStream {
             let (left, right) = (guard(&binary.left), guard(&binary.right));
             quote! { #left.or(#right) }
         }
-        _ => quote! { ::bevy_arbor::IntoGuard::into_guard(#expr) },
+        _ => quote! { ::bevy_arbor::behaviour::IntoGuard::into_guard(#expr) },
     }
 }
 
-/// The code building a `Duration` for `Wait` or `Timeout`: a number is
-/// seconds, checked here, so a negative one doesn't compile; anything else
-/// is a `Duration` already.
+/// The code building a `Duration` for `Wait` or `Timeout`: a number is seconds,
+/// checked here, so a negative one doesn't compile; anything else is a
+/// `Duration` already.
 fn duration(expr: &Expr) -> Result<TokenStream> {
     let Some(seconds) = seconds(expr)? else {
         return Ok(quote! { #expr });
@@ -135,7 +135,7 @@ fn seconds(expr: &Expr) -> Result<Option<f64>> {
 fn guard_args(span: Span, args: &[Expr]) -> Result<TokenStream> {
     match args {
         [expr] => Ok(guard(expr)),
-        [system, param] => Ok(quote! { ::bevy_arbor::Guard::with(#system, #param) }),
+        [system, param] => Ok(quote! { ::bevy_arbor::behaviour::Guard::with(#system, #param) }),
         _ => Err(Error::new(span, "expected `(guard)` or `(system, param)`")),
     }
 }
@@ -148,7 +148,7 @@ fn wrap(name: &Ident, build: &str, args: &[TokenStream], body: &[Entry]) -> Resu
     let build = Ident::new(build, name.span());
     let children = children(body)?;
     Ok(quote! {
-        ::bevy_arbor::Behaviour::#build(#(#args,)* ::bevy_arbor::Behaviour::group(#children))
+        ::bevy_arbor::behaviour::Behaviour::#build(#(#args,)* ::bevy_arbor::behaviour::Behaviour::group(#children))
     })
 }
 
@@ -156,7 +156,7 @@ fn wrap(name: &Ident, build: &str, args: &[TokenStream], body: &[Entry]) -> Resu
 fn list(name: &Ident, build: &str, args: &[TokenStream], body: &[Entry]) -> Result<TokenStream> {
     let build = Ident::new(build, name.span());
     let children = children(body)?;
-    Ok(quote! { ::bevy_arbor::Behaviour::#build(#(#args,)* #children) })
+    Ok(quote! { ::bevy_arbor::behaviour::Behaviour::#build(#(#args,)* #children) })
 }
 
 /// The name of the list being built: invisible to what goes in it, so an
@@ -186,10 +186,10 @@ fn children(body: &[Entry]) -> Result<TokenStream> {
         })
         .collect::<Result<Vec<_>>>()?;
     if pushes.is_empty() {
-        return Ok(quote! { ::std::vec::Vec::<::bevy_arbor::Behaviour>::new() });
+        return Ok(quote! { ::std::vec::Vec::<::bevy_arbor::behaviour::Behaviour>::new() });
     }
     Ok(quote! {{
-        let mut #out: ::std::vec::Vec<::bevy_arbor::Behaviour> = ::std::vec::Vec::new();
+        let mut #out: ::std::vec::Vec<::bevy_arbor::behaviour::Behaviour> = ::std::vec::Vec::new();
         #(#pushes)*
         #out
     }})
@@ -200,9 +200,9 @@ fn branches(build: &str, body: &[Entry], scored: bool) -> Result<TokenStream> {
     let out = out();
     let build = Ident::new(build, Span::call_site());
     let kind = if scored {
-        quote! { ::bevy_arbor::ScoredBranch }
+        quote! { ::bevy_arbor::behaviour::ScoredBranch }
     } else {
-        quote! { ::bevy_arbor::Branch }
+        quote! { ::bevy_arbor::behaviour::Branch }
     };
     let pushes = body
         .iter()
@@ -216,12 +216,14 @@ fn branches(build: &str, body: &[Entry], scored: bool) -> Result<TokenStream> {
         })
         .collect::<Result<Vec<_>>>()?;
     if pushes.is_empty() {
-        return Ok(quote! { ::bevy_arbor::Behaviour::#build(::std::vec::Vec::<#kind>::new()) });
+        return Ok(
+            quote! { ::bevy_arbor::behaviour::Behaviour::#build(::std::vec::Vec::<#kind>::new()) },
+        );
     }
     Ok(quote! {{
         let mut #out: ::std::vec::Vec<#kind> = ::std::vec::Vec::new();
         #(#pushes)*
-        ::bevy_arbor::Behaviour::#build(#out)
+        ::bevy_arbor::behaviour::Behaviour::#build(#out)
     }})
 }
 
@@ -229,9 +231,9 @@ fn branches(build: &str, body: &[Entry], scored: bool) -> Result<TokenStream> {
 fn branch(prefix: Option<&Prefix>, node: TokenStream, scored: bool) -> Result<TokenStream> {
     let Some(prefix) = prefix else {
         return Ok(if scored {
-            quote! { ::bevy_arbor::ScoredBranch::last(#node) }
+            quote! { ::bevy_arbor::behaviour::ScoredBranch::last(#node) }
         } else {
-            quote! { ::bevy_arbor::Branch::always(#node) }
+            quote! { ::bevy_arbor::behaviour::Branch::always(#node) }
         });
     };
     let span = prefix.name.span();
@@ -240,13 +242,13 @@ fn branch(prefix: Option<&Prefix>, node: TokenStream, scored: bool) -> Result<To
             return Err(Error::new(span, "a `Scored` takes `score(system)`"));
         }
         let guard = guard_args(span, &prefix.args)?;
-        return Ok(quote! { ::bevy_arbor::Branch::when(#guard, #node) });
+        return Ok(quote! { ::bevy_arbor::behaviour::Branch::when(#guard, #node) });
     }
     if !scored {
         return Err(Error::new(span, "`score` goes in a `Scored`"));
     }
     match prefix.args.as_slice() {
-        [system] => Ok(quote! { ::bevy_arbor::ScoredBranch::new(#system, #node) }),
+        [system] => Ok(quote! { ::bevy_arbor::behaviour::ScoredBranch::new(#system, #node) }),
         _ => Err(Error::new(span, "expected `score(system)`")),
     }
 }

@@ -16,7 +16,6 @@ publish = false
 
 authors = ["Oleh Martsokha <o.martsokha@gmail.com>"]
 repository = "https://github.com/declaredlost/bevy_arbor"
-homepage = "https://github.com/declaredlost/bevy_arbor"
 
 # Shared lints for every crate (opt in with `[lints] workspace = true`).
 # The whole of `clippy::pedantic` is denied.
@@ -38,7 +37,6 @@ needless_pass_by_value = "allow"
 # See for more details: https://github.com/rust-lang/cargo/issues/11329
 
 # Internal crates
-bevy_arbor = { path = "./crates/bevy_arbor", version = "0.1.0" }
 bevy_arbor_macros = { path = "./crates/bevy_arbor_macros", version = "0.1.0" }
 
 # Game engine (headless by default)

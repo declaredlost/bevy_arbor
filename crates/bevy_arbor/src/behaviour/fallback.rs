@@ -1,5 +1,5 @@
 use super::Branch;
-use crate::behave::{Behave, Context, Status};
+use crate::behaviour::{Behave, Context, Status};
 use crate::tree::TreeOutline;
 
 /// The first branch whose guard passes, asking each guard only as it gets

@@ -1,11 +1,10 @@
 use super::Behaviour;
 use super::ordered::Order;
-use crate::behave::{Behave, Context, Status};
-use crate::guard::Check;
+use crate::behaviour::{Behave, Check, Context, Status};
 use crate::tree::TreeOutline;
 
-/// Its children in an order shuffled as it starts, by rolls from `roll`,
-/// until one succeeds.
+/// Its children in an order shuffled as it starts, by rolls from `roll`, until
+/// one succeeds.
 pub(super) struct Random {
     roll: Check<f32>,
     children: Vec<Behaviour>,
@@ -58,8 +57,8 @@ impl Behave for Random {
 }
 
 /// Where a roll in `0..1` lands among `0..=last`: the roll scaled to the
-/// `last + 1` places, floored, and kept in range (a roll of 1 or more lands
-/// on `last`, below 0 on `0`).
+/// `last + 1` places, floored, and kept in range (a roll of 1 or more lands on
+/// `last`, below 0 on `0`).
 fn pick(rolled: f32, last: usize) -> usize {
     let places = u16::try_from(last + 1).unwrap_or(u16::MAX);
     let scaled = rolled * f32::from(places);

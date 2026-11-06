@@ -2,35 +2,22 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::behave::Outcome;
+use crate::behaviour::Outcome;
 
-/// On each task entity: whose it is, how long it's run, and how it went.
-#[derive(Component, Debug, Clone)]
+/// On each task entity: how long it has run, and how it went.
+///
+/// Whose it is is its [`TaskOf`].
+#[derive(Component, Reflect, Debug, Clone, Default)]
+#[reflect(Component, Debug, Default)]
 pub struct Task {
-    agent: Entity,
     elapsed: Duration,
     outcome: Option<Outcome>,
     interrupted: bool,
 }
 
 impl Task {
-    pub(crate) fn new(agent: Entity) -> Self {
-        Self {
-            agent,
-            elapsed: Duration::ZERO,
-            outcome: None,
-            interrupted: false,
-        }
-    }
-
-    /// The entity whose tree this task is from.
-    #[must_use]
-    pub fn agent(&self) -> Entity {
-        self.agent
-    }
-
-    /// How long it's been running, by the clock its tree ticks on, as of
-    /// the tree's last tick: the same whichever schedule reads it.
+    /// How long it's been running, by the clock its tree ticks on, as of the
+    /// tree's last tick: the same whichever schedule reads it.
     #[must_use]
     pub fn elapsed(&self) -> Duration {
         self.elapsed
@@ -73,15 +60,67 @@ impl Task {
     }
 }
 
-/// In a task's bundle: when the tree wants it to stop, it isn't despawned
-/// but told ([`Task::interrupted`]), and the tree waits for it to report.
-/// Only something forcing it, like a `Timeout` or the tree going, still
-/// despawns it.
+/// On a task: the agent whose tree spawned it, as a Bevy relationship.
+///
+/// Despawning the agent despawns its tasks; its [`AgentTasks`] are kept by
+/// this, not to be set by hand.
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
+#[reflect(Component, Debug, PartialEq)]
+#[relationship(relationship_target = AgentTasks)]
+pub struct TaskOf(Entity);
+
+impl TaskOf {
+    pub(crate) fn new(agent: Entity) -> Self {
+        Self(agent)
+    }
+
+    /// The agent whose tree the task is from.
+    #[must_use]
+    pub fn agent(&self) -> Entity {
+        self.0
+    }
+}
+
+/// On an agent: the tasks its tree is running, kept by [`TaskOf`].
+///
+/// They go with it.
+#[derive(Component, Reflect, Debug, Default)]
+#[reflect(Component, Debug)]
+#[relationship_target(relationship = TaskOf, linked_spawn)]
+pub struct AgentTasks(Vec<Entity>);
+
+impl AgentTasks {
+    /// The tasks, in the order they started.
+    pub fn iter(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.0.iter().copied()
+    }
+}
+
+/// Triggered on a task as its tree takes it away, with how it ended.
+///
+/// Once it's reported, with how it went, or as it's cancelled, with `None`. A
+/// task despawned some other way, or with its agent, goes without it.
+#[derive(EntityEvent, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskEnded {
+    /// The task.
+    pub entity: Entity,
+    /// The agent whose tree it was from.
+    pub agent: Entity,
+    /// How it went: `None` if it was cancelled before it reported.
+    pub outcome: Option<Outcome>,
+}
+
+/// Marks a task to be told to stop and waited for, instead of despawned.
+///
+/// In a task's bundle: when the tree wants it to stop, it isn't despawned but
+/// told ([`Task::interrupted`]), and the tree waits for it to report. Only
+/// something forcing it, like a `Timeout` or the tree going, still despawns it.
 ///
 /// The tree waits as long as it takes: one that never reports holds its
-/// `Select` or `While` where it is for good. Put a `Timeout` around it if
-/// it might not.
-#[derive(Component, Debug, Clone, Copy, Default)]
+/// `Select` or `While` where it is for good. Put a `Timeout` around it if it
+/// might not.
+#[derive(Component, Reflect, Debug, Clone, Copy, Default)]
+#[reflect(Component, Debug, Default)]
 pub struct Graceful;
 
 #[cfg(test)]
@@ -92,7 +131,7 @@ mod tests {
 
     #[test]
     fn the_first_report_counts() {
-        let mut task = Task::new(Entity::PLACEHOLDER);
+        let mut task = Task::default();
         task.fail();
         task.succeed();
         assert_eq!(task.outcome(), Some(Outcome::Failure));

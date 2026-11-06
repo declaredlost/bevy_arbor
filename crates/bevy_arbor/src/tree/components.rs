@@ -5,11 +5,11 @@ use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 
 use super::outline::TreeOutline;
-use crate::behave::{Context, Outcome};
-use crate::behaviour::Behaviour;
+use crate::behaviour::{Behaviour, Context, Outcome};
 
-/// An agent's behaviour tree. Taking it away, however that happens,
-/// cancels whatever it's running.
+/// An agent's behaviour tree: what it runs, and how it ended, once it has.
+///
+/// Taking it away, however that happens, cancels whatever it's running.
 #[derive(Component)]
 #[component(on_discard = discard)]
 pub struct BehaviourTree {
@@ -34,8 +34,8 @@ impl BehaviourTree {
         self.outcome
     }
 
-    /// Starts a finished tree again from the top, on its next tick. One
-    /// still running is left as it is.
+    /// Starts a finished tree again from the top, on its next tick. One still
+    /// running is left as it is.
     pub fn restart(&mut self) {
         self.outcome = None;
     }
@@ -50,16 +50,20 @@ impl fmt::Display for BehaviourTree {
     }
 }
 
-/// Holds an agent's tree where it is: no guards asked, nothing started, its
-/// task not ticked by [`Tasks`](crate::Tasks). Time goes on, so a `Wait` or
-/// `Timeout` may be over when it's taken away.
-#[derive(Component, Debug, Clone, Copy, Default)]
+/// Holds an agent's tree where it is, until it's taken away again.
+///
+/// No guards asked, nothing started, its task not ticked by
+/// [`Tasks`](crate::task::Tasks). Time goes on, so a `Wait` or `Timeout` may be
+/// over when it's taken away.
+#[derive(Component, Reflect, Debug, Clone, Copy, Default)]
+#[reflect(Component, Debug, Default)]
 pub struct TreePaused;
 
-/// Keeps its agent's tree as an outline, for an inspector, with `>` on
-/// what's running. Costs a string a tick, so it's only for debugging.
+/// Keeps its agent's tree as a text outline, with `>` on what's running.
+///
+/// For an inspector. Costs a string a tick, so it's only for debugging.
 #[derive(Component, Reflect, Debug, Clone, Default, PartialEq, Eq)]
-#[reflect(Component)]
+#[reflect(Component, Debug, Default, PartialEq)]
 pub struct TreeTrace(pub String);
 
 /// Cancels what a tree that's going is running.
@@ -79,6 +83,7 @@ fn discard(mut world: DeferredWorld, context: HookContext) {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
+    use bevy_harness::TestApp;
 
     use crate::prelude::*;
     use crate::testing::*;
@@ -199,6 +204,35 @@ mod tests {
         assert!(trace.contains(">   Other"), "{trace}");
         assert!(trace.contains("Work"), "{trace}");
         assert!(!trace.contains("> Work"), "{trace}");
+    }
+
+    #[test]
+    fn a_trace_is_only_changed_when_what_is_running_is() {
+        let mut app = app();
+        let npc = app.spawn((
+            Flags::default(),
+            TreeTrace::default(),
+            BehaviourTree::new(behaviour_tree! {
+                Select => {
+                    when(high) => task("Work", Work),
+                    task("Other", Other),
+                }
+            }),
+        ));
+        app.tick();
+        let changed = |app: &TestApp| {
+            app.world()
+                .entity(npc)
+                .get_ref::<TreeTrace>()
+                .unwrap()
+                .last_changed()
+        };
+        let first = changed(&app);
+        app.ticks(3);
+        assert_eq!(changed(&app), first, "the same outline");
+        set(&mut app, npc, true, false);
+        app.tick();
+        assert_ne!(changed(&app), first, "what's running changed");
     }
 
     #[test]

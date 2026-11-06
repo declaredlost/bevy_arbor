@@ -2,11 +2,11 @@ use bevy::prelude::*;
 
 use super::components::{BehaviourTree, TreePaused, TreeTrace};
 use super::events::TreeFinished;
-use crate::behave::Context;
+use crate::behaviour::Context;
 
-/// Ticks every tree. Each one's root comes out of its component for the
-/// tick, as guards and acts need the world: one of them may even take the
-/// tree away, or replace it.
+/// Ticks every tree. Each one's root comes out of its component for the tick,
+/// as guards and acts need the world: one of them may even take the tree away,
+/// or replace it.
 pub(crate) fn tick(
     world: &mut World,
     trees: &mut QueryState<Entity, (With<BehaviourTree>, Without<TreePaused>)>,
@@ -40,8 +40,10 @@ pub(crate) fn tick(
         }
         if world.get::<TreeTrace>(agent).is_some()
             && let Some(outline) = world.get::<BehaviourTree>(agent).map(ToString::to_string)
+            && let Some(mut trace) = world.get_mut::<TreeTrace>(agent)
         {
-            world.entity_mut(agent).insert(TreeTrace(outline));
+            // Changed only when what's running is.
+            trace.set_if_neq(TreeTrace(outline));
         }
     }
     world.flush();

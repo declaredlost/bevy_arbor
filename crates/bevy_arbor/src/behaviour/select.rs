@@ -1,9 +1,8 @@
 use super::Behaviour;
-use crate::behave::{Behave, Context, Status};
-use crate::guard::{Guard, IntoGuard};
+use crate::behaviour::{Behave, Context, Guard, IntoGuard, Status};
 use crate::tree::TreeOutline;
 
-/// A branch of a `Select` or `Fallback`.
+/// A branch of a `Select` or `Fallback`: a node, and the guard it runs under.
 pub struct Branch {
     guard: Option<Guard>,
     pub(super) node: Behaviour,

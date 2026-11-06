@@ -1,12 +1,15 @@
 use std::fmt::Debug;
 
-use bevy::ecs::system::SystemId;
+use bevy::ecs::error::ErrorContext;
+use bevy::ecs::system::{RegisteredSystemError, SystemId};
 use bevy::prelude::*;
+use bevy::utils::prelude::DebugName;
 
 use crate::tree::TreeOutline;
 
-/// A system asked about an agent. It's cached by its type, so every tree
-/// using it shares one, and it can't capture anything: what varies goes in
+/// A system asked about an agent: returning its answer, or a `Result` of it,
+/// for one using `?` (Bevy's own conversion). It's cached by its type, so every
+/// tree using it shares one, and it can't capture anything: what varies goes in
 /// as a parameter.
 pub(crate) struct Check<O> {
     name: String,
@@ -65,13 +68,25 @@ impl<O: 'static> Check<O> {
         &self.name
     }
 
-    /// Runs it for `agent`, if it can run: one that can't, because what it
-    /// asks for isn't there, is logged and gives nothing.
+    /// Runs it for `agent`, if it can run: one that can't, because what it asks
+    /// for isn't there, is logged and gives nothing; one returning an error
+    /// gives nothing, and the error goes to Bevy's error handler.
     pub(crate) fn run(&mut self, world: &mut World, agent: Entity) -> Option<O> {
-        self.system
-            .run(world, agent)
-            .inspect_err(|error| debug!("{} didn't run: {error}", self.name))
-            .ok()
+        match self.system.run(world, agent) {
+            Ok(value) => Some(value),
+            Err(Ran::Failed(error)) => {
+                let context = ErrorContext::System {
+                    name: DebugName::owned(self.name.clone()),
+                    last_run: world.last_change_tick(),
+                };
+                (world.fallback_error_handler())(error, context);
+                None
+            }
+            Err(Ran::Skipped(why)) => {
+                debug!("{} didn't run: {why}", self.name);
+                None
+            }
+        }
     }
 }
 
@@ -79,11 +94,19 @@ impl<O: 'static> Check<O> {
 /// without the input's type.
 trait Run<O>: Send + Sync {
     /// Runs it for `agent`, registering it on its first run.
-    fn run(&mut self, world: &mut World, agent: Entity) -> Result<O, String>;
+    fn run(&mut self, world: &mut World, agent: Entity) -> Result<O, Ran>;
 }
 
-/// `system`, registered with the world once it first runs. `register` is
-/// how, kept as a function so the system's marker type isn't part of this.
+/// Why a system gave no answer.
+enum Ran {
+    /// It returned an error: Bevy's error handler's.
+    Failed(BevyError),
+    /// It couldn't run: what it asks for isn't there.
+    Skipped(String),
+}
+
+/// `system`, registered with the world once it first runs. `register` is how,
+/// kept as a function so the system's marker type isn't part of this.
 struct Cached<S, F, T: 'static, O: 'static> {
     system: S,
     input: F,
@@ -98,11 +121,14 @@ where
     T: 'static,
     O: 'static,
 {
-    fn run(&mut self, world: &mut World, agent: Entity) -> Result<O, String> {
+    fn run(&mut self, world: &mut World, agent: Entity) -> Result<O, Ran> {
         let (system, register) = (self.system, self.register);
         let id = *self.id.get_or_insert_with(|| register(world, system));
         world
             .run_system_with(id, (self.input)(agent))
-            .map_err(|error| error.to_string())
+            .map_err(|error| match error {
+                RegisteredSystemError::Failed(error) => Ran::Failed(error),
+                other => Ran::Skipped(other.to_string()),
+            })
     }
 }

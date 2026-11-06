@@ -43,11 +43,11 @@ impl<'a> Context<'a> {
         self.world.resource::<Time>().elapsed()
     }
 
-    /// Asks not to be stopped by a `Select` or `While`, for this tick. Call
-    /// it on every tick you're asking; a child's hold is passed up on its
-    /// own (see [`Behaviour::skip`](crate::Behaviour::skip) for ticks a
-    /// child isn't ticked). Only force gets past this: a `Timeout`, or the
-    /// tree going.
+    /// Asks not to be stopped by a `Select` or `While`, for this tick. Call it
+    /// on every tick you're asking; a child's hold is passed up on its own (see
+    /// [`Behaviour::skip`](crate::behaviour::Behaviour::skip) for ticks a child
+    /// isn't ticked). Only force gets past this: a `Timeout`, or the tree
+    /// going.
     pub fn hold(&mut self) {
         self.held = true;
     }
@@ -67,8 +67,8 @@ impl<'a> Context<'a> {
         result
     }
 
-    /// Runs `tick`, and says whether it held, keeping that from what's
-    /// around it.
+    /// Runs `tick`, and says whether it held, keeping that from what's around
+    /// it.
     pub(crate) fn holding<T>(&mut self, tick: impl FnOnce(&mut Self) -> T) -> (T, bool) {
         let outer = std::mem::take(&mut self.held);
         let result = tick(self);
