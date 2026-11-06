@@ -7,8 +7,6 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/declaredlost/bevy_arbor/build.yml?branch=main&label=build&style=flat-square)](https://github.com/declaredlost/bevy_arbor/actions/workflows/build.yml)
 [![Security](https://img.shields.io/github/actions/workflow/status/declaredlost/bevy_arbor/security.yml?branch=main&label=security&style=flat-square)](https://github.com/declaredlost/bevy_arbor/actions/workflows/security.yml)
 
-[**github.com/declaredlost**](https://github.com/declaredlost)
-
 </div>
 
 An agent carries its tree as a component; each task the tree reaches is an
