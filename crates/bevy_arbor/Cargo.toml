@@ -1,0 +1,34 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bevy_arbor"
+description = "Reactive behaviour trees for Bevy: guards re-checked every tick, tasks as entities, cancelled by the tree"
+keywords = ["bevy", "ai", "behaviour-tree", "game"]
+
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+
+[dependencies]
+# The tree macro
+bevy_arbor_macros = { workspace = true, features = [] }
+
+# Game engine
+bevy = { workspace = true, features = ["std", "bevy_log"] }
+
+[dev-dependencies]
+bevy_harness = { workspace = true }
+
+# What guards cost: `cargo run --release -p bevy_arbor --example load`.
+[[example]]
+name = "load"
+test = false
+
+[lints]
+workspace = true

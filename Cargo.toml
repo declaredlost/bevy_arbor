@@ -1,0 +1,61 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+resolver = "3"
+members = [
+    "./crates/bevy_arbor",
+    "./crates/bevy_arbor_macros",
+]
+
+[workspace.package]
+version = "0.1.0"
+rust-version = "1.99"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+authors = ["Oleh Martsokha <o.martsokha@gmail.com>"]
+repository = "https://github.com/declaredlost/bevy_arbor"
+homepage = "https://github.com/declaredlost/bevy_arbor"
+
+# Shared lints for every crate (opt in with `[lints] workspace = true`).
+# The whole of `clippy::pedantic` is denied.
+[workspace.lints.rust]
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+# Lint exceptions are `#[expect]`s with a reason, so stale ones are reported.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# Bevy systems take `Res`, `Query` and `Commands` by value by design.
+needless_pass_by_value = "allow"
+
+[workspace.dependencies]
+# Default features are disabled for certain dependencies to allow
+# downstream workspaces/crates to selectively enable them as needed.
+#
+# See for more details: https://github.com/rust-lang/cargo/issues/11329
+
+# Internal crates
+bevy_arbor = { path = "./crates/bevy_arbor", version = "0.1.0" }
+bevy_arbor_macros = { path = "./crates/bevy_arbor_macros", version = "0.1.0" }
+
+# Game engine (headless by default)
+bevy = { version = "0.20", default-features = false, features = ["std"] }
+
+# Testing
+bevy_harness = { git = "https://github.com/declaredlost/bevy_harness", version = "0.1.0" }
+
+# Proc macros
+proc-macro2 = { version = "1.0", features = [] }
+quote = { version = "1.0", features = [] }
+syn = { version = "2.0", features = [] }
+
+# Development: compile our code with light optimizations for fast iteration,
+# and dependencies (Bevy) fully optimized so tests run quickly.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

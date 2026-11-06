@@ -1,0 +1,28 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bevy_arbor_macros"
+description = "bevy_arbor's behaviour_tree! macro"
+keywords = ["bevy", "ai", "behaviour-tree", "macro"]
+
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# Parsing and quoting
+proc-macro2 = { workspace = true, features = [] }
+quote = { workspace = true, features = [] }
+syn = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true
