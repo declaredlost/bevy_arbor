@@ -82,7 +82,8 @@ fn sweep(
 }
 ```
 
-In 2D, flatten positions yourself (z to zero), as the built-in senses do.
+In 2D, pass positions through `Space::flatten`, as the built-in senses do, so
+z, a 2D layer, doesn't count.
 
 [`Sense`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/trait.Sense.html
 [`SensePlugin`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.SensePlugin.html

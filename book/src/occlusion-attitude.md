@@ -32,7 +32,8 @@ app.add_systems(FixedUpdate, walls.in_set(PerceptionSystems::Occlude));
 # }
 ```
 
-Several occluders combine: one blocking is enough.
+Several occluders combine: one blocking is enough. With avian, this one is
+ready-made: [Physics with avian](avian.md).
 
 ## Attitude
 

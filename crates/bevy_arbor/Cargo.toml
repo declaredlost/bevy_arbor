@@ -29,17 +29,32 @@ bt = ["dep:bevy_arbor_bt"]
 perception = ["dep:bevy_arbor_perception"]
 # Drawing what agents perceive, as `bevy_arbor::perception::gizmos`
 gizmos = ["perception", "bevy_arbor_perception/gizmos"]
+# Perception with avian2d: `bevy_arbor_avian2d`, as `bevy_arbor::avian2d`
+avian2d = ["perception", "dep:bevy_arbor_avian2d"]
+# Perception with avian3d: `bevy_arbor_avian3d`, as `bevy_arbor::avian3d`
+avian3d = ["perception", "dep:bevy_arbor_avian3d"]
 
 [dependencies]
 # The parts, each behind its feature
 bevy_arbor_bt = { workspace = true, optional = true }
 bevy_arbor_perception = { workspace = true, optional = true }
+bevy_arbor_avian2d = { workspace = true, optional = true }
+bevy_arbor_avian3d = { workspace = true, optional = true }
 
 # Game engine: the plugin group
 bevy = { workspace = true, features = [] }
 
 [dev-dependencies]
 bevy_harness = { workspace = true }
+# The book's avian examples, and a collider backend for each dimension, as a
+# game's own avian dependency gives: the avian crates leave it to the game.
+avian2d = { workspace = true, features = ["2d", "parry-f32"] }
+avian3d = { workspace = true, features = ["3d", "parry-f32"] }
+
+[package.metadata.cargo-machete]
+# Only the book's examples use avian2d, in Markdown, and avian3d is there for
+# its backend.
+ignored = ["avian2d", "avian3d"]
 
 [lints]
 workspace = true

@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attitude nothing else did. `Noticed<S>`, `Lost<S>` and `Forgotten<S>` are
   triggered on the agent. With the `gizmos` feature, `PerceptionGizmosPlugin`
   draws it all.
+- `bevy_arbor_avian2d` and `bevy_arbor_avian3d`: perception with avian, one
+  source built for each dimension. `LineOfSightPlugin` blocks what's out of
+  sight with ray casts (`Occluders`, `SensorOccluders`, `SightPoints`);
+  `ContactTouchPlugin` turns collisions into `Touched`. In `ArborPlugins`
+  through the facade's `avian2d` and `avian3d` features.
 - The book, `book/`: a guide to bevy_arbor, chapter by chapter, its examples
   compiled and run as doctests, published to GitHub Pages.
 - `bevy_arbor_macros`: the macros of every part, `behaviour_tree!` so far.

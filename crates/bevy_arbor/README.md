@@ -25,3 +25,4 @@ components on the agent.
 | `bt` (default) | [`bevy_arbor_bt`](https://github.com/declaredlost/bevy_arbor/tree/main/crates/bevy_arbor_bt): reactive behaviour trees | `bevy_arbor::bt`, with `bt::behaviour` and `bt::task` | `TreePlugin` |
 | `perception` | [`bevy_arbor_perception`](https://github.com/declaredlost/bevy_arbor/tree/main/crates/bevy_arbor_perception): sight, hearing, touch, sharing and senses of your own, written as `Perceived<S>` on the agent | `bevy_arbor::perception`, with `perception::sense`, `perception::perceived` and `perception::space` | `PerceptionPlugin` |
 | `gizmos` | Drawing what agents perceive: `bevy_arbor::perception::gizmos`, not in `ArborPlugins` | | `PerceptionGizmosPlugin` |
+| `avian2d`, `avian3d` | [`bevy_arbor_avian2d`, `bevy_arbor_avian3d`](https://github.com/declaredlost/bevy_arbor/tree/main/crates/bevy_arbor_avian): line of sight and touch from contacts | `bevy_arbor::avian2d`, `bevy_arbor::avian3d` | `AvianPerceptionPlugins` |
