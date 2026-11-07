@@ -1,0 +1,23 @@
+[book]
+title = "The bevy_arbor Book"
+authors = ["Oleh Martsokha"]
+description = "A guide to AI for Bevy with bevy_arbor: behaviour trees that sleep until something changes, and perception."
+language = "en"
+
+[rust]
+edition = "2024"
+
+[output.html]
+site-url = "/bevy_arbor/"
+git-repository-url = "https://github.com/declaredlost/bevy_arbor"
+edit-url-template = "https://github.com/declaredlost/bevy_arbor/edit/main/book/{path}"
+default-theme = "light"
+preferred-dark-theme = "navy"
+# The chapters are short, so the sidebar lists chapters only, not the
+# current page's headings.
+sidebar-header-nav = false
+
+# The playground has no bevy_arbor, so examples can't run there. They're
+# compiled, and run where they can, by `cargo test` instead.
+[output.html.playground]
+runnable = false

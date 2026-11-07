@@ -9,7 +9,7 @@ use crate::parse::{Entry, Item, Prefix, Root};
 
 /// The nodes there are, for saying so when it's none of them.
 const NODES: &str = "Forever, Select, Fallback, Sequence, All, Any, Race, Scored, Random(roll), \
-                     Invert, Succeed, Commit, While(guard), Timeout(length), Wait(length), \
+                     Invert, Succeed, Commit, While(guard), Timeout(length), State(bundle), Wait(length), \
                      task(name, bundle), act(system), or @ expr";
 
 /// What a length too long for `u64` nanoseconds gets.
@@ -18,20 +18,32 @@ const TOO_LONG: &str = "too long: a length is at most 18446744073 seconds";
 /// The code building the tree `input` describes.
 pub(crate) fn tree(input: TokenStream) -> Result<TokenStream> {
     let Root(item) = syn::parse2(input)?;
-    self::item(&arbor(crate_name("bevy_arbor").ok()), &item)
+    let path = arbor(
+        crate_name("bevy_arbor_bt").ok(),
+        crate_name("bevy_arbor").ok(),
+    );
+    self::item(&path, &item)
 }
 
-/// The path to `bevy_arbor` where the macro is used, as `found` names it.
+/// The path to the tree crate where the macro is used: `bevy_arbor_bt` as
+/// `tree` names it, or else the `bt` module of `bevy_arbor` as `facade` names
+/// it.
 ///
-/// `::bevy_arbor` in `bevy_arbor` itself, which names itself so, and where
-/// it isn't found, as in a crate using it through another's re-export.
-fn arbor(found: Option<FoundCrate>) -> TokenStream {
-    match found {
-        Some(FoundCrate::Name(name)) => {
+/// `::bevy_arbor_bt` in `bevy_arbor_bt` itself, which names itself so.
+/// Where neither is found, as in a crate using them through another's
+/// re-export, `::bevy_arbor::bt`.
+fn arbor(tree: Option<FoundCrate>, facade: Option<FoundCrate>) -> TokenStream {
+    match (tree, facade) {
+        (Some(FoundCrate::Itself), _) => quote! { ::bevy_arbor_bt },
+        (Some(FoundCrate::Name(name)), _) => {
             let name = Ident::new(&name, Span::call_site());
             quote! { ::#name }
         }
-        Some(FoundCrate::Itself) | None => quote! { ::bevy_arbor },
+        (None, Some(FoundCrate::Name(name))) => {
+            let name = Ident::new(&name, Span::call_site());
+            quote! { ::#name::bt }
+        }
+        (None, Some(FoundCrate::Itself) | None) => quote! { ::bevy_arbor::bt },
     }
 }
 
@@ -50,6 +62,7 @@ fn item(arbor: &TokenStream, item: &Item) -> Result<TokenStream> {
         ("Timeout", [length], Some(body)) => {
             wrap(arbor, name, "timeout", &[duration(length)?], body)
         }
+        ("State", [bundle], Some(body)) => wrap(arbor, name, "state", &[quote! { #bundle }], body),
         ("While", [_] | [_, _], Some(body)) => {
             let guard = guard_args(arbor, name.span(), args)?;
             wrap(arbor, name, "repeat_while", &[guard], body)
@@ -86,6 +99,10 @@ fn item(arbor: &TokenStream, item: &Item) -> Result<TokenStream> {
             "expected `Timeout(length) => { .. }`",
         )),
         ("While", ..) => Err(Error::new(name.span(), "expected `While(guard) => { .. }`")),
+        ("State", ..) => Err(Error::new(
+            name.span(),
+            "expected `State(bundle) => { .. }`",
+        )),
         ("Random", ..) => Err(Error::new(name.span(), "expected `Random(roll) => { .. }`")),
         ("Wait", ..) => Err(Error::new(name.span(), "expected `Wait(length)`")),
         ("task", ..) => Err(Error::new(name.span(), "expected `task(name, bundle)`")),
@@ -423,14 +440,23 @@ mod tests {
     }
 
     #[test]
-    fn paths_go_through_the_name_bevy_arbor_has_where_it_is_used() {
-        let renamed = arbor(Some(FoundCrate::Name("arbor".to_owned())));
-        assert_eq!(renamed.to_string(), ":: arbor");
-        assert_eq!(arbor(None).to_string(), ":: bevy_arbor");
+    fn paths_go_through_the_tree_crate_or_the_facade_as_they_are_named() {
+        let name = |name: &str| Some(FoundCrate::Name(name.to_owned()));
+        assert_eq!(arbor(name("bt"), None).to_string(), ":: bt");
+        assert_eq!(
+            arbor(name("bt"), name("ai")).to_string(),
+            ":: bt",
+            "the tree crate first"
+        );
+        assert_eq!(arbor(None, name("ai")).to_string(), ":: ai :: bt");
+        assert_eq!(
+            arbor(Some(FoundCrate::Itself), None).to_string(),
+            ":: bevy_arbor_bt"
+        );
+        assert_eq!(arbor(None, None).to_string(), ":: bevy_arbor :: bt");
         let code = tree(quote! { Select => { when(a) => act(b) } })
             .unwrap()
             .to_string();
-        assert!(!code.contains("bevy_arbor ::"), "{code}");
         assert!(code.contains(":: arbor :: behaviour :: Branch"), "{code}");
     }
 }

@@ -1,223 +1,27 @@
 # bevy_arbor
 
-Reactive behaviour trees for Bevy. An agent carries its tree as a
-component; each task the tree reaches is an entity of its own, ticked by
-your systems, and the tree despawns it when it's done or no longer wanted.
+AI for Bevy, one crate per part. This crate brings them together: each part
+behind a feature, as a module of its own, in one prelude, and with one plugin
+group.
 
-```rust,ignore
-fn has_target(In(agent): In<Entity>, targets: Query<&Target>) -> bool {
-    targets.get(agent).is_ok_and(|target| target.entity.is_some())
-}
+```rust
+use bevy::prelude::*;
+use bevy_arbor::prelude::*;
 
-let tree = behaviour_tree! {
-    Forever => {
-        Select => {
-            when(has_target) => task("Chase", Chase),
-            task("Wander", Wander::default()),
-        }
-    }
-};
-commands.entity(agent).insert(BehaviourTree::new(tree));
-
-fn chase(mut tasks: Tasks<&Chase, (&Target, &mut Steer)>) {
-    tasks.for_each(|_, mut task, (target, mut steer)| {
-        if task.elapsed() > Duration::from_secs(10) {
-            task.fail();
-            return;
-        }
-        *steer = Steer::towards(target);
-    });
-}
+App::new().add_plugins(ArborPlugins.set(TreePlugin::new(Update)));
 ```
 
-`Wander` needs no idea of `Chase`: once `has_target` passes, the tree
-cancels it.
+`ArborPlugins` also puts every part's systems in `ArborSystems`, in order:
+perception, then trees, where they share a schedule. Put what keeps facts on
+agents before it, and task systems after it. Adding the parts' plugins one by
+one, add `ArborSystemsPlugin` too.
 
-At the root: [`ArborPlugin`], [`ArborSystems`] and the [`behaviour_tree!`]
-macro. The rest is in three modules, and [`prelude`]
-brings in what using trees takes:
+Applications depend on `bevy_arbor`. Depend on a part's crate directly to use
+it alone: the parts don't depend on each other, as each reads and writes
+components on the agent.
 
-| Module | What's in it |
-|---|---|
-| [`tree`] | The tree on an agent: `BehaviourTree`, `TreeFinished`, `TreePaused`, `TreeTrace` |
-| [`behaviour`] | What trees are built of: `Behaviour`, `Branch`, `Guard`; and for a node of your own, `Behave`, `Context` and `Status` |
-| [`task`] | What trees spawn: `Task`, `TaskOf`, `AgentTasks`, `TaskEnded`, `Graceful`, `Tasks` |
-
-## Nodes
-
-| Node | What it does |
-|---|---|
-| `Forever => { .. }` | Runs its child again each time it ends |
-| `Select => { .. }` | The first branch whose guard passes, re-asked every tick |
-| `Fallback => { .. }` | The same, asking each guard once: what's started isn't interrupted |
-| `Scored => { .. }` | Branches from the highest `score(system)` down, until one succeeds |
-| `Random(roll) => { .. }` | Children in a random order, until one succeeds |
-| `Sequence => { .. }` | Each child in turn, until one fails |
-| `All => { .. }` | Children together; fails at the first failure, succeeds once all have |
-| `Any => { .. }` | Children together; succeeds at the first success, fails once all have |
-| `Race => { .. }` | Children together; the first to end settles it |
-| `While(guard) => { .. }` | Its child over and over while the guard passes; succeeds when it stops |
-| `Invert => { .. }` | Its child's result, reversed |
-| `Succeed => { .. }` | Its child, then success whatever it did |
-| `Commit => { .. }` | Its child, not to be interrupted once started |
-| `Timeout(length) => { .. }` | Its child, cancelled and failed after `length` |
-| `Wait(length)` | Succeeds after `length` |
-| `task(name, bundle)` | Spawns a task entity with `bundle`, until it reports |
-| `act(system)` | Runs a system once; what it returns is its result |
-| `@ expr`, `@[ expr ]` | A node built elsewhere, or an iterator of them |
-
-A `length` is a number of seconds (`Wait(1.5)`), checked as it compiles, or
-any `Duration` (`Wait(cooldown)`). Several children under a single-child
-node run as a `Sequence`. Where
-something cancels its children (`All`, `Any`, `Race`), it doesn't leave them
-running.
-
-## Select
-
-Each tick, `Select` goes through its branches in order, asking guards:
-
-- The first whose guard passes runs, and one that was running below it is
-  cancelled. So is the one running if its own guard stops passing.
-- A branch without a guard always passes.
-- A branch that fails falls through to the next. It stays out until its
-  guard stops passing or the `Select` restarts, so it can't restart itself
-  in a loop.
-- A branch that succeeds ends the `Select`.
-
-## Guards
-
-Guards are read-only systems taking the agent, as they're asked every tick.
-Read-only as a Bevy run condition is: `when` won't take a `ResMut` or a
-`&mut` query, though, like a run condition, it can queue `Commands`, applied
-as it returns. `act` is for what changes things. Either can return a
-`Result<bool>`, to use `?`: an error doesn't pass (or fails the `act`), and
-goes to Bevy's error handler, as a system's would, as does one that can't
-run. Scores and rolls can return `Result<f32>` the same way; a NaN score
-goes last.
-
-Bevy caches them by type, which keeps them cheap, so they can't capture
-anything; what varies goes in as a parameter. Every node, tree and agent
-using a system shares the one, `Local`s and change detection too: a `Local`
-sees what other agents left in it, and a `Changed` filter sees what changed
-since it was last asked about any agent. Keep what's per agent on the agent.
-
-```rust,ignore
-fn within(In((agent, reach)): In<(Entity, f32)>, targets: Query<&Target>) -> bool { .. }
-
-behaviour_tree! {
-    Select => {
-        when(has_target && !calm) => task("Chase", Chase),
-        when(within, 5.0) => task("Bite", Bite),
-        when(Guard::with(within, 9.0).or(has_target)) => task("Stalk", Stalk),
-    }
-}
-```
-
-`act(system, param)` takes a parameter the same way.
-
-## Not being interrupted
-
-A `Select` or `While` lets what's running go on if it's holding, and ticks it
-knowing it's wanted to stop, until it isn't. So there are three ways not to
-be cut off:
-
-- `Fallback`: nothing in it is interrupted by its own guards.
-- `Commit => { .. }`: this part isn't, once started; not even told, so a
-  `Graceful` task in it doesn't wind down. In a `Sequence`, what comes after
-  it still can be, and isn't started once it's wanted to stop.
-- [`Graceful`] in a task's bundle: the task is told
-  ([`Task::interrupted`]), winds down and reports, and only then does the
-  tree move on. One that never reports holds the tree there for good, so
-  put a `Timeout` around one that might not.
-
-Meanwhile nothing new starts in what's winding down: a `Sequence` doesn't go
-on to its next child, nor `Forever` start its own again. However it ends
-then, what asked it to stop is next. A task told to stop is told it isn't
-any more, if what asked stops asking first.
-
-Only force gets past these: a `Timeout`, an `All`, `Any` or `Race` settling
-(cancelling the rest), anything above being cancelled, or the tree going.
-
-## Tasks
-
-A task entity holds a [`Task`], your bundle, and a [`TaskOf`]: a Bevy
-relationship to its agent, whose [`AgentTasks`] list the tasks it's running.
-Despawning the agent despawns them. Report with `succeed` or `fail`, as many
-times as you like: the first counts, and the tree reads it on its next tick.
-
-As the tree takes a task away, [`TaskEnded`] is triggered on it, with how it
-went, or `None` if it was cancelled before it reported; then it's despawned.
-Clean up there, or in an `On<Remove<_>>` observer, if a task has anything to
-undo.
-
-[`Tasks`] pairs each task with what you want of its agent:
-`tasks.for_each(|data, task, agent| ..)`. It's a shortcut for a query of
-tasks and one of agents, paired by `TaskOf`, which you can write yourself.
-
-`task.elapsed()` is how long the task has been running, by the clock the
-tree ticks on, whichever schedule your task system runs in.
-
-## Trees
-
-- [`TreeFinished`] is triggered on the agent as its tree ends, and
-  `BehaviourTree::outcome` says how. One under `Forever` never does.
-  `BehaviourTree::restart` starts a finished tree again from the top.
-- [`TreePaused`] on the agent holds its tree where it is: no guards asked,
-  nothing started, its task not ticked by [`Tasks`]. Time goes on, so a
-  `Wait` may be over when it's taken away. Put on by a tree ticked earlier
-  in the same tick, it holds it already.
-- A tree taken away, replaced, or despawned with its agent, by something it
-  runs, stops there: nothing after that in it runs, and what it was running
-  is cancelled.
-
-## Custom nodes
-
-The built-in nodes are written against [`Behave`] and nothing else, so
-yours can do whatever they do. Implement `tick` and `cancel`, then put it in
-a tree with `@ MyNode::new(..)`. Children are [`Behaviour`]s: run them with
-`child.tick(cx)`; `cx` is the world and the agent. `outline` is optional,
-for how it looks in a trace. See [`Behave`] for one written out.
-
-Anything holding under a custom node keeps holding without it doing
-anything. Three things are up to a node that does more than tick its child:
-
-- On a tick it doesn't tick a running child, call `child.skip(cx)`, or the
-  child's hold lapses for that tick.
-- To switch away from a child that [`holds`](behaviour::Behaviour::holds), tick it
-  with `child.tick_interrupted(cx)` until it ends or stops holding, as
-  `Select` and `While` do.
-- While `cx.interrupted()`, start nothing new: go on with the child that's
-  running, and end once it does, as the built-in nodes do.
-
-## Scheduling
-
-`ArborPlugin` runs trees in [`ArborSystems`] (in `FixedUpdate`
-unless you say otherwise). Put it after whatever guards read, and before
-your task systems: a change is then acted on the tick it happens, and a new
-task is ticked the tick it starts.
-
-Ticking takes exclusive access to the world. It's one pass for each tree,
-which runs until a task is under way; `Forever` starts its child at most
-twice in a tick, so a tree that does nothing can't hang.
-
-## Seeing it
-
-`BehaviourTree` displays as an outline, with `>` on what's running. An agent
-with a [`TreeTrace`] keeps that outline in it, for an inspector, changed only
-when what's running is. `Task`, `TaskOf`, `AgentTasks`, `Graceful`,
-`TreePaused` and `TreeTrace` are reflected and registered, so inspectors
-show and edit them.
-
-[`Graceful`]: task::Graceful
-[`Task`]: task::Task
-[`Task::interrupted`]: task::Task::interrupted
-[`TaskOf`]: task::TaskOf
-[`AgentTasks`]: task::AgentTasks
-[`TaskEnded`]: task::TaskEnded
-[`Tasks`]: task::Tasks
-[`TreeFinished`]: tree::TreeFinished
-[`TreePaused`]: tree::TreePaused
-[`TreeTrace`]: tree::TreeTrace
-[`Behave`]: behaviour::Behave
-[`Behaviour`]: behaviour::Behaviour
-[`BehaviourTree`]: tree::BehaviourTree
+| Feature | Part | Module | Plugin |
+|---|---|---|---|
+| `bt` (default) | [`bevy_arbor_bt`](https://github.com/declaredlost/bevy_arbor/tree/main/crates/bevy_arbor_bt): reactive behaviour trees | `bevy_arbor::bt`, with `bt::behaviour` and `bt::task` | `TreePlugin` |
+| `perception` | [`bevy_arbor_perception`](https://github.com/declaredlost/bevy_arbor/tree/main/crates/bevy_arbor_perception): sight, hearing, touch, sharing and senses of your own, written as `Perceived<S>` on the agent | `bevy_arbor::perception`, with `perception::sense`, `perception::perceived` and `perception::space` | `PerceptionPlugin` |
+| `gizmos` | Drawing what agents perceive: `bevy_arbor::perception::gizmos`, not in `ArborPlugins` | | `PerceptionGizmosPlugin` |

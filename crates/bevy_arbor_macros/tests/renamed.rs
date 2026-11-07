@@ -1,4 +1,4 @@
-//! The macro used where `bevy_arbor` goes by another name.
+//! The macro used where `bevy_arbor_bt` goes by another name.
 
 use arbor::behaviour::Behaviour;
 

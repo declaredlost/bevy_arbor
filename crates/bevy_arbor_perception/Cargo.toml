@@ -1,0 +1,36 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bevy_arbor_perception"
+description = "Perception for Bevy AI: sight, hearing, touch and shared reports, written as components on the agent"
+readme = "./README.md"
+keywords = ["bevy", "ai", "perception", "game"]
+categories = ["game-development"]
+
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+authors = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Drawing what agents perceive: `PerceptionGizmosPlugin`
+gizmos = ["bevy/bevy_gizmos"]
+
+[dependencies]
+# Game engine
+bevy = { workspace = true, features = ["std", "bevy_log"] }
+
+[dev-dependencies]
+bevy_harness = { workspace = true }
+
+[lints]
+workspace = true
