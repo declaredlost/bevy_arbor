@@ -43,6 +43,7 @@ pieces fit together, chapter by chapter. The API reference is on
 |---|---|
 | [`bevy_arbor`](crates/bevy_arbor) | The facade: every part behind a feature, one prelude, one plugin group |
 | [`bevy_arbor_bt`](crates/bevy_arbor_bt) | Reactive behaviour trees that sleep until something they wait on changes; tasks as entities |
+| [`bevy_arbor_avian2d`, `bevy_arbor_avian3d`](crates/bevy_arbor_avian) | Perception with avian: line of sight, touch from contacts |
 | [`bevy_arbor_perception`](crates/bevy_arbor_perception) | Perception: what an agent senses, in 2D or 3D, written as a component on it |
 | [`bevy_arbor_macros`](crates/bevy_arbor_macros) | The macros of every part: `behaviour_tree!` for trees |
 

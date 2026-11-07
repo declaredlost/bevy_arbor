@@ -68,6 +68,13 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-targets
 
+      # The avian crates without their default `parry-f32`, the collider
+      # backend coming from the game's own avian, as for double precision.
+      - name: Check the avian crates without default features
+        run: |
+          cargo check -p bevy_arbor_avian2d --no-default-features --features avian2d/parry-f32
+          cargo check -p bevy_arbor_avian3d --no-default-features --features avian3d/parry-f32
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

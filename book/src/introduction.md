@@ -52,7 +52,8 @@ until what `sees_enemy` reads, the monster's `Perceived<Sight>`, changes.
 - **Sensors and senses of your own**: eyes on a head, a rear motion sensor,
   a sense of smell or a radar, all through the same API as the built-in ones.
 - **Physics-free**: line of sight, attitudes and senses plug in as ordinary
-  systems, so it works with any physics engine, or none.
+  systems, so it works with any physics engine, or none; with avian, line of
+  sight and touch from contacts come ready-made.
 
 ## The crates
 
@@ -64,6 +65,7 @@ feature flags:
 | `bevy_arbor` | The facade: every part, one prelude, one plugin group |
 | `bevy_arbor_bt` | Behaviour trees, tasks and guards |
 | `bevy_arbor_perception` | Perception: senses, sensors, memory |
+| `bevy_arbor_avian2d`, `bevy_arbor_avian3d` | Perception with avian: line of sight, touch from contacts |
 | `bevy_arbor_macros` | The `behaviour_tree!` macro |
 
 The API reference is on [docs.rs](https://docs.rs/bevy_arbor). This book is

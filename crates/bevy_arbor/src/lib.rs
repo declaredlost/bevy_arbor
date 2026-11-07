@@ -89,9 +89,37 @@ pub mod perception {
     }
 }
 
+/// Perception with avian2d: line of sight, and touch from contacts.
+#[cfg(feature = "avian2d")]
+#[cfg_attr(docsrs, doc(cfg(feature = "avian2d")))]
+pub mod avian2d {
+    pub use bevy_arbor_avian2d::{
+        AvianPerceptionPlugins, ContactTouchPlugin, LineOfSightPlugin, Occluders, SensorOccluders,
+        SightPoints,
+    };
+}
+
+/// Perception with avian3d: line of sight, and touch from contacts.
+#[cfg(feature = "avian3d")]
+#[cfg_attr(docsrs, doc(cfg(feature = "avian3d")))]
+pub mod avian3d {
+    pub use bevy_arbor_avian3d::{
+        AvianPerceptionPlugins, ContactTouchPlugin, LineOfSightPlugin, Occluders, SensorOccluders,
+        SightPoints,
+    };
+}
+
 pub mod prelude {
     //! What using the enabled parts takes: `use bevy_arbor::prelude::*`.
 
+    // A game is 2D or 3D: with both on, the two share names, so neither is
+    // here, and they're used through `bevy_arbor::avian2d` and `avian3d`.
+    #[cfg(all(feature = "avian2d", not(feature = "avian3d")))]
+    #[doc(hidden)]
+    pub use bevy_arbor_avian2d::prelude::*;
+    #[cfg(all(feature = "avian3d", not(feature = "avian2d")))]
+    #[doc(hidden)]
+    pub use bevy_arbor_avian3d::prelude::*;
     #[cfg(feature = "bt")]
     #[doc(hidden)]
     pub use bevy_arbor_bt::prelude::*;
@@ -114,6 +142,12 @@ plugin_group! {
         #[cfg(feature = "perception")]
         perception:::PerceptionPlugin,
         :ArborSystemsPlugin,
+        #[plugin_group]
+        #[cfg(feature = "avian2d")]
+        avian2d:::AvianPerceptionPlugins,
+        #[plugin_group]
+        #[cfg(feature = "avian3d")]
+        avian3d:::AvianPerceptionPlugins,
     }
 }
 
@@ -125,7 +159,13 @@ pub struct ReadmeDoctests;
 /// The book's examples, one item per chapter, compiled as doctests with every
 /// feature enabled. The book isn't published with the crate, so this only
 /// builds in the repository.
-#[cfg(all(doctest, feature = "bt", feature = "perception", feature = "gizmos"))]
+#[cfg(all(
+    doctest,
+    feature = "bt",
+    feature = "perception",
+    feature = "gizmos",
+    feature = "avian2d"
+))]
 mod book {
     macro_rules! chapters {
         ($($name:ident: $file:literal),* $(,)?) => {
@@ -153,6 +193,7 @@ mod book {
         Sensors: "sensors.md",
         MemoryEvents: "memory-events.md",
         OcclusionAttitude: "occlusion-attitude.md",
+        Avian: "avian.md",
         CustomSenses: "custom-senses.md",
         Gizmos: "gizmos.md",
         PerceptionAndTrees: "perception-and-trees.md",

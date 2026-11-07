@@ -21,8 +21,10 @@ pub enum Space {
 }
 
 impl Space {
-    /// `point` in this space: in the plane, z dropped.
-    pub(crate) fn flatten(self, point: Vec3) -> Vec3 {
+    /// `point` in this space: in the plane, z dropped. What a sense of your
+    /// own senses from, so it measures as the built-in ones do.
+    #[must_use]
+    pub fn flatten(self, point: Vec3) -> Vec3 {
         match self {
             Self::Planar => point.with_z(0.0),
             Self::Volume => point,

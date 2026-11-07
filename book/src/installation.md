@@ -7,8 +7,8 @@ Add `bevy_arbor` to your `Cargo.toml`, with the parts you use:
 bevy_arbor = { version = "0.1", features = ["perception"] }
 ```
 
-Behaviour trees (`bt`) are on by default; perception and its gizmos are
-features. [Feature flags](features.md) lists them all.
+Behaviour trees (`bt`) are on by default; perception, its gizmos and its
+avian integration are features. [Feature flags](features.md) lists them all.
 
 Then add `ArborPlugins`, which adds the plugin of every part you enabled:
 

@@ -1,4 +1,4 @@
 # https://doc.rust-lang.org/clippy/lint_configuration.html
 
 # Product names that are not code identifiers; ".." keeps clippy's defaults.
-doc-valid-idents = ["Bevy", "bevy_arbor", "bevy_arbor_bt", "bevy_arbor_macros", "bevy_arbor_perception", "bevy_harness", ".."]
+doc-valid-idents = ["Bevy", "bevy_arbor", "bevy_arbor_avian", "bevy_arbor_avian2d", "bevy_arbor_avian3d", "bevy_arbor_bt", "bevy_arbor_macros", "bevy_arbor_perception", "bevy_harness", ".."]

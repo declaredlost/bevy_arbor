@@ -25,6 +25,7 @@
 - [Sensors](sensors.md)
 - [Memory and events](memory-events.md)
 - [Occlusion and attitude](occlusion-attitude.md)
+- [Physics with avian](avian.md)
 - [Senses of your own](custom-senses.md)
 - [Gizmos](gizmos.md)
 

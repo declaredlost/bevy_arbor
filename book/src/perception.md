@@ -62,8 +62,9 @@ own joins one:
 | `Classify` | Nothing | Give candidates their attitude |
 | `Commit` | Writes each `Perceived<S>`, with the `Team` fallback; forgets what's faded | |
 
-It doesn't depend on a physics engine: line of sight is a system of yours in
-`Occlude` ([Occlusion and attitude](occlusion-attitude.md)).
+It doesn't depend on a physics engine: line of sight is a system in
+`Occlude`, yours ([Occlusion and attitude](occlusion-attitude.md)) or avian's
+([Physics with avian](avian.md)).
 
 [`Perceived<Sight>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Perceived.html
 [`Space::Planar`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/space/enum.Space.html
