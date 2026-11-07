@@ -22,10 +22,9 @@ impl Random {
 
     /// A shuffled order: Fisher-Yates, a roll for each place from the last.
     fn shuffle(&mut self, cx: &mut Context) -> Vec<usize> {
-        let agent = cx.agent();
         let mut order: Vec<usize> = (0..self.children.len()).collect();
         for last in (1..order.len()).rev() {
-            let rolled = self.roll.run(cx.world_mut(), agent).unwrap_or(0.0);
+            let rolled = self.roll.run(cx).unwrap_or(0.0);
             order.swap(last, pick(rolled, last));
         }
         order

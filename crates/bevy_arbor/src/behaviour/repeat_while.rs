@@ -16,8 +16,7 @@ impl RepeatWhile {
 
 impl Behave for RepeatWhile {
     fn tick(&mut self, cx: &mut Context) -> Status {
-        let agent = cx.agent();
-        if !self.guard.passes(cx.world_mut(), agent) {
+        if !self.guard.passes(cx) {
             if self.child.holds() {
                 let status = self.child.tick_interrupted(cx);
                 if status == Status::Running && self.child.holds() {
@@ -27,8 +26,13 @@ impl Behave for RepeatWhile {
             self.child.cancel(cx);
             return Status::Success;
         }
+        // Asked to stop, it doesn't start its child again.
+        if cx.interrupted() && !self.child.running {
+            return Status::Success;
+        }
         match self.child.tick(cx) {
             Status::Failure => Status::Failure,
+            Status::Success if cx.interrupted() => Status::Success,
             _ => Status::Running,
         }
     }

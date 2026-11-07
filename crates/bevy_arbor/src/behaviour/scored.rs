@@ -46,9 +46,8 @@ impl Scored {
     }
 
     /// The order to try them in: highest score first, and one that can't be
-    /// scored, or isn't, last.
+    /// scored, isn't, or scores NaN, last.
     fn rank(&mut self, cx: &mut Context) -> Vec<usize> {
-        let agent = cx.agent();
         let scores: Vec<f32> = self
             .branches
             .iter_mut()
@@ -56,7 +55,8 @@ impl Scored {
                 branch
                     .score
                     .as_mut()
-                    .and_then(|score| score.run(cx.world_mut(), agent))
+                    .and_then(|score| score.run(cx))
+                    .filter(|score| !score.is_nan())
                     .unwrap_or(f32::NEG_INFINITY)
             })
             .collect();
@@ -141,5 +141,26 @@ mod tests {
         app.tick();
         assert_eq!(acts(&app), 2);
         assert_eq!(outcome(&app, npc), Some(true));
+    }
+
+    fn unscorable(In(_): In<Entity>) -> f32 {
+        f32::NAN
+    }
+
+    #[test]
+    fn a_nan_score_goes_last() {
+        let mut app = app();
+        agent(
+            &mut app,
+            behaviour_tree! {
+                Scored => {
+                    score(unscorable) => task("Other", Other),
+                    score(little) => task("Work", Work),
+                }
+            },
+        );
+        app.tick();
+        assert_eq!(app.count::<With<Work>>(), 1);
+        assert_eq!(app.count::<With<Other>>(), 0);
     }
 }

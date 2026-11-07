@@ -44,6 +44,8 @@ impl Order {
                     self.reset();
                     return Status::Success;
                 }
+                // Asked to stop, it doesn't start the next.
+                Status::Failure if cx.interrupted() => break,
                 Status::Failure => self.at += 1,
             }
         }

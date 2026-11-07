@@ -51,14 +51,16 @@ impl Spawn {
     }
 }
 
-/// Tells `task` it's ended, as `outcome` says, if it's still there, and
-/// despawns it.
+/// Tells `task` it's ended, if it's still there, and despawns it.
+///
+/// It's told `outcome`, or with none, what it reported, if it has.
 fn end(cx: &mut Context, task: Entity, outcome: Option<Outcome>) {
     let agent = cx.agent();
     let world = cx.world_mut();
-    if world.get_entity(task).is_err() {
+    let Ok(entity) = world.get_entity(task) else {
         return;
-    }
+    };
+    let outcome = outcome.or_else(|| entity.get::<Task>().and_then(Task::outcome));
     world.trigger(TaskEnded {
         entity: task,
         agent,
@@ -71,12 +73,13 @@ impl Behave for Spawn {
     fn tick(&mut self, cx: &mut Context) -> Status {
         let task = self.started(cx);
         let elapsed = cx.now().saturating_sub(self.started);
-        let interrupt = self.graceful && cx.interrupted();
+        let interrupted = self.graceful && cx.interrupted();
         if let Some(mut task) = cx.world_mut().get_mut::<Task>(task) {
             // Time passing isn't a change a task system should react to.
             task.bypass_change_detection().set_elapsed(elapsed);
-            if interrupt {
-                task.interrupt();
+            // Asked again each tick: what wanted it stopped may have stopped.
+            if task.interrupted() != interrupted {
+                task.set_interrupted(interrupted);
             }
         }
         // One that's been despawned behind the tree's back failed.
@@ -241,5 +244,53 @@ mod tests {
         app.entity_mut(npc).remove::<BehaviourTree>();
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 0);
+    }
+
+    #[test]
+    fn a_graceful_task_kept_after_all_is_told_so() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Select => {
+                    when(high) => task("Other", Other),
+                    task("Work", (Work, Graceful)),
+                }
+            },
+        );
+        app.tick();
+        set(&mut app, npc, true, false);
+        app.tick();
+        assert!(work_interrupted(&mut app), "told to stop");
+        set(&mut app, npc, false, false);
+        app.tick();
+        assert!(!work_interrupted(&mut app), "told it's kept");
+        assert_eq!(app.count::<With<Other>>(), 0);
+    }
+
+    #[test]
+    fn a_task_cancelled_after_it_reported_ends_with_its_report() {
+        #[derive(Resource, Default)]
+        struct Ended(Vec<Option<Outcome>>);
+        let mut app = app();
+        app.app_mut().init_resource::<Ended>();
+        app.app_mut()
+            .add_observer(|ended: On<TaskEnded>, mut seen: ResMut<Ended>| {
+                seen.0.push(ended.outcome);
+            });
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Select => {
+                    when(high) => Wait(100.0),
+                    task("Work", (Work, Report::Succeed)),
+                }
+            },
+        );
+        app.tick();
+        set(&mut app, npc, true, false);
+        app.tick();
+        assert_eq!(app.count::<With<Work>>(), 0, "cancelled");
+        assert_eq!(app.world().resource::<Ended>().0, [Some(Outcome::Success)]);
     }
 }

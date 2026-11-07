@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{BinOp, Error, Expr, ExprLit, Ident, Lit, Result, UnOp};
@@ -11,47 +12,66 @@ const NODES: &str = "Forever, Select, Fallback, Sequence, All, Any, Race, Scored
                      Invert, Succeed, Commit, While(guard), Timeout(length), Wait(length), \
                      task(name, bundle), act(system), or @ expr";
 
+/// What a length too long for `u64` nanoseconds gets.
+const TOO_LONG: &str = "too long: a length is at most 18446744073 seconds";
+
 /// The code building the tree `input` describes.
 pub(crate) fn tree(input: TokenStream) -> Result<TokenStream> {
     let Root(item) = syn::parse2(input)?;
-    self::item(&item)
+    self::item(&arbor(crate_name("bevy_arbor").ok()), &item)
+}
+
+/// The path to `bevy_arbor` where the macro is used, as `found` names it.
+///
+/// `::bevy_arbor` in `bevy_arbor` itself, which names itself so, and where
+/// it isn't found, as in a crate using it through another's re-export.
+fn arbor(found: Option<FoundCrate>) -> TokenStream {
+    match found {
+        Some(FoundCrate::Name(name)) => {
+            let name = Ident::new(&name, Span::call_site());
+            quote! { ::#name }
+        }
+        Some(FoundCrate::Itself) | None => quote! { ::bevy_arbor },
+    }
 }
 
 /// The code building one node.
-fn item(item: &Item) -> Result<TokenStream> {
+fn item(arbor: &TokenStream, item: &Item) -> Result<TokenStream> {
     let (name, args, body) = match item {
-        Item::Embed(node) => return Ok(quote! { ::bevy_arbor::behaviour::Behaviour::from(#node) }),
+        Item::Embed(node) => return Ok(quote! { #arbor::behaviour::Behaviour::from(#node) }),
         Item::Named { name, args, body } => (name, args.as_slice(), body.as_deref()),
     };
     let label = name.to_string();
     match (label.as_str(), args, body) {
-        ("Forever", [], Some(body)) => wrap(name, "forever", &[], body),
-        ("Invert", [], Some(body)) => wrap(name, "invert", &[], body),
-        ("Succeed", [], Some(body)) => wrap(name, "succeed", &[], body),
-        ("Commit", [], Some(body)) => wrap(name, "commit", &[], body),
-        ("Timeout", [length], Some(body)) => wrap(name, "timeout", &[duration(length)?], body),
-        ("While", [_] | [_, _], Some(body)) => {
-            let guard = guard_args(name.span(), args)?;
-            wrap(name, "repeat_while", &[guard], body)
+        ("Forever", [], Some(body)) => wrap(arbor, name, "forever", &[], body),
+        ("Invert", [], Some(body)) => wrap(arbor, name, "invert", &[], body),
+        ("Succeed", [], Some(body)) => wrap(arbor, name, "succeed", &[], body),
+        ("Commit", [], Some(body)) => wrap(arbor, name, "commit", &[], body),
+        ("Timeout", [length], Some(body)) => {
+            wrap(arbor, name, "timeout", &[duration(length)?], body)
         }
-        ("Sequence", [], Some(body)) => list(name, "sequence", &[], body),
-        ("All", [], Some(body)) => list(name, "all", &[], body),
-        ("Any", [], Some(body)) => list(name, "any", &[], body),
-        ("Race", [], Some(body)) => list(name, "race", &[], body),
-        ("Random", [roll], Some(body)) => list(name, "random", &[quote! { #roll }], body),
-        ("Select", [], Some(body)) => branches("select", body, false),
-        ("Fallback", [], Some(body)) => branches("fallback", body, false),
-        ("Scored", [], Some(body)) => branches("scored", body, true),
+        ("While", [_] | [_, _], Some(body)) => {
+            let guard = guard_args(arbor, name.span(), args)?;
+            wrap(arbor, name, "repeat_while", &[guard], body)
+        }
+        ("Sequence", [], Some(body)) => list(arbor, name, "sequence", &[], body),
+        ("All", [], Some(body)) => list(arbor, name, "all", &[], body),
+        ("Any", [], Some(body)) => list(arbor, name, "any", &[], body),
+        ("Race", [], Some(body)) => list(arbor, name, "race", &[], body),
+        ("Random", [roll], Some(body)) => list(arbor, name, "random", &[quote! { #roll }], body),
+        ("Select", [], Some(body)) => branches(arbor, "select", body, false),
+        ("Fallback", [], Some(body)) => branches(arbor, "fallback", body, false),
+        ("Scored", [], Some(body)) => branches(arbor, "scored", body, true),
         ("Wait", [length], None) => {
             let length = duration(length)?;
-            Ok(quote! { ::bevy_arbor::behaviour::Behaviour::wait(#length) })
+            Ok(quote! { #arbor::behaviour::Behaviour::wait(#length) })
         }
         ("task", [name, bundle], None) => {
-            Ok(quote! { ::bevy_arbor::behaviour::Behaviour::task(#name, #bundle) })
+            Ok(quote! { #arbor::behaviour::Behaviour::task(#name, #bundle) })
         }
-        ("act", [system], None) => Ok(quote! { ::bevy_arbor::behaviour::Behaviour::act(#system) }),
+        ("act", [system], None) => Ok(quote! { #arbor::behaviour::Behaviour::act(#system) }),
         ("act", [system, param], None) => {
-            Ok(quote! { ::bevy_arbor::behaviour::Behaviour::act_with(#system, #param) })
+            Ok(quote! { #arbor::behaviour::Behaviour::act_with(#system, #param) })
         }
         (
             "Forever" | "Invert" | "Succeed" | "Commit" | "Sequence" | "All" | "Any" | "Race"
@@ -78,23 +98,23 @@ fn item(item: &Item) -> Result<TokenStream> {
 }
 
 /// The code building a guard: `!`, `&&`, `||` and brackets read as written.
-fn guard(expr: &Expr) -> TokenStream {
+fn guard(arbor: &TokenStream, expr: &Expr) -> TokenStream {
     match expr {
-        Expr::Paren(inner) => guard(&inner.expr),
-        Expr::Group(inner) => guard(&inner.expr),
+        Expr::Paren(inner) => guard(arbor, &inner.expr),
+        Expr::Group(inner) => guard(arbor, &inner.expr),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
-            let inner = guard(&unary.expr);
+            let inner = guard(arbor, &unary.expr);
             quote! { ::std::ops::Not::not(#inner) }
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::And(_)) => {
-            let (left, right) = (guard(&binary.left), guard(&binary.right));
+            let (left, right) = (guard(arbor, &binary.left), guard(arbor, &binary.right));
             quote! { #left.and(#right) }
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::Or(_)) => {
-            let (left, right) = (guard(&binary.left), guard(&binary.right));
+            let (left, right) = (guard(arbor, &binary.left), guard(arbor, &binary.right));
             quote! { #left.or(#right) }
         }
-        _ => quote! { ::bevy_arbor::behaviour::IntoGuard::into_guard(#expr) },
+        _ => quote! { #arbor::behaviour::IntoGuard::into_guard(#expr) },
     }
 }
 
@@ -105,10 +125,16 @@ fn duration(expr: &Expr) -> Result<TokenStream> {
     let Some(seconds) = seconds(expr)? else {
         return Ok(quote! { #expr });
     };
+    if seconds < 0.0 {
+        return Err(Error::new_spanned(
+            expr,
+            "expected a length in seconds, 0 or more",
+        ));
+    }
     let nanos = Duration::try_from_secs_f64(seconds)
         .ok()
         .and_then(|length| u64::try_from(length.as_nanos()).ok())
-        .ok_or_else(|| Error::new_spanned(expr, "expected a length in seconds, 0 or more"))?;
+        .ok_or_else(|| Error::new_spanned(expr, TOO_LONG))?;
     Ok(quote! { ::core::time::Duration::from_nanos(#nanos) })
 }
 
@@ -132,31 +158,43 @@ fn seconds(expr: &Expr) -> Result<Option<f64>> {
 }
 
 /// The code building a guard from `(guard)` or `(system, param)`.
-fn guard_args(span: Span, args: &[Expr]) -> Result<TokenStream> {
+fn guard_args(arbor: &TokenStream, span: Span, args: &[Expr]) -> Result<TokenStream> {
     match args {
-        [expr] => Ok(guard(expr)),
-        [system, param] => Ok(quote! { ::bevy_arbor::behaviour::Guard::with(#system, #param) }),
+        [expr] => Ok(guard(arbor, expr)),
+        [system, param] => Ok(quote! { #arbor::behaviour::Guard::with(#system, #param) }),
         _ => Err(Error::new(span, "expected `(guard)` or `(system, param)`")),
     }
 }
 
 /// A node over one child: several children run as a sequence.
-fn wrap(name: &Ident, build: &str, args: &[TokenStream], body: &[Entry]) -> Result<TokenStream> {
+fn wrap(
+    arbor: &TokenStream,
+    name: &Ident,
+    build: &str,
+    args: &[TokenStream],
+    body: &[Entry],
+) -> Result<TokenStream> {
     if body.is_empty() {
         return Err(Error::new(name.span(), format!("`{name}` needs a child")));
     }
     let build = Ident::new(build, name.span());
-    let children = children(body)?;
+    let children = children(arbor, body)?;
     Ok(quote! {
-        ::bevy_arbor::behaviour::Behaviour::#build(#(#args,)* ::bevy_arbor::behaviour::Behaviour::group(#children))
+        #arbor::behaviour::Behaviour::#build(#(#args,)* #arbor::behaviour::Behaviour::group(#children))
     })
 }
 
 /// A node over a list of children.
-fn list(name: &Ident, build: &str, args: &[TokenStream], body: &[Entry]) -> Result<TokenStream> {
+fn list(
+    arbor: &TokenStream,
+    name: &Ident,
+    build: &str,
+    args: &[TokenStream],
+    body: &[Entry],
+) -> Result<TokenStream> {
     let build = Ident::new(build, name.span());
-    let children = children(body)?;
-    Ok(quote! { ::bevy_arbor::behaviour::Behaviour::#build(#(#args,)* #children) })
+    let children = children(arbor, body)?;
+    Ok(quote! { #arbor::behaviour::Behaviour::#build(#(#args,)* #children) })
 }
 
 /// The name of the list being built: invisible to what goes in it, so an
@@ -166,7 +204,7 @@ fn out() -> Ident {
 }
 
 /// The code building a list of children.
-fn children(body: &[Entry]) -> Result<TokenStream> {
+fn children(arbor: &TokenStream, body: &[Entry]) -> Result<TokenStream> {
     let out = out();
     let pushes = body
         .iter()
@@ -180,60 +218,65 @@ fn children(body: &[Entry]) -> Result<TokenStream> {
                 format!("`{}` goes on a branch", prefix.name),
             )),
             Entry::One { prefix: None, item } => {
-                let node = self::item(item)?;
+                let node = self::item(arbor, item)?;
                 Ok(quote! { #out.push(#node); })
             }
         })
         .collect::<Result<Vec<_>>>()?;
     if pushes.is_empty() {
-        return Ok(quote! { ::std::vec::Vec::<::bevy_arbor::behaviour::Behaviour>::new() });
+        return Ok(quote! { ::std::vec::Vec::<#arbor::behaviour::Behaviour>::new() });
     }
     Ok(quote! {{
-        let mut #out: ::std::vec::Vec<::bevy_arbor::behaviour::Behaviour> = ::std::vec::Vec::new();
+        let mut #out: ::std::vec::Vec<#arbor::behaviour::Behaviour> = ::std::vec::Vec::new();
         #(#pushes)*
         #out
     }})
 }
 
 /// The code building a node over branches: guarded, or if `scored`, scored.
-fn branches(build: &str, body: &[Entry], scored: bool) -> Result<TokenStream> {
+fn branches(arbor: &TokenStream, build: &str, body: &[Entry], scored: bool) -> Result<TokenStream> {
     let out = out();
     let build = Ident::new(build, Span::call_site());
     let kind = if scored {
-        quote! { ::bevy_arbor::behaviour::ScoredBranch }
+        quote! { #arbor::behaviour::ScoredBranch }
     } else {
-        quote! { ::bevy_arbor::behaviour::Branch }
+        quote! { #arbor::behaviour::Branch }
     };
     let pushes = body
         .iter()
         .map(|entry| match entry {
             Entry::Many(branches) => Ok(quote! { #out.extend(#branches); }),
             Entry::One { prefix, item } => {
-                let node = self::item(item)?;
-                let branch = branch(prefix.as_ref(), node, scored)?;
+                let node = self::item(arbor, item)?;
+                let branch = branch(arbor, prefix.as_ref(), node, scored)?;
                 Ok(quote! { #out.push(#branch); })
             }
         })
         .collect::<Result<Vec<_>>>()?;
     if pushes.is_empty() {
         return Ok(
-            quote! { ::bevy_arbor::behaviour::Behaviour::#build(::std::vec::Vec::<#kind>::new()) },
+            quote! { #arbor::behaviour::Behaviour::#build(::std::vec::Vec::<#kind>::new()) },
         );
     }
     Ok(quote! {{
         let mut #out: ::std::vec::Vec<#kind> = ::std::vec::Vec::new();
         #(#pushes)*
-        ::bevy_arbor::behaviour::Behaviour::#build(#out)
+        #arbor::behaviour::Behaviour::#build(#out)
     }})
 }
 
 /// The code building one branch.
-fn branch(prefix: Option<&Prefix>, node: TokenStream, scored: bool) -> Result<TokenStream> {
+fn branch(
+    arbor: &TokenStream,
+    prefix: Option<&Prefix>,
+    node: TokenStream,
+    scored: bool,
+) -> Result<TokenStream> {
     let Some(prefix) = prefix else {
         return Ok(if scored {
-            quote! { ::bevy_arbor::behaviour::ScoredBranch::last(#node) }
+            quote! { #arbor::behaviour::ScoredBranch::last(#node) }
         } else {
-            quote! { ::bevy_arbor::behaviour::Branch::always(#node) }
+            quote! { #arbor::behaviour::Branch::always(#node) }
         });
     };
     let span = prefix.name.span();
@@ -241,14 +284,14 @@ fn branch(prefix: Option<&Prefix>, node: TokenStream, scored: bool) -> Result<To
         if scored {
             return Err(Error::new(span, "a `Scored` takes `score(system)`"));
         }
-        let guard = guard_args(span, &prefix.args)?;
-        return Ok(quote! { ::bevy_arbor::behaviour::Branch::when(#guard, #node) });
+        let guard = guard_args(arbor, span, &prefix.args)?;
+        return Ok(quote! { #arbor::behaviour::Branch::when(#guard, #node) });
     }
     if !scored {
         return Err(Error::new(span, "`score` goes in a `Scored`"));
     }
     match prefix.args.as_slice() {
-        [system] => Ok(quote! { ::bevy_arbor::behaviour::ScoredBranch::new(#system, #node) }),
+        [system] => Ok(quote! { #arbor::behaviour::ScoredBranch::new(#system, #node) }),
         _ => Err(Error::new(span, "expected `score(system)`")),
     }
 }
@@ -369,5 +412,25 @@ mod tests {
             error(quote! { Wait(-1.0) }),
             "expected a length in seconds, 0 or more"
         );
+    }
+
+    #[test]
+    fn a_length_too_long_says_so() {
+        let message = "too long: a length is at most 18446744073 seconds";
+        assert_eq!(error(quote! { Wait(1e300) }), message);
+        assert_eq!(error(quote! { Wait(2e10) }), message);
+        assert_eq!(error(quote! { Timeout(2e10) => { act(a) } }), message);
+    }
+
+    #[test]
+    fn paths_go_through_the_name_bevy_arbor_has_where_it_is_used() {
+        let renamed = arbor(Some(FoundCrate::Name("arbor".to_owned())));
+        assert_eq!(renamed.to_string(), ":: arbor");
+        assert_eq!(arbor(None).to_string(), ":: bevy_arbor");
+        let code = tree(quote! { Select => { when(a) => act(b) } })
+            .unwrap()
+            .to_string();
+        assert!(!code.contains("bevy_arbor ::"), "{code}");
+        assert!(code.contains(":: arbor :: behaviour :: Branch"), "{code}");
     }
 }

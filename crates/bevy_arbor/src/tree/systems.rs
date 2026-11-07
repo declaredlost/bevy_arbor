@@ -1,20 +1,35 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use bevy::prelude::*;
 
 use super::components::{BehaviourTree, TreePaused, TreeTrace};
 use super::events::TreeFinished;
 use crate::behaviour::Context;
 
+/// Set as the tree being ticked goes: by the tree's hook, read by its nodes.
+#[derive(Resource, Default)]
+pub(crate) struct Ticking(pub(crate) Arc<AtomicBool>);
+
 /// Ticks every tree. Each one's root comes out of its component for the tick,
 /// as guards and acts need the world: one of them may even take the tree away,
-/// or replace it.
+/// or replace it, and then nothing more of it runs.
 pub(crate) fn tick(
     world: &mut World,
     trees: &mut QueryState<Entity, (With<BehaviourTree>, Without<TreePaused>)>,
     mut agents: Local<Vec<Entity>>,
 ) {
+    let gone = world.get_resource_or_init::<Ticking>().0.clone();
     agents.extend(trees.iter(world));
     for agent in agents.drain(..) {
-        let Some(mut tree) = world.get_mut::<BehaviourTree>(agent) else {
+        let Ok(mut entity) = world.get_entity_mut(agent) else {
+            continue;
+        };
+        // Asked again, as one ticked before it may have paused it.
+        if entity.contains::<TreePaused>() {
+            continue;
+        }
+        let Some(mut tree) = entity.get_mut::<BehaviourTree>() else {
             continue;
         };
         if tree.outcome.is_some() {
@@ -23,7 +38,8 @@ pub(crate) fn tick(
         let Some(mut root) = tree.root.take() else {
             continue;
         };
-        let mut cx = Context::new(world, agent);
+        gone.store(false, Ordering::Relaxed);
+        let mut cx = Context::ticking(world, agent, &gone);
         let status = root.tick(&mut cx);
         match world.get_mut::<BehaviourTree>(agent) {
             Some(mut tree) if tree.root.is_none() => {

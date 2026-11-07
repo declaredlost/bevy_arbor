@@ -8,6 +8,7 @@ use bevy::ecs::system::ReadOnlySystem;
 use bevy::prelude::*;
 
 pub(crate) use self::check::Check;
+use crate::behaviour::Context;
 
 /// A condition on an agent, asked every tick while its branch could matter.
 ///
@@ -45,9 +46,16 @@ impl Not for Guard {
 /// error handler. Anything taking a guard takes one of these, so `has_target`
 /// and `Guard::with(within, 5.0).or(has_target)` go in alike.
 ///
-/// A system is cached by its type, so it can't capture anything; one that does
-/// doesn't compile. What varies goes in as a parameter, with
-/// [`Guard::with`]:
+/// Read-only as a Bevy run condition is: no `ResMut` or `&mut` in a query.
+/// Like a run condition, it can still take `Commands`, which are applied as it
+/// returns; what changes things belongs in an `act`.
+///
+/// A system is cached by its type, so every guard, tree and agent using it
+/// shares one, `Local`s and change detection too: a `Local` sees what other
+/// agents left in it, and `Changed` or `Added` filters what changed since it
+/// was last asked about any agent, not this one. Keep what's per agent on the
+/// agent. Being cached, it can't capture anything; one that does doesn't
+/// compile. What varies goes in as a parameter, with [`Guard::with`]:
 ///
 /// ```compile_fail
 /// # use bevy::prelude::*;
@@ -120,13 +128,13 @@ impl Guard {
         &self.name
     }
 
-    /// Asks it about `agent`. One that can't run says no.
-    pub(crate) fn passes(&mut self, world: &mut World, agent: Entity) -> bool {
+    /// Asks it about the agent. One that can't run says no.
+    pub(crate) fn passes(&mut self, cx: &mut Context) -> bool {
         match &mut self.test {
-            Test::Check(check) => check.run(world, agent).unwrap_or(false),
-            Test::Not(guard) => !guard.passes(world, agent),
-            Test::And(a, b) => a.passes(world, agent) && b.passes(world, agent),
-            Test::Or(a, b) => a.passes(world, agent) || b.passes(world, agent),
+            Test::Check(check) => check.run(cx).unwrap_or(false),
+            Test::Not(guard) => !guard.passes(cx),
+            Test::And(a, b) => a.passes(cx) && b.passes(cx),
+            Test::Or(a, b) => a.passes(cx) || b.passes(cx),
         }
     }
 }
@@ -261,5 +269,42 @@ mod tests {
         ));
         app.tick();
         assert_eq!(outcome(&app, npc), Some(true));
+    }
+
+    /// Says no the first time it's asked, by any agent, and yes after.
+    fn asked_before(In(_): In<Entity>, mut asked: Local<bool>) -> bool {
+        std::mem::replace(&mut *asked, true)
+    }
+
+    #[test]
+    fn a_guard_s_local_is_shared_by_every_agent_using_it() {
+        let mut app = app();
+        let tree = || behaviour_tree! { Select => { when(asked_before) => act(count) } };
+        agent(&mut app, tree());
+        agent(&mut app, tree());
+        app.tick();
+        assert_eq!(acts(&app), 1, "the second saw the first's `Local`");
+    }
+
+    #[derive(Component)]
+    struct Asked;
+
+    fn noted(In(agent): In<Entity>, mut commands: Commands) -> bool {
+        commands.entity(agent).insert(Asked);
+        true
+    }
+
+    #[test]
+    fn a_guard_can_queue_commands_as_a_run_condition_can() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! { Select => { when(noted) => act(count) } },
+        );
+        app.tick();
+        assert!(
+            app.world().get::<Asked>(npc).is_some(),
+            "applied as it returned"
+        );
     }
 }

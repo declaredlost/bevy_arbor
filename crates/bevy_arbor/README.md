@@ -86,13 +86,20 @@ Each tick, `Select` goes through its branches in order, asking guards:
 
 ## Guards
 
-Guards are read-only systems taking the agent, as they're asked every tick:
-`when` won't take one that changes anything. `act` is for what does. Either
-can return a `Result<bool>`, to use `?`: an error doesn't pass (or fails the
-`act`), and goes to Bevy's error handler, as a system's would. Scores and
-rolls can return `Result<f32>` the same way. Bevy
-caches them by type, so they can't capture anything; what varies goes in as
-a parameter.
+Guards are read-only systems taking the agent, as they're asked every tick.
+Read-only as a Bevy run condition is: `when` won't take a `ResMut` or a
+`&mut` query, though, like a run condition, it can queue `Commands`, applied
+as it returns. `act` is for what changes things. Either can return a
+`Result<bool>`, to use `?`: an error doesn't pass (or fails the `act`), and
+goes to Bevy's error handler, as a system's would, as does one that can't
+run. Scores and rolls can return `Result<f32>` the same way; a NaN score
+goes last.
+
+Bevy caches them by type, which keeps them cheap, so they can't capture
+anything; what varies goes in as a parameter. Every node, tree and agent
+using a system shares the one, `Local`s and change detection too: a `Local`
+sees what other agents left in it, and a `Changed` filter sees what changed
+since it was last asked about any agent. Keep what's per agent on the agent.
 
 ```rust,ignore
 fn within(In((agent, reach)): In<(Entity, f32)>, targets: Query<&Target>) -> bool { .. }
@@ -115,15 +122,21 @@ knowing it's wanted to stop, until it isn't. So there are three ways not to
 be cut off:
 
 - `Fallback`: nothing in it is interrupted by its own guards.
-- `Commit => { .. }`: this part isn't, once started. In a `Sequence`, what
-  comes after it still can be.
+- `Commit => { .. }`: this part isn't, once started; not even told, so a
+  `Graceful` task in it doesn't wind down. In a `Sequence`, what comes after
+  it still can be, and isn't started once it's wanted to stop.
 - [`Graceful`] in a task's bundle: the task is told
   ([`Task::interrupted`]), winds down and reports, and only then does the
   tree move on. One that never reports holds the tree there for good, so
   put a `Timeout` around one that might not.
 
-However it ends then, what asked it to stop is next. Only force gets past
-these: a `Timeout`, or the tree going.
+Meanwhile nothing new starts in what's winding down: a `Sequence` doesn't go
+on to its next child, nor `Forever` start its own again. However it ends
+then, what asked it to stop is next. A task told to stop is told it isn't
+any more, if what asked stops asking first.
+
+Only force gets past these: a `Timeout`, an `All`, `Any` or `Race` settling
+(cancelling the rest), anything above being cancelled, or the tree going.
 
 ## Tasks
 
@@ -133,8 +146,9 @@ Despawning the agent despawns them. Report with `succeed` or `fail`, as many
 times as you like: the first counts, and the tree reads it on its next tick.
 
 As the tree takes a task away, [`TaskEnded`] is triggered on it, with how it
-went, or `None` if it was cancelled; then it's despawned. Clean up there,
-or in an `On<Remove, _>` observer, if a task has anything to undo.
+went, or `None` if it was cancelled before it reported; then it's despawned.
+Clean up there, or in an `On<Remove<_>>` observer, if a task has anything to
+undo.
 
 [`Tasks`] pairs each task with what you want of its agent:
 `tasks.for_each(|data, task, agent| ..)`. It's a shortcut for a query of
@@ -150,7 +164,11 @@ tree ticks on, whichever schedule your task system runs in.
   `BehaviourTree::restart` starts a finished tree again from the top.
 - [`TreePaused`] on the agent holds its tree where it is: no guards asked,
   nothing started, its task not ticked by [`Tasks`]. Time goes on, so a
-  `Wait` may be over when it's taken away.
+  `Wait` may be over when it's taken away. Put on by a tree ticked earlier
+  in the same tick, it holds it already.
+- A tree taken away, replaced, or despawned with its agent, by something it
+  runs, stops there: nothing after that in it runs, and what it was running
+  is cancelled.
 
 ## Custom nodes
 
@@ -161,13 +179,15 @@ a tree with `@ MyNode::new(..)`. Children are [`Behaviour`]s: run them with
 for how it looks in a trace. See [`Behave`] for one written out.
 
 Anything holding under a custom node keeps holding without it doing
-anything. Two things are up to a node that does more than tick its child:
+anything. Three things are up to a node that does more than tick its child:
 
 - On a tick it doesn't tick a running child, call `child.skip(cx)`, or the
   child's hold lapses for that tick.
 - To switch away from a child that [`holds`](behaviour::Behaviour::holds), tick it
   with `child.tick_interrupted(cx)` until it ends or stops holding, as
   `Select` and `While` do.
+- While `cx.interrupted()`, start nothing new: go on with the child that's
+  running, and end once it does, as the built-in nodes do.
 
 ## Scheduling
 

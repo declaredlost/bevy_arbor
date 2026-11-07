@@ -28,6 +28,10 @@ pub(crate) enum Report {
 #[derive(Resource, Default)]
 pub(crate) struct Acts(pub(crate) u32);
 
+/// How many `Work` tasks have been spawned, ever.
+#[derive(Resource, Default)]
+pub(crate) struct WorkStarted(pub(crate) u32);
+
 pub(crate) fn high(In(agent): In<Entity>, flags: Query<&Flags>) -> bool {
     flags.get(agent).is_ok_and(|flags| flags.high)
 }
@@ -60,7 +64,11 @@ pub(crate) fn app() -> TestApp {
         .plugins(ArborPlugin::default())
         .systems(FixedUpdate, report.after(ArborSystems))
         .with(|app| {
-            app.init_resource::<Acts>();
+            app.init_resource::<Acts>()
+                .init_resource::<WorkStarted>()
+                .add_observer(|_: On<Add<Work>>, mut started: ResMut<WorkStarted>| {
+                    started.0 += 1;
+                });
         })
         .build()
 }
@@ -83,4 +91,14 @@ pub(crate) fn outcome(app: &TestApp, agent: Entity) -> Option<bool> {
 
 pub(crate) fn acts(app: &TestApp) -> u32 {
     app.world().resource::<Acts>().0
+}
+
+pub(crate) fn works_started(app: &TestApp) -> u32 {
+    app.world().resource::<WorkStarted>().0
+}
+
+/// Whether the one `Work` task has been told to stop.
+pub(crate) fn work_interrupted(app: &mut TestApp) -> bool {
+    let mut tasks = app.world_mut().query_filtered::<&Task, With<Work>>();
+    tasks.single(app.world()).unwrap().interrupted()
 }

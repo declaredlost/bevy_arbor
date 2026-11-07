@@ -12,8 +12,7 @@ impl Act {
 
 impl Behave for Act {
     fn tick(&mut self, cx: &mut Context) -> Status {
-        let agent = cx.agent();
-        Outcome::from(self.0.run(cx.world_mut(), agent).unwrap_or(false)).into()
+        Outcome::from(self.0.run(cx).unwrap_or(false)).into()
     }
 
     fn cancel(&mut self, _cx: &mut Context) {}

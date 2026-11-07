@@ -18,10 +18,17 @@ repository = { workspace = true }
 proc-macro = true
 
 [dependencies]
+# Finding bevy_arbor, however it's named
+proc-macro-crate = { workspace = true, features = [] }
+
 # Parsing and quoting
 proc-macro2 = { workspace = true, features = [] }
 quote = { workspace = true, features = [] }
 syn = { workspace = true, features = ["full"] }
+
+[dev-dependencies]
+# The macro's tests, with `bevy_arbor` under another name
+arbor = { package = "bevy_arbor", path = "../bevy_arbor" }
 
 [lints]
 workspace = true

@@ -31,6 +31,11 @@ impl Behave for Fallback {
                 Status::Failure => next = active + 1,
             }
         }
+        // Asked to stop, it doesn't start another.
+        if cx.interrupted() {
+            self.active = None;
+            return Status::Failure;
+        }
         for index in next..self.branches.len() {
             let branch = &mut self.branches[index];
             if !branch.passes(cx) {

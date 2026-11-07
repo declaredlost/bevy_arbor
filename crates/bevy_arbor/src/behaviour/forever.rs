@@ -18,6 +18,10 @@ impl Behave for Forever {
         // Twice at most: what ends is followed at once, but a tree ending
         // every time can't hang.
         for _ in 0..2 {
+            // Asked to stop, it doesn't start its child again.
+            if cx.interrupted() && !self.child.running {
+                break;
+            }
             if self.child.tick(cx) == Status::Running {
                 break;
             }
@@ -63,5 +67,24 @@ mod tests {
             app.tick();
             assert_eq!(app.count::<With<Work>>(), 1);
         }
+    }
+
+    #[test]
+    fn asked_to_stop_it_does_not_start_its_child_again() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Select => {
+                    when(high) => task("Other", Other),
+                    Forever => { Commit => { task("Work", (Work, Report::Succeed)) } },
+                }
+            },
+        );
+        app.tick();
+        set(&mut app, npc, true, false);
+        app.ticks(2);
+        assert_eq!(app.count::<With<Other>>(), 1, "the commit ended, so on");
+        assert_eq!(app.count::<With<Work>>(), 0);
     }
 }

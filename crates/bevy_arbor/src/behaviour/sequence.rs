@@ -23,6 +23,8 @@ impl Behave for Sequence {
                     self.at = 0;
                     return Status::Failure;
                 }
+                // Asked to stop, it doesn't start the next.
+                Status::Success if cx.interrupted() => break,
                 Status::Success => self.at += 1,
             }
         }

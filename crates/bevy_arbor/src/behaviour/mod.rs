@@ -141,7 +141,7 @@ impl Behaviour {
 
     /// Tries `branches` from the highest score down, until one succeeds,
     /// scoring them once as it starts. A score system takes the agent, and may
-    /// change things.
+    /// change things. A NaN score counts as no score: it goes last.
     #[must_use]
     pub fn scored(branches: Vec<ScoredBranch>) -> Self {
         Scored::new(branches).into()
@@ -169,8 +169,12 @@ impl Behaviour {
         Succeed::new(child).into()
     }
 
-    /// `child`, not to be interrupted once started. Only something forcing it,
-    /// like a `Timeout` or the tree going, still stops it.
+    /// `child`, not to be interrupted once started.
+    ///
+    /// Not even told it's wanted to stop, so a
+    /// [`Graceful`](crate::task::Graceful) task in it doesn't wind down.
+    /// Only force still stops it: a `Timeout`, an `All`, `Any` or `Race`
+    /// settling, anything above being cancelled, or the tree going.
     #[must_use]
     pub fn commit(child: Behaviour) -> Self {
         Commit::new(child).into()
@@ -204,7 +208,7 @@ impl Behaviour {
 
     /// Runs `system` once on the agent: what it returns is the result. It can
     /// return a `Result<bool>` to use `?`: an error fails, and goes to Bevy's
-    /// error handler.
+    /// error handler. Cached like a guard, its `Local`s are every agent's.
     pub fn act<S, M>(system: S) -> Self
     where
         S: IntoSystem<In<Entity>, bool, M> + Copy + Send + Sync + 'static,
@@ -223,7 +227,13 @@ impl Behaviour {
     }
 
     /// Runs it a tick.
+    ///
+    /// Once its tree has been taken away or replaced, by something it ran, it
+    /// doesn't run, and fails.
     pub fn tick(&mut self, cx: &mut Context) -> Status {
+        if cx.gone() {
+            return Status::Failure;
+        }
         let (status, held) = cx.holding(|cx| self.inner.tick(cx));
         self.running = status == Status::Running;
         self.held = held && self.running;
@@ -235,7 +245,7 @@ impl Behaviour {
 
     /// Runs it a tick asking it to stop, for a node about to switch away from
     /// it while it [holds](Self::holds): it winds down, and ends or stops
-    /// holding when it has. What `Select` and `While` do.
+    /// holding when it has, starting nothing new. What `Select` and `While` do.
     pub fn tick_interrupted(&mut self, cx: &mut Context) -> Status {
         cx.interrupting(|cx| self.tick(cx))
     }

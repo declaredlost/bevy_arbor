@@ -33,9 +33,8 @@ impl Branch {
 
     /// Whether its guard passes; one without a guard always does.
     pub(super) fn passes(&mut self, cx: &mut Context) -> bool {
-        let agent = cx.agent();
         match &mut self.guard {
-            Some(guard) => guard.passes(cx.world_mut(), agent),
+            Some(guard) => guard.passes(cx),
             None => true,
         }
     }
@@ -77,7 +76,10 @@ impl Select {
     fn run(&mut self, index: usize, cx: &mut Context) -> Option<Status> {
         self.active = Some(index);
         match self.branches[index].node.tick(cx) {
-            Status::Running => Some(Status::Running),
+            Status::Running => {
+                self.recheck_after(index, cx);
+                Some(Status::Running)
+            }
             Status::Success => {
                 self.reset();
                 Some(Status::Success)
@@ -89,10 +91,38 @@ impl Select {
             }
         }
     }
+
+    /// Asks the guards of the failed branches after `index` running.
+    ///
+    /// They aren't asked otherwise while it runs: one whose guard has stopped
+    /// is let back in, as one before it would be.
+    fn recheck_after(&mut self, index: usize, cx: &mut Context) {
+        for branch in &mut self.branches[index + 1..] {
+            if branch.failed && !branch.passes(cx) {
+                branch.failed = false;
+            }
+        }
+    }
+
+    /// Ticks the branch running, asked to stop: nothing else starts.
+    fn wind_down(&mut self, cx: &mut Context) -> Status {
+        let Some(active) = self.active else {
+            self.reset();
+            return Status::Failure;
+        };
+        let status = self.branches[active].node.tick(cx);
+        if status != Status::Running {
+            self.reset();
+        }
+        status
+    }
 }
 
 impl Behave for Select {
     fn tick(&mut self, cx: &mut Context) -> Status {
+        if cx.interrupted() {
+            return self.wind_down(cx);
+        }
         for index in 0..self.branches.len() {
             let branch = &mut self.branches[index];
             let passes = branch.passes(cx);
@@ -142,6 +172,7 @@ impl Behave for Select {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
+    use bevy_harness::TestApp;
 
     use crate::prelude::*;
     use crate::testing::*;
@@ -286,5 +317,39 @@ mod tests {
         let npc = agent(&mut app, behaviour_tree! { Select => { @[ branches ] } });
         app.tick();
         assert_eq!(outcome(&app, npc), Some(false));
+    }
+
+    /// Fails the one `Work` task.
+    fn fail_work(app: &mut TestApp) {
+        let mut tasks = app.world_mut().query_filtered::<&mut Task, With<Work>>();
+        tasks.single_mut(app.world_mut()).unwrap().fail();
+    }
+
+    #[test]
+    fn a_failed_branch_after_the_running_one_is_let_back_in_once_its_guard_stops() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Select => {
+                    when(high) => task("Work", Work),
+                    when(low) => task("Other", (Other, Report::Fail)),
+                    Wait(100.0),
+                }
+            },
+        );
+        set(&mut app, npc, false, true);
+        app.ticks(2);
+        assert_eq!(app.count::<With<Other>>(), 0, "failed, so out");
+        set(&mut app, npc, true, true);
+        app.tick();
+        assert_eq!(app.count::<With<Work>>(), 1);
+        set(&mut app, npc, true, false);
+        app.tick();
+        set(&mut app, npc, true, true);
+        app.tick();
+        fail_work(&mut app);
+        app.tick();
+        assert_eq!(app.count::<With<Other>>(), 1, "its guard stopped: back in");
     }
 }

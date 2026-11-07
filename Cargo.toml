@@ -51,6 +51,7 @@ bevy = { version = "0.20", default-features = false, features = ["std"] }
 bevy_harness = { git = "https://github.com/declaredlost/bevy_harness", version = "0.1.0" }
 
 # Proc macros
+proc-macro-crate = { version = "3.5", features = [] }
 proc-macro2 = { version = "1.0", features = [] }
 quote = { version = "1.0", features = [] }
 syn = { version = "3.0", features = [] }

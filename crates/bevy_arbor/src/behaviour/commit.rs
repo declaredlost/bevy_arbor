@@ -3,6 +3,9 @@ use crate::behaviour::{Behave, Context, Status};
 use crate::tree::TreeOutline;
 
 /// Its child, refusing to be interrupted once started.
+///
+/// Not even told, so a [`Graceful`](crate::task::Graceful) task in it doesn't
+/// wind down.
 pub(super) struct Commit {
     child: Behaviour,
 }
@@ -15,7 +18,7 @@ impl Commit {
 
 impl Behave for Commit {
     fn tick(&mut self, cx: &mut Context) -> Status {
-        let status = self.child.tick(cx);
+        let status = cx.sheltering(|cx| self.child.tick(cx));
         if status == Status::Running {
             cx.hold();
         }
@@ -61,6 +64,47 @@ mod tests {
         app.secs(0.6);
         assert_eq!(app.count::<With<Other>>(), 1, "over, so interrupted");
         assert_eq!(app.count::<With<Work>>(), 0);
+    }
+
+    #[test]
+    fn what_comes_after_it_is_not_started_once_asked_to_stop() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Select => {
+                    when(high) => task("Other", Other),
+                    Sequence => {
+                        Commit => { Wait(0.5) },
+                        task("Work", Work),
+                    },
+                }
+            },
+        );
+        app.tick();
+        set(&mut app, npc, true, false);
+        app.secs(0.6);
+        assert_eq!(works_started(&app), 0, "never spawned, not just cancelled");
+        assert_eq!(app.count::<With<Other>>(), 1);
+    }
+
+    #[test]
+    fn a_graceful_task_in_it_is_not_told_to_stop() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                Select => {
+                    when(high) => task("Other", Other),
+                    Commit => { task("Work", (Work, Graceful)) },
+                }
+            },
+        );
+        app.tick();
+        set(&mut app, npc, true, false);
+        app.ticks(3);
+        assert!(!work_interrupted(&mut app), "not told");
+        assert_eq!(app.count::<With<Other>>(), 0);
     }
 
     #[test]

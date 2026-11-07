@@ -187,4 +187,21 @@ mod tests {
         app.tick();
         assert!(acts(&app) >= 2, "ran twice: {}", acts(&app));
     }
+
+    #[test]
+    fn settling_cancels_even_a_committed_child() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behaviour_tree! {
+                All => {
+                    Commit => { task("Work", Work) },
+                    act(refuse),
+                }
+            },
+        );
+        app.tick();
+        assert_eq!(outcome(&app, npc), Some(false));
+        assert_eq!(app.count::<With<Work>>(), 0, "forced");
+    }
 }

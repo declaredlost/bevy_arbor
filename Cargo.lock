@@ -340,6 +340,8 @@ dependencies = [
 name = "bevy_arbor_macros"
 version = "0.1.0"
 dependencies = [
+ "bevy_arbor",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 3.0.9",

@@ -50,13 +50,16 @@ impl Task {
 
     /// Whether the tree wants it to stop, for a [`Graceful`] one: it should
     /// wind down, and report when it has.
+    ///
+    /// Asked again each tick, so it goes back to `false` if what wanted it
+    /// stopped no longer does, before it has reported.
     #[must_use]
     pub fn interrupted(&self) -> bool {
         self.interrupted
     }
 
-    pub(crate) fn interrupt(&mut self) {
-        self.interrupted = true;
+    pub(crate) fn set_interrupted(&mut self, interrupted: bool) {
+        self.interrupted = interrupted;
     }
 }
 
@@ -98,8 +101,9 @@ impl AgentTasks {
 
 /// Triggered on a task as its tree takes it away, with how it ended.
 ///
-/// Once it's reported, with how it went, or as it's cancelled, with `None`. A
-/// task despawned some other way, or with its agent, goes without it.
+/// Once it's reported, with how it went, or as it's cancelled: with how it
+/// went if it reported before the tree read it, else `None`. A task despawned
+/// some other way, or with its agent, goes without it.
 #[derive(EntityEvent, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TaskEnded {
     /// The task.
@@ -107,6 +111,9 @@ pub struct TaskEnded {
     /// The agent whose tree it was from.
     pub agent: Entity,
     /// How it went: `None` if it was cancelled before it reported.
+    ///
+    /// A task cancelled after it reported, before the tree read it, has what
+    /// it reported.
     pub outcome: Option<Outcome>,
 }
 
@@ -114,7 +121,9 @@ pub struct TaskEnded {
 ///
 /// In a task's bundle: when the tree wants it to stop, it isn't despawned but
 /// told ([`Task::interrupted`]), and the tree waits for it to report. Only
-/// something forcing it, like a `Timeout` or the tree going, still despawns it.
+/// force still despawns it: a `Timeout`, an `All`, `Any` or `Race` settling,
+/// anything above being cancelled, or the tree going. Under a `Commit` it isn't
+/// told at all.
 ///
 /// The tree waits as long as it takes: one that never reports holds its
 /// `Select` or `While` where it is for good. Put a `Timeout` around it if it
