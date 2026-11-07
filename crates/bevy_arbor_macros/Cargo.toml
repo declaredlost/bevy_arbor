@@ -2,8 +2,10 @@
 
 [package]
 name = "bevy_arbor_macros"
-description = "bevy_arbor's behaviour_tree! macro"
+description = "bevy_arbor's macros, for every part: behaviour_tree! for bevy_arbor_bt"
+readme = "./README.md"
 keywords = ["bevy", "ai", "behaviour-tree", "macro"]
+categories = ["game-development"]
 
 version = { workspace = true }
 rust-version = { workspace = true }
@@ -13,12 +15,17 @@ publish = { workspace = true }
 
 authors = { workspace = true }
 repository = { workspace = true }
+documentation = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 proc-macro = true
 
 [dependencies]
-# Finding bevy_arbor, however it's named
+# Finding bevy_arbor_bt, or bevy_arbor, however they're named
 proc-macro-crate = { workspace = true, features = [] }
 
 # Parsing and quoting
@@ -27,8 +34,17 @@ quote = { workspace = true, features = [] }
 syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
-# The macro's tests, with `bevy_arbor` under another name
-arbor = { package = "bevy_arbor", path = "../bevy_arbor" }
+# The macro's tests, with `bevy_arbor_bt` under another name
+arbor = { package = "bevy_arbor_bt", path = "../bevy_arbor_bt" }
+# Built for the host, as this is a proc-macro crate, so its features are
+# resolved apart from the rest of the workspace's. Bevy's gizmos turn on
+# reflection's auto-registration in `bevy_reflect_derive`, which both builds
+# share; this turns it on in this build's `bevy_reflect` too, so they agree.
+bevy = { workspace = true, features = ["reflect_auto_register"] }
+
+[package.metadata.cargo-machete]
+# Only there for its feature, above.
+ignored = ["bevy"]
 
 [lints]
 workspace = true

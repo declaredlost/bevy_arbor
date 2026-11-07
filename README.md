@@ -2,7 +2,7 @@
 
 # bevy_arbor
 
-**Reactive behaviour trees for Bevy: guards re-checked every tick, tasks as entities.**
+**AI for Bevy: reactive behaviour trees that sleep until something changes, with tasks as entities.**
 
 [![Build](https://img.shields.io/github/actions/workflow/status/declaredlost/bevy_arbor/build.yml?branch=main&label=build&style=flat-square)](https://github.com/declaredlost/bevy_arbor/actions/workflows/build.yml)
 [![Security](https://img.shields.io/github/actions/workflow/status/declaredlost/bevy_arbor/security.yml?branch=main&label=security&style=flat-square)](https://github.com/declaredlost/bevy_arbor/actions/workflows/security.yml)
@@ -11,11 +11,12 @@
 
 An agent carries its tree as a component; each task the tree reaches is an
 entity of its own, ticked by your systems, and the tree despawns it when it's
-done or no longer wanted.
+done or no longer wanted. Between ticks a tree sleeps, until a component its
+guards read changes, or its task reports.
 
 ```rust,ignore
-fn has_target(In(agent): In<Entity>, targets: Query<&Target>) -> bool {
-    targets.get(agent).is_ok_and(|target| target.entity.is_some())
+fn has_target(target: &Target) -> bool {
+    target.entity.is_some()
 }
 
 let tree = behaviour_tree! {
@@ -29,6 +30,10 @@ let tree = behaviour_tree! {
 commands.entity(agent).insert(BehaviourTree::new(tree));
 ```
 
+The [book](https://declaredlost.github.io/bevy_arbor) is the guide: how the
+pieces fit together, chapter by chapter. The API reference is on
+[docs.rs](https://docs.rs/bevy_arbor).
+
 > [!WARNING]
 > **Early development.** The API may change at any time.
 
@@ -36,8 +41,10 @@ commands.entity(agent).insert(BehaviourTree::new(tree));
 
 | Crate | Description |
 |---|---|
-| [`bevy_arbor`](crates/bevy_arbor) | Reactive behaviour trees: guards re-checked every tick, tasks as entities |
-| [`bevy_arbor_macros`](crates/bevy_arbor_macros) | `bevy_arbor`'s `behaviour_tree!` macro |
+| [`bevy_arbor`](crates/bevy_arbor) | The facade: every part behind a feature, one prelude, one plugin group |
+| [`bevy_arbor_bt`](crates/bevy_arbor_bt) | Reactive behaviour trees that sleep until something they wait on changes; tasks as entities |
+| [`bevy_arbor_perception`](crates/bevy_arbor_perception) | Perception: what an agent senses, in 2D or 3D, written as a component on it |
+| [`bevy_arbor_macros`](crates/bevy_arbor_macros) | The macros of every part: `behaviour_tree!` for trees |
 
 ## Requirements
 

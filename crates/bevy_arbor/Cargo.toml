@@ -2,8 +2,10 @@
 
 [package]
 name = "bevy_arbor"
-description = "Reactive behaviour trees for Bevy: guards re-checked every tick, tasks as entities, cancelled by the tree"
+description = "AI for Bevy, one crate per part: behaviour trees, with more to come"
+readme = "./README.md"
 keywords = ["bevy", "ai", "behaviour-tree", "game"]
+categories = ["game-development"]
 
 version = { workspace = true }
 rust-version = { workspace = true }
@@ -13,21 +15,31 @@ publish = { workspace = true }
 
 authors = { workspace = true }
 repository = { workspace = true }
+documentation = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["bt"]
+# Behaviour trees: `bevy_arbor_bt`, as `bevy_arbor::bt`
+bt = ["dep:bevy_arbor_bt"]
+# Perception: `bevy_arbor_perception`, as `bevy_arbor::perception`
+perception = ["dep:bevy_arbor_perception"]
+# Drawing what agents perceive, as `bevy_arbor::perception::gizmos`
+gizmos = ["perception", "bevy_arbor_perception/gizmos"]
 
 [dependencies]
-# The tree macro
-bevy_arbor_macros = { workspace = true, features = [] }
+# The parts, each behind its feature
+bevy_arbor_bt = { workspace = true, optional = true }
+bevy_arbor_perception = { workspace = true, optional = true }
 
-# Game engine
-bevy = { workspace = true, features = ["std", "bevy_log"] }
+# Game engine: the plugin group
+bevy = { workspace = true, features = [] }
 
 [dev-dependencies]
 bevy_harness = { workspace = true }
-
-# What guards cost: `cargo run --release -p bevy_arbor --example load`.
-[[example]]
-name = "load"
-test = false
 
 [lints]
 workspace = true

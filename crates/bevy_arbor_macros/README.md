@@ -1,4 +1,8 @@
 # bevy_arbor_macros
 
-The `behaviour_tree!` macro, re-exported by `bevy_arbor`: see its
+The macros of every `bevy_arbor` part, each re-exported by its part: see its
 documentation.
+
+| Macro | Part |
+|---|---|
+| `behaviour_tree!` | `bevy_arbor_bt` |
