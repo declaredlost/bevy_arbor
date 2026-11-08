@@ -17,6 +17,7 @@ pub(super) fn draw(
         Has<ShowPerception>,
     )>,
     shown: Query<(), With<ShowPerception>>,
+    facings: Query<&Facing>,
 ) {
     let (space, config) = (*space, gizmos.config_ext.clone());
     if config.sight.is_none() && config.lose_sight.is_none() {
@@ -28,6 +29,8 @@ pub(super) fn draw(
             continue;
         }
         let eye = space.flatten(transform.transform_point(sight.eye));
+        // Its own facing, else its agent's, as it looks.
+        let facing = facing.or_else(|| of.and_then(|of| facings.get(of.agent()).ok()));
         let ahead = space.looking(transform, facing);
         for axis in turns(space, transform) {
             if let Some(color) = config.sight {

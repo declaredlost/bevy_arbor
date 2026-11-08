@@ -3,6 +3,7 @@
 use bevy::prelude::*;
 
 use crate::avian::math::{RVector, ToRealPrecision};
+use crate::avian::prelude::Collider;
 
 /// `point`, from perception, as avian takes it.
 #[cfg(dim = "2d")]
@@ -50,4 +51,16 @@ pub(crate) fn upright() -> Rot2 {
 #[cfg(dim = "3d")]
 pub(crate) fn upright() -> Quat {
     Quat::IDENTITY
+}
+
+/// A ball `radius` across, as avian makes one.
+#[cfg(dim = "2d")]
+pub(crate) fn ball(radius: f32) -> Collider {
+    Collider::circle(radius.real())
+}
+
+/// A ball `radius` across, as avian makes one.
+#[cfg(dim = "3d")]
+pub(crate) fn ball(radius: f32) -> Collider {
+    Collider::sphere(radius.real())
 }

@@ -122,8 +122,9 @@ pub(crate) fn told<S: Sense>(
             Listeners::Allies { range } => {
                 let at = space.flatten(teller.translation());
                 for (listener, transform, theirs, candidates) in &mut listeners {
-                    let near = space.flatten(transform.translation()).distance_squared(at)
-                        <= range * range;
+                    let near = *range > 0.0
+                        && space.flatten(transform.translation()).distance_squared(at)
+                            <= range * range;
                     let allied =
                         Team::attitude(team.copied(), theirs.copied()) == Attitude::Friendly;
                     if listener != share.from && near && allied {
@@ -261,6 +262,58 @@ mod tests {
                 perceived::<Shared>(&app, ally).get(ally).is_none(),
                 "{space:?}: not about itself"
             );
+        }
+    }
+
+    /// How often something was noticed by what was shared.
+    #[derive(Resource, Default)]
+    struct NoticedShared(u32);
+
+    #[test]
+    fn a_memory_older_than_the_listener_remembers_is_not_noticed() {
+        for space in SPACES {
+            let mut app = app(space);
+            let teller = teller(&mut app);
+            app.entity_mut(teller)
+                .insert(Perceived::<Sight>::remembering(Duration::MAX));
+            let target = enemy(&mut app, ahead(space, 5.0));
+            let ally = listener(&mut app, 1, behind(space, 3.0));
+            app.entity_mut(ally)
+                .insert(Perceived::<Shared>::remembering(Duration::from_millis(1)));
+            app.app_mut().init_resource::<NoticedShared>().add_observer(
+                |_: On<crate::perceived::Noticed<Shared>>, mut n: ResMut<NoticedShared>| {
+                    n.0 += 1;
+                },
+            );
+            app.tick();
+            app.entity_mut(target)
+                .insert(GlobalTransform::from_translation(ahead(space, 50.0)));
+            app.ticks(5);
+            app.write(Share::to(teller, [ally]));
+            app.tick();
+            assert!(
+                perceived::<Shared>(&app, ally).get(target).is_none(),
+                "{space:?}: too old for it"
+            );
+            assert_eq!(
+                app.world().resource::<NoticedShared>().0,
+                0,
+                "{space:?}: not noticed, then forgotten"
+            );
+        }
+    }
+
+    #[test]
+    fn a_negative_range_tells_no_one() {
+        for space in SPACES {
+            let mut app = app(space);
+            let teller = teller(&mut app);
+            enemy(&mut app, ahead(space, 5.0));
+            let ally = listener(&mut app, 1, behind(space, 3.0));
+            app.tick();
+            app.write(Share::allies(teller, -10.0));
+            app.tick();
+            assert!(perceived::<Shared>(&app, ally).is_empty(), "{space:?}");
         }
     }
 }

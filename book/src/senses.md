@@ -135,7 +135,8 @@ fn face(mut guards: Query<(&Sprite, &mut Facing), (With<Guard>, Changed<Sprite>)
 ```
 
 The guard needs a `Facing` for this query to find it. Spawn it with
-`Facing(Dir3::X)`.
+`Facing(Dir3::X)`. The guard's sensors look the same way, unless they have a
+`Facing` of their own.
 
 ### What's seen
 

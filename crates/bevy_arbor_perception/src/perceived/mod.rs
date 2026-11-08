@@ -40,6 +40,10 @@ pub struct Perceived<S: Sense> {
     /// When something next fades: `None` to work it out again.
     #[reflect(ignore)]
     pub(crate) next_fade: Option<Duration>,
+    /// A sensor stopped sensing for it: what's active is looked at again,
+    /// even with no sensor looking.
+    #[reflect(ignore)]
+    pub(crate) recheck: bool,
     #[reflect(ignore)]
     sense: PhantomData<fn() -> S>,
 }
@@ -56,6 +60,7 @@ impl<S: Sense> Clone for Perceived<S> {
             percepts: self.percepts.clone(),
             memory: self.memory,
             next_fade: self.next_fade,
+            recheck: self.recheck,
             sense: PhantomData,
         }
     }
@@ -85,6 +90,7 @@ impl<S: Sense> Perceived<S> {
             percepts: Vec::new(),
             memory,
             next_fade: None,
+            recheck: false,
             sense: PhantomData,
         }
     }

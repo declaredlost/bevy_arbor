@@ -98,7 +98,8 @@ pub(crate) fn hear(
                 let at = space.flatten(noise.at);
                 let reach = hearing.range * noise.loudness;
                 let own = noise.source == agent || noise.source == sensor;
-                if !own && ear.distance_squared(at) <= reach * reach {
+                // A negative reach is none, not one squared positive.
+                if !own && reach > 0.0 && ear.distance_squared(at) <= reach * reach {
                     candidates.sense(noise.source, at);
                 }
             }
@@ -188,6 +189,18 @@ mod tests {
                 space.flatten(ahead(space, 4.0)),
                 "{space:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_negative_loudness_is_not_heard() {
+        for space in SPACES {
+            let mut app = app(space);
+            let agent = app.spawn((Hearing::new(10.0), GlobalTransform::IDENTITY));
+            let source = app.spawn(GlobalTransform::IDENTITY);
+            app.write(Noise::new(source, ahead(space, 5.0)).with_loudness(-1.0));
+            app.tick();
+            assert!(perceived::<Hearing>(&app, agent).is_empty(), "{space:?}");
         }
     }
 }

@@ -49,14 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is written to the agent's `Perceived<S>`, which changes only when something
   is noticed, lost or forgotten by that sense. Senses can sit on sensor
   entities (`SensorOf`), each sensing from its own transform. Sight goes
-  through a spatial grid, by range, cone and `lose_range`, looks staggered
-  across ticks; hearing from `Noise`, touch from `Touched`, and allies pass on
+  through a spatial index (its own grid, or yours through `SightIndex`), by
+  range, cone and `lose_range`, looks staggered across ticks; hearing from `Noise`, touch from `Touched`, and allies pass on
   what they perceive with `Share`. Systems of your own block and classify
   candidates in `PerceptionSystems::Occlude` and `Classify`; `Team` gives the
   attitude nothing else did. `Noticed<S>`, `Lost<S>` and `Forgotten<S>` are
   triggered on the agent.
 - `bevy_arbor_avian2d` and `bevy_arbor_avian3d`: perception with avian, one
-  source built for each dimension. `LineOfSightPlugin` blocks what's out of
+  source built for each dimension. `ColliderSightPlugin` lets sight find
+  what's near through avian's colliders (`PerceivableLayers`) instead of
+  perception's grid. `LineOfSightPlugin` blocks what's out of
   sight with ray casts (`Occluders`, `SensorOccluders`, `SightPoints`);
   `ContactTouchPlugin` turns collisions into `Touched`. In `ArborPlugins`
   through the facade's `avian2d` and `avian3d` features.

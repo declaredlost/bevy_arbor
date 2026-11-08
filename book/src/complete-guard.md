@@ -124,7 +124,14 @@ fn spawn(mut commands: Commands) {
         Transform::from_xyz(0.0, 0.0, 0.0),
         BehaviorTree::new(guard()),
     ));
-    commands.spawn((Intruder, Perceivable, Team(2), Transform::from_xyz(30.0, 0.0, 0.0)));
+    // The intruder: sight finds it through its collider.
+    commands.spawn((
+        Intruder,
+        Perceivable,
+        Team(2),
+        Collider::capsule(0.4, 1.0),
+        Transform::from_xyz(30.0, 0.0, 0.0),
+    ));
     // A wall: it blocks sight.
     commands.spawn((RigidBody::Static, Collider::rectangle(1.0, 6.0), Transform::from_xyz(5.0, 0.0, 0.0)));
     // A turret, with one place for a gunner.

@@ -40,9 +40,10 @@ What keeps trees cheap:
 
 ## Sight
 
-Sight finds what's near through a spatial grid. Its cells are as large as the
-longest sight, and it's rebuilt each tick. This is a 2D micro-benchmark, in
-which a tenth of the agents look each tick:
+Without avian, sight finds what's near through a spatial grid of its own. Its
+cells are as large as a typical sight, and it's rebuilt on the ticks a sensor
+looks. This is a 2D micro-benchmark, in which a tenth of the agents look each
+tick:
 
 | Agents | Through everything | Through the grid |
 |---|---|---|
@@ -53,13 +54,17 @@ which a tenth of the agents look each tick:
 Looking through everything grows with the square of the agents. The grid
 grows in step with them, at about 10 nanoseconds a thing to rebuild.
 
+With avian, sight asks avian's colliders instead, which avian keeps up to date
+anyway: nothing to rebuild. See
+[Occlusion and attitude](occlusion-attitude.md#finding-whats-near).
+
 What keeps perception cheap:
 
 - **A longer `interval`.** Sight looks five times a second by default, each
   agent at a moment of its own. Guards far from the player can look less
   often.
-- **Short sight.** The grid's cells are as large as the longest sight. One
-  agent that sees very far makes every look check more things.
+- **Perceivables on a layer of their own.** With avian, a look asks for every
+  collider in range. Set `PerceivableLayers`, so it skips walls and tiles.
 - **Occlusion only where needed.** A line-of-sight ray is cast only for what's
   already in range and in the cone. Fewer colliders on the occluding layers
   make each ray cheaper. See [Occlusion and attitude](occlusion-attitude.md).

@@ -86,7 +86,9 @@ impl Plugin for PerceptionPlugin {
             .add_systems(
                 self.schedule,
                 (
-                    (sense::build_grid, sense::look).chain(),
+                    (sense::build_grid, sense::look::<sense::GridIndex>)
+                        .chain()
+                        .run_if(not(resource_exists::<sense::OwnSightIndex>)),
                     sense::hear,
                     sense::feel,
                 )

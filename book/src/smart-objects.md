@@ -122,7 +122,8 @@ With the `nav` feature, `task(MoveTo::found::<Turret>())` does the same, and
 your movement takes the guard there. See [Navigation](navigation.md).
 
 When the branch ends, however it ends, the claim is given up. The plugged
-behavior is taken out of the guard too.
+behavior is taken out of the guard too. If the guard had a `Plugged<Using>`
+of its own, it's set aside while the slot's runs, and put back after.
 
 ## The details
 
@@ -172,10 +173,6 @@ fn setup(app: &mut App) {
   holds. Put `found::<Turret>` before it, and run the query first.
 - **Leaving the branch.** The claim lasts only while its branch runs. A task
   outside that branch can't count on the slot.
-- **The guard's own `Using`.** If the guard has a `Plugged<Using>` of its own,
-  claiming a slot that brings one replaces it. Releasing the slot then leaves
-  the guard with none. A slot that brings nothing leaves the guard's own in
-  place.
 
 [`SlotOf`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/slot/struct.SlotOf.html
 [`Slots`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/slot/struct.Slots.html

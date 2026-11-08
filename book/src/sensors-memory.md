@@ -35,6 +35,9 @@ condition doesn't change.
 - The sensor keeps nothing itself. Everything goes to the agent.
 - Despawning the agent despawns its sensors. The agent's [`Sensors`] lists
   them.
+- A sensor despawned, detached, or moved to another agent stops counting
+  at once. What only it saw is lost, as if it had looked away. Detached, it
+  senses for itself again.
 
 An agent can have several sensors of one sense, and its own as well. For
 sight, what any of them sees is active. It's lost only once none of them sees

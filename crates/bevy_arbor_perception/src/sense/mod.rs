@@ -17,6 +17,7 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use bevy::ecs::schedule::InternedScheduleLabel;
+use bevy::ecs::system::SystemParamItem;
 use bevy::prelude::*;
 
 pub(crate) use self::hearing::hear;
@@ -25,8 +26,8 @@ pub(crate) use self::sensor::agent;
 pub use self::sensor::{SensorOf, Sensors};
 pub(crate) use self::share::told;
 pub use self::share::{Listeners, Share, Shared};
-pub use self::sight::{Facing, Perceivable, Sight};
-pub(crate) use self::sight::{build_grid, look};
+pub use self::sight::{Facing, Perceivable, Sight, SightIndex};
+pub(crate) use self::sight::{GridIndex, build_grid, look};
 pub(crate) use self::touch::feel;
 pub use self::touch::{Touch, Touched};
 use crate::PerceptionSystems;
@@ -80,6 +81,40 @@ impl<S> Default for SensePlugin<S> {
     }
 }
 
+/// Set: sight finds what's near through an index other than perception's
+/// grid, which then isn't built.
+#[derive(Resource)]
+pub(crate) struct OwnSightIndex;
+
+/// Setting how sight finds what's near a sensor.
+pub trait SightIndexApp {
+    /// Sight finds what's near through `I` instead of perception's grid,
+    /// which is no longer built. Add `PerceptionPlugin` first; set one index
+    /// only.
+    fn set_sight_index<I: SightIndex>(&mut self) -> &mut Self
+    where
+        for<'w, 's> SystemParamItem<'w, 's, I::Param>: Sync;
+}
+
+impl SightIndexApp for App {
+    fn set_sight_index<I: SightIndex>(&mut self) -> &mut Self
+    where
+        for<'w, 's> SystemParamItem<'w, 's, I::Param>: Sync,
+    {
+        let Some(PerceptionSchedule(schedule)) =
+            self.world().get_resource::<PerceptionSchedule>().copied()
+        else {
+            warn!("`set_sight_index` needs `PerceptionPlugin` added first");
+            return self;
+        };
+        if self.world().contains_resource::<OwnSightIndex>() {
+            warn!("`set_sight_index` called twice: sight looks through both");
+        }
+        self.insert_resource(OwnSightIndex)
+            .add_systems(schedule, look::<I>.in_set(PerceptionSystems::Gather))
+    }
+}
+
 /// The schedule perception runs in, for each sense's systems to join.
 #[derive(Resource, Clone, Copy)]
 pub(crate) struct PerceptionSchedule(pub(crate) InternedScheduleLabel);
@@ -88,7 +123,9 @@ impl<S: Sense> Plugin for SensePlugin<S> {
     fn build(&self, app: &mut App) {
         app.register_type::<Perceived<S>>()
             .add_observer(sense_added::<S>)
-            .add_observer(sensor_attached::<S>);
+            .add_observer(sense_removed::<S>)
+            .add_observer(sensor_attached::<S>)
+            .add_observer(sensor_detached::<S>);
     }
 
     fn finish(&self, app: &mut App) {
@@ -133,7 +170,24 @@ fn sense_added<S: Sense>(added: On<Add<S>>, sensors: Query<&SensorOf>, mut comma
         .insert_if_new(Perceived::<S>::default());
 }
 
-/// A sensor with `S` attached to an agent: the agent keeps a `Perceived<S>`.
+/// A sense taken off an entity: it gathers no more, and its agent looks
+/// again at what it sensed.
+fn sense_removed<S: Sense>(
+    removed: On<Remove<S>>,
+    sensors: Query<&SensorOf>,
+    mut perceived: Query<&mut Perceived<S>>,
+    mut commands: Commands,
+) {
+    let sensor = removed.entity;
+    commands.entity(sensor).try_remove::<Candidates<S>>();
+    let agent = agent(sensor, sensors.get(sensor).ok());
+    if let Ok(mut perceived) = perceived.get_mut(agent) {
+        perceived.bypass_change_detection().recheck = true;
+    }
+}
+
+/// A sensor with `S` attached to an agent: the agent keeps a `Perceived<S>`,
+/// and the sensor, no longer an agent of its own, doesn't.
 fn sensor_attached<S: Sense>(
     attached: On<Insert<SensorOf>>,
     sensors: Query<&SensorOf, With<S>>,
@@ -143,7 +197,31 @@ fn sensor_attached<S: Sense>(
         commands
             .entity(of.agent())
             .insert_if_new(Perceived::<S>::default());
+        commands
+            .entity(attached.entity)
+            .try_remove::<Perceived<S>>();
     }
+}
+
+/// A sensor with `S` detached, despawned or attached elsewhere: its old
+/// agent looks again at what it saw, and the sensor, an agent of its own
+/// again unless it's attached elsewhere, keeps its own `Perceived<S>`.
+fn sensor_detached<S: Sense>(
+    detached: On<Discard<SensorOf>>,
+    sensors: Query<&SensorOf, With<S>>,
+    mut perceived: Query<&mut Perceived<S>>,
+    mut commands: Commands,
+) {
+    let Ok(of) = sensors.get(detached.entity) else {
+        return;
+    };
+    if let Ok(mut perceived) = perceived.get_mut(of.agent()) {
+        perceived.bypass_change_detection().recheck = true;
+    }
+    // Attached elsewhere, `sensor_attached` takes it off again.
+    commands
+        .entity(detached.entity)
+        .try_insert_if_new(Perceived::<S>::default());
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
+use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::*;
 
-use super::{Candidates, Lost, Noticed, Perceived, Team, Trace};
+use super::{Attitude, Candidates, Lost, Noticed, Perceived, Team, Trace};
 use crate::sense::{Sense, Sensors};
 use crate::space::Space;
 
@@ -44,21 +45,47 @@ pub(crate) fn commit<S: Sense>(
                 .chain(sensors.into_iter().flat_map(Sensors::iter))
                 .filter_map(|sensor| readings.get(sensor).ok())
                 .collect();
-            let looked = sources.iter().any(|source| source.looked);
+            // A sensor gone or detached: what it saw is looked at again.
+            let looked = sources.iter().any(|source| source.looked) || perceived.recheck;
             if !looked && sources.iter().all(|source| source.list.is_empty()) {
                 return;
             }
             let mine = teams.get(agent).ok().copied();
             let (mut changed, mut noticed, mut lost) = (false, Vec::new(), Vec::new());
             let percepts = perceived.bypass_change_detection();
-            let sensed = sources
-                .iter()
-                .flat_map(|source| source.list.iter())
-                .filter(|candidate| !candidate.blocked() && candidate.entity() != agent);
-            for candidate in sensed {
-                let attitude = candidate.attitude().unwrap_or_else(|| {
-                    Team::attitude(mine, teams.get(candidate.entity()).ok().copied())
+            percepts.recheck = false;
+            let memory = percepts.memory();
+            let sensed = || {
+                sources
+                    .iter()
+                    .flat_map(|source| source.list.iter())
+                    .filter(|candidate| !candidate.blocked() && candidate.entity() != agent)
+            };
+            // One attitude for each, however many sensors sensed it: one a
+            // system set beats the team's.
+            let mut attitudes = EntityHashMap::<(Attitude, bool)>::default();
+            for candidate in sensed() {
+                let set = candidate.attitude();
+                let slot = attitudes.entry(candidate.entity()).or_insert_with(|| {
+                    let team = Team::attitude(mine, teams.get(candidate.entity()).ok().copied());
+                    (set.unwrap_or(team), set.is_some())
                 });
+                if let Some(set) = set
+                    && !slot.1
+                {
+                    *slot = (set, true);
+                }
+            }
+            for candidate in sensed() {
+                // Sensed so long ago it'd be forgotten at once, as an old
+                // memory shared: not noticed at all.
+                let stale = candidate
+                    .at()
+                    .is_some_and(|at| at.saturating_add(memory) <= now);
+                if stale && percepts.get(candidate.entity()).is_none() {
+                    continue;
+                }
+                let (attitude, _) = attitudes[&candidate.entity()];
                 let trace = Trace {
                     at: candidate.at().unwrap_or(now),
                     position: candidate.position(),
@@ -182,6 +209,52 @@ mod tests {
                 app.world().resource::<Changes>().0,
                 seen,
                 "{space:?}: a tree reading sight sleeps on"
+            );
+        }
+    }
+
+    /// What the agent's own looking finds, a system sets hostile; what its
+    /// sensors find, it leaves to teams.
+    fn hostile_to_the_agent_only(mut own: Query<&mut Candidates<Sight>, Without<SensorOf>>) {
+        for mut candidates in &mut own {
+            for candidate in candidates.iter_mut() {
+                candidate.set_attitude(Attitude::Hostile);
+            }
+        }
+    }
+
+    #[test]
+    fn sensors_disagreeing_settle_on_what_a_system_set_and_stay_settled() {
+        for space in SPACES {
+            let mut app = app(space);
+            app.app_mut().add_systems(
+                FixedUpdate,
+                hostile_to_the_agent_only.in_set(PerceptionSystems::Classify),
+            );
+            let agent = looker(
+                &mut app,
+                Sight::new(10.0).with_half_angle(std::f32::consts::PI),
+            );
+            app.spawn((
+                Sight::new(10.0)
+                    .with_half_angle(std::f32::consts::PI)
+                    .with_interval(Duration::ZERO),
+                SensorOf(agent),
+                GlobalTransform::IDENTITY,
+            ));
+            let target = thing(&mut app, ahead(space, 5.0));
+            app.ticks(2);
+            let attitude = perceived::<Sight>(&app, agent)
+                .get(target)
+                .unwrap()
+                .attitude();
+            assert_eq!(attitude, Attitude::Hostile, "{space:?}: the system's");
+            let changes = app.world().resource::<Changes>().0;
+            app.ticks(5);
+            assert_eq!(
+                app.world().resource::<Changes>().0,
+                changes,
+                "{space:?}: nothing changing, nothing woken"
             );
         }
     }
