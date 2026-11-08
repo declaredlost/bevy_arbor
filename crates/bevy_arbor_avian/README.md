@@ -19,6 +19,9 @@ through colliders, and touch from contacts. Built as `bevy_arbor_avian2d` and
 
 ## Overview
 
+- `ColliderSightPlugin` lets sight find what's near through avian's
+  colliders, instead of perception's own grid: nothing to rebuild. What's
+  seen then needs a collider; `PerceivableLayers` keeps looks off walls.
 - `LineOfSightPlugin` blocks what's out of sight: a ray from where each sensor
   looked to each thing it would notice. What's on `Occluders`' layers blocks
   it, or a sensor's own `SensorOccluders`. Something with `SightPoints` is

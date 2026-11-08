@@ -6,6 +6,9 @@ pub use crate::AvianPerceptionPlugins;
 #[doc(no_inline)]
 pub use crate::eqs::{Clearance, LineOfSight, OccluderDistance};
 #[doc(no_inline)]
-pub use crate::sight::{LineOfSightPlugin, Occluders, SensorOccluders, SightPoints};
+pub use crate::sight::{
+    ColliderSightPlugin, LineOfSightPlugin, Occluders, PerceivableLayers, SensorOccluders,
+    SightPoints,
+};
 #[doc(no_inline)]
 pub use crate::touch::ContactTouchPlugin;

@@ -159,4 +159,67 @@ mod tests {
             assert!(app.world().get_entity(eye).is_err(), "{space:?}");
         }
     }
+
+    #[test]
+    fn what_only_a_gone_sensor_saw_is_lost() {
+        for space in SPACES {
+            let mut app = logged(space);
+            let agent = app.spawn(GlobalTransform::IDENTITY);
+            let eye = rear_eye(&mut app, agent, space);
+            let target = thing(&mut app, behind(space, 5.0));
+            app.tick();
+            assert!(sees(&app, agent, target), "{space:?}: seen");
+            app.entity_mut(eye).despawn();
+            app.tick();
+            assert!(!sees(&app, agent, target), "{space:?}: its eye gone");
+            assert!(
+                log(&app).iter().any(|(event, ..)| *event == "lost"),
+                "{space:?}: lost"
+            );
+        }
+    }
+
+    #[test]
+    fn what_a_sense_taken_off_saw_is_lost() {
+        for space in SPACES {
+            let mut app = app(space);
+            let agent = looker(&mut app, Sight::new(10.0));
+            let target = thing(&mut app, ahead(space, 5.0));
+            app.tick();
+            assert!(sees(&app, agent, target), "{space:?}");
+            app.entity_mut(agent).remove::<Sight>();
+            app.tick();
+            assert!(!sees(&app, agent, target), "{space:?}: blind now");
+        }
+    }
+
+    #[test]
+    fn attached_a_sensor_is_no_agent_of_its_own_and_detached_it_is_again() {
+        for space in SPACES {
+            let mut app = logged(space);
+            let agent = app.spawn(GlobalTransform::IDENTITY);
+            let eye = app.spawn((
+                Sight::new(10.0).with_interval(Duration::ZERO),
+                GlobalTransform::IDENTITY,
+            ));
+            thing(&mut app, ahead(space, 5.0));
+            app.tick();
+            app.entity_mut(eye).insert(SensorOf(agent));
+            app.tick();
+            assert!(
+                app.world().get::<Perceived<Sight>>(eye).is_none(),
+                "{space:?}: its agent's, not its own"
+            );
+            app.entity_mut(eye).remove::<SensorOf>();
+            app.tick();
+            assert!(
+                app.world().get::<Perceived<Sight>>(eye).is_some(),
+                "{space:?}: its own again"
+            );
+            assert!(
+                perceived::<Sight>(&app, agent).active().next().is_none(),
+                "{space:?}: the agent lost what it saw"
+            );
+        }
+    }
 }

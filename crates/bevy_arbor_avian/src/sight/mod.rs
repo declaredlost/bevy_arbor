@@ -1,6 +1,8 @@
 //! Line of sight: colliders blocking what perception's senses would
 //! notice.
 
+mod index;
+
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
@@ -8,6 +10,7 @@ use bevy_arbor_perception::perceived::Candidates;
 use bevy_arbor_perception::sense::{Sense, SensorOf, Sight};
 use bevy_arbor_perception::{PerceptionSystems, Space};
 
+pub use self::index::{ColliderSightPlugin, PerceivableLayers};
 use crate::avian::prelude::*;
 use crate::dim;
 use crate::plugin::schedule;

@@ -47,6 +47,9 @@ impl Claims {
 pub struct Claim<Q: Send + Sync + 'static> {
     /// The slot it holds, while its branch runs.
     held: Option<Entity>,
+    /// What the slot plugged into the agent, and what the agent had plugged
+    /// in before, set aside to put back as the branch ends.
+    swapped: Option<(Plugged<Using>, Option<Plugged<Using>>)>,
     key: PhantomData<fn() -> Q>,
 }
 
@@ -57,11 +60,13 @@ pub struct Claim<Q: Send + Sync + 'static> {
 /// disabled: so a slot taken by another agent first, or disabled, keeps the
 /// branch out, or cancels it. As its branch starts, the slot is claimed, and
 /// its `Plugged<Using>`, if it has one, is plugged into the agent, for
-/// `Socket(Using)` to run; as it ends, however it ends, both are given up.
+/// `Socket(Using)` to run; as it ends, however it ends, both are given up,
+/// and what the agent had plugged in before is put back.
 #[must_use]
 pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
     Claim {
         held: None,
+        swapped: None,
         key: PhantomData,
     }
 }
@@ -107,11 +112,14 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
             return;
         };
         entity.insert(ClaimedBy(agent));
-        let using = entity.get::<Plugged<Using>>().cloned();
-        if let Some(using) = using
+        let brought = entity.get::<Plugged<Using>>().cloned();
+        if let Some(brought) = brought
             && let Ok(mut agent) = world.get_entity_mut(agent)
         {
-            agent.insert(using);
+            // The agent's own, set aside while the slot's runs.
+            let own = agent.get::<Plugged<Using>>().cloned();
+            agent.insert(brought.clone());
+            self.swapped = Some((brought, own));
         }
         self.held = Some(slot);
     }
@@ -122,29 +130,29 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         };
         let agent = cx.agent();
         let world = cx.world_mut();
-        let Ok(mut entity) = world.get_entity_mut(slot) else {
-            // The slot's gone: what it plugged in goes too.
-            if let Ok(mut agent) = world.get_entity_mut(agent) {
-                agent.remove::<Plugged<Using>>();
-            }
-            return;
-        };
-        if entity
-            .get::<ClaimedBy>()
-            .is_some_and(|claimed| claimed.agent() == agent)
+        if let Ok(mut entity) = world.get_entity_mut(slot)
+            && entity
+                .get::<ClaimedBy>()
+                .is_some_and(|claimed| claimed.agent() == agent)
         {
             entity.remove::<ClaimedBy>();
         }
-        let offered = entity.get::<Plugged<Using>>().cloned();
-        if let Ok(mut agent) = world.get_entity_mut(agent) {
-            // Only what this slot plugged in: the agent's own stays.
-            let ours = agent
-                .get::<Plugged<Using>>()
-                .zip(offered.as_ref())
-                .is_some_and(|(plugged, offered)| plugged.same(offered));
-            if ours {
-                agent.remove::<Plugged<Using>>();
-            }
+        let Some((brought, own)) = self.swapped.take() else {
+            return;
+        };
+        let Ok(mut agent) = world.get_entity_mut(agent) else {
+            return;
+        };
+        // Only what the slot plugged in, if it's still there: one plugged in
+        // since stays.
+        if agent
+            .get::<Plugged<Using>>()
+            .is_some_and(|plugged| plugged.same(&brought))
+        {
+            match own {
+                Some(own) => agent.insert(own),
+                None => agent.remove::<Plugged<Using>>(),
+            };
         }
     }
 
@@ -259,6 +267,26 @@ mod tests {
         app.tick();
         assert!(app.world().get::<Plugged<Using>>(agent).is_none());
         assert_eq!(app.count::<With<Rest>>(), 0);
+    }
+
+    #[test]
+    fn the_agents_own_is_put_back_once_the_seats_is_done() {
+        fn own() -> Behavior {
+            behavior_tree! { Wait(100.0) }
+        }
+        let mut app = app();
+        let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
+        let agent = sitter(&mut app);
+        let mine = Plugged::new(Using, own);
+        app.entity_mut(agent).insert(mine.clone());
+        app.ticks(2);
+        assert_eq!(held(&app, agent), Some(seats[0]));
+        let plugged = app.world().get::<Plugged<Using>>(agent).unwrap();
+        assert!(!plugged.same(&mine), "the seat's, while it's held");
+        app.entity_mut(seats[0]).insert(SlotDisabled);
+        app.tick();
+        let plugged = app.world().get::<Plugged<Using>>(agent).unwrap();
+        assert!(plugged.same(&mine), "its own, back");
     }
 
     #[test]

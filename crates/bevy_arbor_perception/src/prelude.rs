@@ -9,7 +9,7 @@ pub use crate::perceived::{
 #[doc(no_inline)]
 pub use crate::sense::{
     Facing, Hearing, Listeners, Noise, Perceivable, Sense, SensePlugin, SensorOf, Sensors, Share,
-    Shared, Sight, Touch, Touched,
+    Shared, Sight, SightIndex, SightIndexApp, Touch, Touched,
 };
 #[doc(no_inline)]
 pub use crate::{PerceptionPlugin, PerceptionSystems};

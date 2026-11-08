@@ -2,9 +2,11 @@ use bevy::app::plugin_group;
 use bevy::prelude::*;
 
 plugin_group! {
-    /// Line of sight for sight, and touch from contacts.
+    /// Sight finding what's near through avian's colliders, line of sight,
+    /// and touch from contacts.
     #[derive(Default)]
     pub struct AvianPerceptionPlugins {
+        crate::sight:::ColliderSightPlugin,
         crate::sight:::LineOfSightPlugin,
         crate::touch:::ContactTouchPlugin,
     }

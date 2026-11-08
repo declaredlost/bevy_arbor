@@ -72,9 +72,14 @@ pub(crate) fn looker(app: &mut TestApp) -> Entity {
     ))
 }
 
-/// Something that can be seen, `distance` ahead.
+/// Something that can be seen, `distance` ahead: with a small collider, for
+/// sight to find it through avian.
 pub(crate) fn thing(app: &mut TestApp, distance: f32) -> Entity {
-    app.spawn((Perceivable, Transform::from_translation(ahead(distance))))
+    app.spawn((
+        Perceivable,
+        crate::dim::ball(0.25),
+        Transform::from_translation(ahead(distance)),
+    ))
 }
 
 /// Whether `agent` has `thing` in view.

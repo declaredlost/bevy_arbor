@@ -1,6 +1,7 @@
 use std::f32::consts::{FRAC_PI_2, PI};
 use std::time::Duration;
 
+use bevy::ecs::system::{ReadOnlySystemParam, StaticSystemParam, SystemParamItem};
 use bevy::prelude::*;
 
 use super::{Sense, SensorOf, agent};
@@ -98,20 +99,39 @@ pub struct Perceivable;
 /// On an agent: which way it looks, if not as its transform does.
 ///
 /// In a side-scroller, where a sprite flipped by `Sprite::flip_x` doesn't turn
-/// its transform, keep this up to date instead.
+/// its transform, keep this up to date instead. Its sensors look the same way,
+/// unless they have a `Facing` of their own.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Debug, PartialEq)]
 pub struct Facing(pub Dir3);
 
-/// Puts everything that can be seen in the grid, cells as large as the longest
-/// sight.
+/// Puts everything perceivable in the grid, on the ticks a sensor looks:
+/// cells as large as a typical sight, the median, so one sensor seeing very
+/// far doesn't make every look go through huge cells.
 pub(crate) fn build_grid(
+    time: Res<Time>,
     mut grid: ResMut<Grid>,
     space: Res<Space>,
-    sights: Query<&Sight>,
+    sights: Query<(&Sight, Option<&Candidates<Sight>>)>,
     things: Query<(Entity, &GlobalTransform), With<Perceivable>>,
 ) {
-    let size = sights.iter().map(Sight::reach).fold(0.0, f32::max);
+    let now = time.elapsed();
+    // Not yet looked, or due: either looks this tick.
+    let looks = sights.iter().any(|(_, candidates)| {
+        candidates
+            .and_then(|candidates| candidates.next_look)
+            .is_none_or(|due| now >= due)
+    });
+    if !looks {
+        return;
+    }
+    let mut reaches: Vec<f32> = sights.iter().map(|(sight, _)| sight.reach()).collect();
+    let middle = reaches.len() / 2;
+    let size = if reaches.is_empty() {
+        0.0
+    } else {
+        *reaches.select_nth_unstable_by(middle, f32::total_cmp).1
+    };
     let space = *space;
     grid.rebuild(
         size,
@@ -122,12 +142,50 @@ pub(crate) fn build_grid(
     );
 }
 
-/// Each sensor due to look, looks: what's in range and in its cone becomes a
-/// candidate.
-pub(crate) fn look(
+/// How sight finds what's near a sensor: perception's own grid unless
+/// another is set with
+/// [`set_sight_index`](crate::sense::SightIndexApp::set_sight_index), as the
+/// avian crates set avian's colliders.
+pub trait SightIndex: Send + Sync + 'static {
+    /// What it reads, as a system would.
+    type Param: ReadOnlySystemParam;
+
+    /// Calls `found` with each [`Perceivable`] thing within `radius` of
+    /// `point`, and where it is in perception's [`Space`]. More is fine:
+    /// sight measures each against its range and cone.
+    fn near(
+        param: &SystemParamItem<Self::Param>,
+        point: Vec3,
+        radius: f32,
+        found: &mut dyn FnMut(Entity, Vec3),
+    );
+}
+
+/// Perception's own index: a grid of everything perceivable, rebuilt on the
+/// ticks a sensor looks.
+pub(crate) struct GridIndex;
+
+impl SightIndex for GridIndex {
+    type Param = Res<'static, Grid>;
+
+    fn near(
+        grid: &SystemParamItem<Self::Param>,
+        point: Vec3,
+        radius: f32,
+        found: &mut dyn FnMut(Entity, Vec3),
+    ) {
+        for (entity, at) in grid.near(point, radius) {
+            found(entity, at);
+        }
+    }
+}
+
+/// Each sensor due to look, looks: what's in range and in its cone, of what
+/// the index `I` finds near it, becomes a candidate.
+pub(crate) fn look<I: SightIndex>(
     time: Res<Time>,
     space: Res<Space>,
-    grid: Res<Grid>,
+    index: StaticSystemParam<I::Param>,
     mut sensors: Query<(
         Entity,
         &Sight,
@@ -136,27 +194,33 @@ pub(crate) fn look(
         Option<&SensorOf>,
         &mut Candidates<Sight>,
     )>,
-) {
+    facings: Query<&Facing>,
+) where
+    for<'w, 's> SystemParamItem<'w, 's, I::Param>: Sync,
+{
     let (now, space) = (time.elapsed(), *space);
+    let index = &*index;
     sensors
         .par_iter_mut()
         .for_each(|(sensor, sight, transform, facing, of, mut candidates)| {
             let due = *candidates
                 .next_look
-                .get_or_insert_with(|| now + stagger(sensor, sight.interval));
+                .get_or_insert_with(|| now.saturating_add(stagger(sensor, sight.interval)));
             if now < due {
                 return;
             }
             let candidates = candidates.as_mut();
-            candidates.next_look = Some(now + sight.interval);
+            candidates.next_look = Some(now.saturating_add(sight.interval));
             let eye = space.flatten(transform.transform_point(sight.eye));
             candidates.look_from(eye);
+            // Its own facing, else its agent's: an eye on a flipped sprite.
+            let facing = facing.or_else(|| of.and_then(|of| facings.get(of.agent()).ok()));
             let ahead = space.looking(transform, facing);
             let (agent, all_round) = (agent(sensor, of), sight.half_angle >= PI);
             let cos = sight.half_angle.cos();
-            for (entity, point) in grid.near(eye, sight.reach()) {
+            I::near(index, eye, sight.reach(), &mut |entity, point| {
                 if entity == sensor || entity == agent {
-                    continue;
+                    return;
                 }
                 let to = point - eye;
                 // What it already sees, it keeps seeing further out.
@@ -166,12 +230,14 @@ pub(crate) fn look(
                     sight.range
                 };
                 if to.length_squared() > range * range {
-                    continue;
+                    return;
                 }
-                if all_round || to == Vec3::ZERO || to.normalize().dot(ahead) >= cos {
+                // Looking no way it can tell, its cone holds nothing.
+                let in_cone = ahead != Vec3::ZERO && to.normalize().dot(ahead) >= cos;
+                if all_round || to == Vec3::ZERO || in_cone {
                     candidates.sense(entity, point);
                 }
-            }
+            });
         });
 }
 
@@ -189,6 +255,7 @@ mod tests {
     use std::time::Duration;
 
     use bevy::prelude::*;
+    use bevy_harness::TestApp;
 
     use crate::prelude::*;
     use crate::testing::*;
@@ -349,6 +416,100 @@ mod tests {
                 Space::flatten(space, ahead(space, 5.0)),
                 "{space:?}"
             );
+        }
+    }
+
+    #[test]
+    fn looking_no_way_it_can_tell_its_cone_holds_nothing() {
+        let mut app = app(Space::Planar);
+        // Out of the plane: no way within it.
+        let agent = app.spawn((
+            Sight::new(10.0).with_interval(Duration::ZERO),
+            Facing(Dir3::Z),
+            GlobalTransform::IDENTITY,
+        ));
+        let behind = thing(&mut app, behind(Space::Planar, 5.0));
+        let front = thing(&mut app, ahead(Space::Planar, 5.0));
+        app.tick();
+        assert!(!sees(&app, agent, behind), "not all round");
+        assert!(!sees(&app, agent, front));
+    }
+
+    #[test]
+    fn a_sensor_looks_as_its_agent_faces() {
+        for space in SPACES {
+            let mut app = app(space);
+            let backwards = Dir3::new(behind(space, 1.0).with_z(match space {
+                Space::Planar => 0.0,
+                Space::Volume => 1.0,
+            }))
+            .unwrap();
+            let agent = app.spawn((Facing(backwards), GlobalTransform::IDENTITY));
+            app.spawn((
+                Sight::new(10.0).with_interval(Duration::ZERO),
+                SensorOf(agent),
+                GlobalTransform::IDENTITY,
+            ));
+            let back = thing(&mut app, behind(space, 5.0));
+            app.tick();
+            assert!(sees(&app, agent, back), "{space:?}: turned with its agent");
+        }
+    }
+
+    #[test]
+    fn a_huge_interval_does_not_overflow() {
+        for space in SPACES {
+            let mut app = app(space);
+            let agent = looker(&mut app, Sight::new(10.0));
+            thing(&mut app, ahead(space, 5.0));
+            app.tick();
+            // Looked: its next look is now plus the interval.
+            app.entity_mut(agent)
+                .insert(Sight::new(10.0).with_interval(Duration::MAX));
+            app.ticks(3);
+            assert!(
+                app.world().get::<Perceived<Sight>>(agent).is_some(),
+                "{space:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn one_sight_seeing_far_does_not_size_the_grid() {
+        for space in SPACES {
+            let mut app = app(space);
+            for _ in 0..4 {
+                looker(&mut app, Sight::new(5.0));
+            }
+            looker(&mut app, Sight::new(500.0));
+            app.tick();
+            let size = app.world().resource::<crate::space::Grid>().size();
+            assert!(size < 10.0, "{space:?}: a typical sight's, not 500: {size}");
+        }
+    }
+
+    #[test]
+    fn no_one_looking_the_grid_is_left_as_it_was() {
+        for space in SPACES {
+            let mut app = app(space);
+            app.spawn((
+                Sight::new(10.0).with_interval(Duration::from_secs(1_000)),
+                GlobalTransform::IDENTITY,
+            ));
+            let target = thing(&mut app, ahead(space, 5.0));
+            app.ticks(2);
+            let listed_at = |app: &TestApp, at: Vec3| {
+                app.world()
+                    .resource::<crate::space::Grid>()
+                    .near(at, 1.0)
+                    .any(|(entity, _)| entity == target)
+            };
+            assert!(listed_at(&app, ahead(space, 5.0)), "{space:?}: built once");
+            // Moved where no one's looking: the grid isn't rebuilt to know.
+            app.entity_mut(target)
+                .insert(GlobalTransform::from_translation(ahead(space, 500.0)));
+            app.tick();
+            assert!(listed_at(&app, ahead(space, 5.0)), "{space:?}: as it was");
         }
     }
 }

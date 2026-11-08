@@ -124,6 +124,44 @@ commands.spawn((
 
 Head, middle and feet. A head over the crate is enough.
 
+### Finding what's near
+
+With avian, sight finds what's near a guard through avian's colliders
+([`ColliderSightPlugin`], in `ArborPlugins`), not perception's own grid.
+Avian keeps its colliders up to date anyway, so there's nothing to rebuild.
+
+So **what can be seen needs a collider**, on it or on a child of it. An
+intruder without one is never found. Give it the collider it has anyway, for
+physics.
+
+A look asks avian for every collider in range: the walls and floor tiles too.
+Put what's perceivable on a layer of its own, and say so with
+[`PerceivableLayers`]:
+
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+use avian2d::prelude::*;
+use bevy_arbor::avian2d::sight::PerceivableLayers;
+
+#[derive(PhysicsLayer, Default)]
+enum Layer {
+    #[default]
+    Default,
+    Walls,
+    Bodies,
+}
+
+fn setup(app: &mut App) {
+    // Looks ask only for the guards and intruders.
+    app.insert_resource(PerceivableLayers(LayerMask::from(Layer::Bodies)));
+}
+```
+
+Without avian's `PhysicsPlugins`, it warns and sight keeps its own grid. A
+game on another physics engine can do the same with its own: implement
+[`SightIndex`] and call `app.set_sight_index::<YourIndex>()`.
+
 ### Touch from contacts
 
 The avian integration also adds [`ContactTouchPlugin`]. It turns collisions
@@ -242,6 +280,8 @@ the guard's tree wakes and sees an enemy.
   otherwise. Add your stage systems to the same schedule.
 - **A step behind.** Avian runs in `FixedPostUpdate`, so a ray sees colliders
   where the last physics step left them. An AI won't notice.
+- **Perceivable without a collider.** With avian, sight finds things through
+  their colliders. Without one, a perceivable is never seen.
 - **Two classifiers on one candidate.** The last to run wins, and their order
   isn't fixed. Make each handle its own case, or order them with `.after`.
 
@@ -249,6 +289,9 @@ the guard's tree wakes and sees an enemy.
 [`Occluders`]: https://docs.rs/bevy_arbor_avian2d/latest/bevy_arbor_avian2d/sight/struct.Occluders.html
 [`SensorOccluders`]: https://docs.rs/bevy_arbor_avian2d/latest/bevy_arbor_avian2d/sight/struct.SensorOccluders.html
 [`SightPoints`]: https://docs.rs/bevy_arbor_avian2d/latest/bevy_arbor_avian2d/sight/struct.SightPoints.html
+[`ColliderSightPlugin`]: https://docs.rs/bevy_arbor_avian2d/latest/bevy_arbor_avian2d/sight/struct.ColliderSightPlugin.html
+[`PerceivableLayers`]: https://docs.rs/bevy_arbor_avian2d/latest/bevy_arbor_avian2d/sight/struct.PerceivableLayers.html
+[`SightIndex`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/trait.SightIndex.html
 [`ContactTouchPlugin`]: https://docs.rs/bevy_arbor_avian2d/latest/bevy_arbor_avian2d/touch/struct.ContactTouchPlugin.html
 [`PerceptionSystems`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/enum.PerceptionSystems.html
 [`Candidates<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Candidates.html
