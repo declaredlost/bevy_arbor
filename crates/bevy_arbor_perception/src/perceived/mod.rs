@@ -1,4 +1,4 @@
-//! What an agent perceives and remembers by each sense, how it stands towards
+//! What an agent perceives and remembers by each sense, how it stands toward
 //! it, and what's triggered as that changes.
 
 mod attitude;
@@ -24,7 +24,7 @@ use crate::sense::Sense;
 /// itself and its sensors.
 ///
 /// Changes only when something is noticed, lost or forgotten, or its attitude
-/// changes, never as things move: so a tree whose guards read it sleeps in
+/// changes, never as things move: so a tree whose decorators read it sleeps in
 /// between, and one reading `Perceived<Sight>` isn't woken by a noise. While
 /// something is active (in view, for sight), read its `Transform` for where
 /// it is now.
@@ -169,7 +169,7 @@ impl Percept {
         self.entity
     }
 
-    /// How the agent stands towards it.
+    /// How the agent stands toward it.
     #[must_use]
     pub fn attitude(&self) -> Attitude {
         self.attitude
@@ -264,7 +264,7 @@ impl Percept {
 }
 
 /// When and where something was sensed, by the clock perception runs on, and in
-/// its [`Space`](crate::space::Space).
+/// its [`Space`](crate::Space).
 #[derive(Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Debug, PartialEq)]
 pub struct Trace {

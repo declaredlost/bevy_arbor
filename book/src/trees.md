@@ -1,157 +1,221 @@
-# Building trees
+# Trees
 
-A tree is written as its shape with [`behaviour_tree!`], and put on an agent
-as a [`BehaviourTree`]:
+A behavior tree says what the guard does, and in what order of priority. You
+write its shape with [`behavior_tree!`] and put it on the guard as a
+[`BehaviorTree`].
+
+## A guard that fights
+
+The guard chases and shoots an intruder it sees, searches for one it
+remembers, and patrols otherwise:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-# #[derive(Component, Clone)] struct Patrol;
-# #[derive(Component, Clone)] struct Rest;
-# fn spawn(mut commands: Commands) {
-commands.spawn(BehaviourTree::new(behaviour_tree! {
-    Forever => {
-        Sequence => {
-            task("Patrol", Patrol),
-            Wait(2.0),
-            task("Rest", Rest),
+# #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
+# #[derive(Component, Clone)] struct Chase;
+# #[derive(Component, Clone)] struct Search;
+# #[derive(Component, Clone)] struct Shoot;
+# fn sees_intruder(seen: &Perceived<Sight>) -> bool { seen.active().any(Percept::is_hostile) }
+# fn remembers_intruder(seen: &Perceived<Sight>) -> bool { seen.iter().any(|p| p.is_hostile() && !p.is_active()) }
+fn guard() -> Behavior {
+    behavior_tree! {
+        Forever => {
+            Select => {
+                when(sees_intruder) => Sequence => {
+                    task(Chase),
+                    task(Shoot),
+                    Wait(0.8),
+                },
+                when(remembers_intruder) => task(Search),
+                task(Patrol { from: -10.0, to: 10.0 }),
+            }
         }
     }
-}));
-# }
+}
+```
+
+Read it from the top:
+
+- `Forever` runs its child again each time it ends, so the guard never stops.
+- `Select` runs the first branch whose decorator passes. A branch without
+  `when` always passes, so patrolling is the fallback.
+- `Sequence` runs its children in turn: chase, shoot, then wait 0.8 seconds.
+- `task(..)` is work your systems do. See [Tasks](tasks.md).
+
+Put the tree on the guard as you spawn it:
+
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+# #[derive(Component)] struct Guard;
+# fn guard() -> Behavior { behavior_tree! { Wait(1.0) } }
+fn spawn_guard(mut commands: Commands) {
+    commands.spawn((Guard, Transform::default(), BehaviorTree::new(guard())));
+}
 ```
 
 ## Nodes
 
+Composites have several children:
+
+| Node | What it does |
+|---|---|
+| `Select => { .. }` | Runs the first branch whose decorator passes, and switches when that changes |
+| `Fallback => { .. }` | Like `Select`, but never interrupts what it started |
+| `Scored => { .. }` | Tries branches from the highest `score(system)` down, until one succeeds |
+| `Random(roll) => { .. }` | Tries children in a random order, until one succeeds |
+| `Sequence => { .. }` | Runs children in turn, until one fails |
+| `All => { .. }` | Runs children together. Fails at the first failure, succeeds once all succeed |
+| `Any => { .. }` | Runs children together. Succeeds at the first success, fails once all fail |
+| `Race => { .. }` | Runs children together. The first to end decides |
+
+Modifiers have one child:
+
 | Node | What it does |
 |---|---|
 | `Forever => { .. }` | Runs its child again each time it ends |
-| `Select => { .. }` | The first branch whose guard passes, asked again as what it reads changes |
-| `Fallback => { .. }` | The same, asking each guard once: what's started isn't interrupted |
-| `Scored => { .. }` | Branches from the highest `score(system)` down, until one succeeds |
-| `Random(roll) => { .. }` | Children in a random order, until one succeeds |
-| `Sequence => { .. }` | Each child in turn, until one fails |
-| `All => { .. }` | Children together; fails at the first failure, succeeds once all have |
-| `Any => { .. }` | Children together; succeeds at the first success, fails once all have |
-| `Race => { .. }` | Children together; the first to end settles it |
-| `While(guard) => { .. }` | Its child over and over while the guard passes; succeeds when it stops |
-| `Invert => { .. }` | Its child's result, reversed |
-| `Succeed => { .. }` | Its child, then success whatever it did |
-| `Commit => { .. }` | Its child, not to be interrupted once started |
-| `Timeout(length) => { .. }` | Its child, cancelled and failed after `length` |
-| `State(bundle) => { .. }` | Its child, with `bundle` on the agent while it runs |
+| `Repeat(times) => { .. }` | Runs its child `times` times. Fails at its first failure |
+| `RepeatWhile(decorator) => { .. }` | Runs its child over and over while the decorator passes |
+| `Invert => { .. }` | Reverses its child's result |
+| `Succeed => { .. }` | Succeeds whatever its child did |
+| `Commit => { .. }` | Can't be interrupted once started. See [Interruption](interruption.md) |
+| `Timeout(length) => { .. }` | Cancels and fails its child after `length` |
+| `State(bundle) => { .. }` | Puts `bundle` on the agent while its child runs. See [Tasks](tasks.md#state) |
+| `Socket(key)` | Runs the subtree plugged into the agent. See [Large trees](large-trees.md#sockets) |
+
+Leaves do the work:
+
+| Node | What it does |
+|---|---|
+| `task(bundle)` | Spawns a task entity and waits for it to report. See [Tasks](tasks.md) |
+| `act(system)` | Runs a system once. Its `bool` is the result |
 | `Wait(length)` | Succeeds after `length` |
-| `task(name, bundle)` | Spawns a task entity with `bundle`, until it reports |
-| `act(system)` | Runs a system once; what it returns is its result |
-| `@ expr`, `@[ expr ]` | A node built elsewhere, or an iterator of them |
+| `@ expr` | Puts in a subtree built elsewhere. See [Large trees](large-trees.md) |
 
-A `length` is a number of seconds (`Wait(1.5)`), checked as it compiles, or
-any `Duration` (`Wait(cooldown)`). Several children under a single-child node
-run as a `Sequence`.
+A `length` is seconds, like `Wait(0.8)`, or any `Duration`. A number is
+checked as the tree compiles, so a negative wait is a compile error. If you
+give a one-child node several children, they run as a `Sequence`.
 
-## Select, Fallback and Scored
+## Select and Fallback
 
-Branches take a guard with `when(..) => ..`; one without always passes.
+`Select` keeps asking its decorators. When the guard spots an intruder, the
+`Select` cancels the patrol and starts the chase. When the intruder is gone,
+it cancels the chase. This makes the guard react at once.
+
+A branch that fails falls through to the next one. It stays out until its
+decorator stops passing, so it can't restart itself in a loop. A branch that
+succeeds ends the `Select`.
+
+`Fallback` asks each decorator only when it gets to it. What it started runs
+to the end. Use it where reacting isn't wanted. [Interruption](interruption.md)
+compares the two.
+
+## Running things together
+
+`All`, `Any` and `Race` run their children at the same time. The guard shouts
+for help while it chases:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-# #[derive(Component, Clone)] struct Flee;
-# #[derive(Component, Clone)] struct Fight;
-# #[derive(Component, Clone)] struct Idle;
-# #[derive(Component)] struct Health(f32);
-fn badly_hurt(health: &Health) -> bool {
-    health.0 < 20.0
-}
-
-# fn tree() -> Behaviour {
-behaviour_tree! {
-    Select => {
-        when(badly_hurt) => task("Flee", Flee),
-        task("Idle", Idle),
+# #[derive(Component, Clone)] struct Chase;
+# #[derive(Component, Clone)] struct Shout;
+# fn tree() -> Behavior {
+behavior_tree! {
+    All => {
+        task(Chase),
+        task(Shout),
     }
 }
 # }
 ```
 
-`Select` asks its guards again whenever what they read changes: a guard
-passing cancels what's running below it, and the branch running is cancelled
-if its own guard stops passing. A branch that fails falls through to the next,
-and stays out until its guard stops passing or the `Select` restarts, so it
-can't restart itself in a loop. A branch that succeeds ends the `Select`.
+When a parallel node settles, it cancels the children still running.
 
-`Fallback` asks each guard only as it gets to it, so what's started isn't
-interrupted. `Scored` scores its branches once, as it starts, with systems
-taking the agent and returning a number, and tries them from the highest
-down:
+## Scored and Random
+
+`Scored` asks a score for each branch as it starts, and tries them from the
+highest down. A score is a system that takes the agent and returns an `f32`.
+`Random` shuffles its children with rolls from a system of yours, so you
+choose the randomness:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-# #[derive(Component, Clone)] struct Eat;
-# #[derive(Component, Clone)] struct Sleep;
-fn hunger(In(_): In<Entity>) -> f32 {
-    0.7
+# #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
+# #[derive(Component, Clone)] struct Search;
+fn suspicion(In(_guard): In<Entity>) -> f32 {
+    0.3
 }
 
-fn tiredness(In(_): In<Entity>) -> f32 {
-    0.4
+fn boredom(In(_guard): In<Entity>) -> f32 {
+    0.6
 }
 
-# fn tree() -> Behaviour {
-behaviour_tree! {
+fn roll(In(_guard): In<Entity>) -> f32 {
+    // A number from 0 up to 1, from your random source.
+    0.5
+}
+
+# fn tree() -> Behavior {
+behavior_tree! {
     Scored => {
-        score(hunger) => task("Eat", Eat),
-        score(tiredness) => task("Sleep", Sleep),
-    }
-}
-# }
-```
-
-## State
-
-`State(bundle) => { .. }` puts `bundle` on the agent while its branch runs,
-and takes it off as the branch ends or is cancelled. It's for systems that
-work only while a branch runs, filtering on `With<Hunting>`:
-
-```rust
-# use bevy::prelude::*;
-# use bevy_arbor::prelude::*;
-# #[derive(Component, Clone)] struct Approach;
-# #[derive(Component, Clone)] struct Pounce;
-# fn sees_prey(_: &Perceived<Sight>) -> bool { true }
-#[derive(Component, Clone)]
-struct Hunting;
-
-# fn tree() -> Behaviour {
-behaviour_tree! {
-    Select => {
-        when(sees_prey) => State(Hunting) => {
-            task("Approach", Approach),
-            task("Pounce", Pounce),
+        score(suspicion) => task(Search),
+        score(boredom) => Random(roll) => {
+            task(Patrol { from: -10.0, to: 0.0 }),
+            task(Patrol { from: 0.0, to: 10.0 }),
         },
     }
 }
 # }
 ```
 
-A branch of one task needn't: its task entity already marks it, and a system
-can filter on that.
+- A score or roll can return `Result<f32>`, so you can use `?`. An error goes
+  to Bevy's error handler.
+- A branch whose score is an error or NaN goes last.
 
-## The tree on an agent
+## Without the macro
 
-- [`TreeFinished`] is triggered on the agent as its tree ends, and
-  `BehaviourTree::outcome` says how. One under `Forever` never does.
-  `BehaviourTree::restart` starts a finished tree again from the top.
-- [`TreePaused`] on the agent holds its tree where it is. Time goes on, so a
-  `Wait` may be over when it's taken away.
-- Taking the tree away, replacing it, or despawning its agent cancels what
-  it's running.
-- An agent with a [`TreeTrace`] keeps its tree's outline in it, with `>` on
-  what's running, for an inspector.
+The macro calls [`Behavior`]'s builders. You can call them yourself, for
+trees built from data:
 
-[`behaviour_tree!`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/macro.behaviour_tree.html
-[`BehaviourTree`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviourTree.html
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+# #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
+# #[derive(Component, Clone)] struct Chase;
+# fn sees_intruder(seen: &Perceived<Sight>) -> bool { seen.active().any(Percept::is_hostile) }
+use bevy_arbor::bt::behavior::Branch;
+
+fn guard() -> Behavior {
+    Behavior::forever(Behavior::select(vec![
+        Branch::when(sees_intruder, Behavior::task(Chase)),
+        Branch::always(Behavior::task(Patrol { from: -10.0, to: 10.0 })),
+    ]))
+}
+```
+
+## The tree on the guard
+
+- [`TreeFinished`] is triggered on the guard when its tree ends.
+  `BehaviorTree::outcome` says how it ended. A tree under `Forever` never ends.
+- `BehaviorTree::restart` starts a finished tree again.
+- [`TreePaused`] on the guard holds its tree where it is: no decorators
+  asked, nothing started, and its task skipped by `Tasks`. Time still passes,
+  so a `Wait` may be over when you remove it.
+- Removing the tree, replacing it, or despawning the guard cancels what the
+  tree was running.
+
+## Pitfalls
+
+- A `Select` ends when a branch succeeds. Without `Forever` around it, the
+  guard stops after its first chase.
+- Order matters in a `Select`. A branch without `when` catches everything,
+  so put it last.
+
+[`behavior_tree!`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/macro.behavior_tree.html
+[`BehaviorTree`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTree.html
+[`Behavior`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Behavior.html
 [`TreeFinished`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeFinished.html
 [`TreePaused`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreePaused.html
-[`TreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeTrace.html

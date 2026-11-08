@@ -1,0 +1,38 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bevy_arbor_smart"
+description = "Smart objects for Bevy AI: things in the world with slots agents find, claim and use, bringing their own behavior"
+readme = "./README.md"
+keywords = ["bevy", "ai", "smart-objects", "game"]
+categories = ["game-development"]
+
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+authors = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+# The parts it runs with: trees claim and use slots, and environment queries
+# find them
+bevy_arbor_bt = { workspace = true, features = [] }
+bevy_arbor_eqs = { workspace = true, features = [] }
+bevy_arbor_perception = { workspace = true, features = [] }
+
+# Game engine
+bevy = { workspace = true, features = ["std", "bevy_log"] }
+
+[dev-dependencies]
+bevy_harness = { workspace = true }
+
+[lints]
+workspace = true

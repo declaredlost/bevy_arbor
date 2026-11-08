@@ -16,16 +16,16 @@ pub(crate) fn point(point: Vec3) -> RVector {
     point.real()
 }
 
-/// The way along `towards`, if it has one.
+/// The way along `toward`, if it has one.
 #[cfg(dim = "2d")]
-pub(crate) fn direction(towards: Vec3) -> Option<Dir2> {
-    Dir2::new(towards.truncate()).ok()
+pub(crate) fn direction(toward: Vec3) -> Option<Dir2> {
+    Dir2::new(toward.truncate()).ok()
 }
 
-/// The way along `towards`, if it has one.
+/// The way along `toward`, if it has one.
 #[cfg(dim = "3d")]
-pub(crate) fn direction(towards: Vec3) -> Option<Dir3> {
-    Dir3::new(towards).ok()
+pub(crate) fn direction(toward: Vec3) -> Option<Dir3> {
+    Dir3::new(toward).ok()
 }
 
 /// How far it is from `from` to `to`, in avian's plane or space.
@@ -38,4 +38,16 @@ pub(crate) fn distance(from: Vec3, to: Vec3) -> f32 {
 #[cfg(dim = "3d")]
 pub(crate) fn distance(from: Vec3, to: Vec3) -> f32 {
     from.distance(to)
+}
+
+/// No turn: a shape as it's built.
+#[cfg(dim = "2d")]
+pub(crate) fn upright() -> Rot2 {
+    Rot2::IDENTITY
+}
+
+/// No turn: a shape as it's built.
+#[cfg(dim = "3d")]
+pub(crate) fn upright() -> Quat {
+    Quat::IDENTITY
 }

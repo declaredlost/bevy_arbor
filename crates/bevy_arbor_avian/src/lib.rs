@@ -11,24 +11,17 @@ compile_error!("build `bevy_arbor_avian2d` or `bevy_arbor_avian3d`, not this sou
 use avian2d as avian;
 #[cfg(dim = "3d")]
 use avian3d as avian;
-use bevy::app::plugin_group;
 
 mod dim;
-mod occlusion;
+#[cfg(feature = "eqs")]
+#[cfg_attr(docsrs, doc(cfg(feature = "eqs")))]
+pub mod eqs;
+mod plugin;
 pub mod prelude;
-mod touch;
+pub mod sight;
+pub mod touch;
 
-pub use self::occlusion::{LineOfSightPlugin, Occluders, SensorOccluders, SightPoints};
-pub use self::touch::ContactTouchPlugin;
-
-plugin_group! {
-    /// Line of sight for sight, and touch from contacts.
-    #[derive(Default)]
-    pub struct AvianPerceptionPlugins {
-        occlusion:::LineOfSightPlugin,
-        touch:::ContactTouchPlugin,
-    }
-}
+pub use self::plugin::AvianPerceptionPlugins;
 
 #[cfg(test)]
 mod testing;

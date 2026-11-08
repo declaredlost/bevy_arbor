@@ -64,7 +64,7 @@ impl<S: Sense> Candidates<S> {
     }
 
     /// Senses `entity` at `position` now, in the plugin's
-    /// [`Space`](crate::space::Space).
+    /// [`Space`](crate::Space).
     pub fn sense(&mut self, entity: Entity, position: Vec3) {
         self.list.push(Candidate::new(entity, position));
     }
@@ -104,7 +104,7 @@ impl Candidate {
         self.entity
     }
 
-    /// Where it is, in the plugin's [`Space`](crate::space::Space).
+    /// Where it is, in the plugin's [`Space`](crate::Space).
     #[must_use]
     pub fn position(&self) -> Vec3 {
         self.position
@@ -127,13 +127,13 @@ impl Candidate {
         self.blocked
     }
 
-    /// How the agent stands towards it, if a system has said.
+    /// How the agent stands toward it, if a system has said.
     #[must_use]
     pub fn attitude(&self) -> Option<Attitude> {
         self.attitude
     }
 
-    /// Says how the agent stands towards it, over the
+    /// Says how the agent stands toward it, over the
     /// [`Team`](super::Team) fallback.
     pub fn set_attitude(&mut self, attitude: Attitude) {
         self.attitude = Some(attitude);

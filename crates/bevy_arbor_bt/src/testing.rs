@@ -5,7 +5,7 @@ use bevy_harness::TestApp;
 
 use crate::prelude::*;
 
-/// Guards read this off the agent.
+/// Decorators read this off the agent.
 #[derive(Component, Default)]
 pub(crate) struct Flags {
     pub(crate) high: bool,
@@ -73,8 +73,8 @@ pub(crate) fn app() -> TestApp {
         .build()
 }
 
-pub(crate) fn agent(app: &mut TestApp, tree: Behaviour) -> Entity {
-    app.spawn((Flags::default(), BehaviourTree::new(tree)))
+pub(crate) fn agent(app: &mut TestApp, tree: Behavior) -> Entity {
+    app.spawn((Flags::default(), BehaviorTree::new(tree)))
 }
 
 pub(crate) fn set(app: &mut TestApp, agent: Entity, high: bool, low: bool) {
@@ -83,7 +83,7 @@ pub(crate) fn set(app: &mut TestApp, agent: Entity, high: bool, low: bool) {
 
 pub(crate) fn outcome(app: &TestApp, agent: Entity) -> Option<bool> {
     app.world()
-        .get::<BehaviourTree>(agent)
+        .get::<BehaviorTree>(agent)
         .unwrap()
         .outcome()
         .map(Outcome::is_success)

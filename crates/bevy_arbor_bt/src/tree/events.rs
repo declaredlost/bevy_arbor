@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::behaviour::Outcome;
+use crate::behavior::Outcome;
 
 /// Triggered on an agent as its tree ends. One under `Forever` never does.
 #[derive(EntityEvent, Debug, Clone, Copy, PartialEq, Eq)]

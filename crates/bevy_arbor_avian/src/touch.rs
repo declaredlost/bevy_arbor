@@ -1,9 +1,11 @@
+//! Touch from contacts: avian's collisions felt by perception's `Touch`.
+
 use bevy::prelude::*;
 use bevy_arbor_perception::PerceptionSystems;
 use bevy_arbor_perception::sense::{Touch, Touched};
 
 use crate::avian::prelude::*;
-use crate::occlusion::schedule;
+use crate::plugin::schedule;
 
 /// What touches an agent with [`Touch`] is felt: avian's `CollisionStart`,
 /// written as [`Touched`], before perception gathers. An agent with `Touch`

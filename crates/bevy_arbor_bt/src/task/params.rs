@@ -54,7 +54,7 @@ mod tests {
             .plugins(TreePlugin::default())
             .systems(FixedUpdate, tick.after(TreeSystems))
             .build();
-        let npc = agent(&mut app, behaviour_tree! { task("Work", Work) });
+        let npc = agent(&mut app, behavior_tree! { task(Work) });
         app.tick();
         assert!(app.world().get::<Flags>(npc).unwrap().low);
         app.entity_mut(npc).insert(Flags::default());

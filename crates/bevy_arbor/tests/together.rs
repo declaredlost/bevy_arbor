@@ -1,5 +1,5 @@
 //! Trees and perception together: a tree sleeps on what its agent perceives,
-//! and wakes as that changes, by the sense its guards read.
+//! and wakes as that changes, by the sense its decorators read.
 #![cfg(all(feature = "bt", feature = "perception"))]
 
 use std::f32::consts::PI;
@@ -37,11 +37,11 @@ fn a_tree_sleeps_on_what_its_agent_sees_and_wakes_as_that_changes() {
         Hearing::new(30.0),
         Team(1),
         GlobalTransform::IDENTITY,
-        BehaviourTree::new(behaviour_tree! {
+        BehaviorTree::new(behavior_tree! {
             Forever => {
                 Select => {
-                    when(sees_enemy) => task("Chase", Chase),
-                    task("Wander", Wander),
+                    when(sees_enemy) => task(Chase),
+                    task(Wander),
                 }
             }
         }),
@@ -54,7 +54,7 @@ fn a_tree_sleeps_on_what_its_agent_sees_and_wakes_as_that_changes() {
     app.tick();
     assert_eq!(app.count::<With<Wander>>(), 1, "nothing in view: wander");
 
-    // Nothing changes: the tree sleeps, its guard isn't asked.
+    // Nothing changes: the tree sleeps, its decorator isn't asked.
     let before = asked();
     app.ticks(10);
     assert_eq!(asked(), before, "asleep while nothing's seen");

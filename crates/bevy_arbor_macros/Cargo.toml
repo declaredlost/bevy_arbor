@@ -2,9 +2,9 @@
 
 [package]
 name = "bevy_arbor_macros"
-description = "bevy_arbor's macros, for every part: behaviour_tree! for bevy_arbor_bt"
+description = "bevy_arbor's macros, for every part: behavior_tree! for bevy_arbor_bt"
 readme = "./README.md"
-keywords = ["bevy", "ai", "behaviour-tree", "macro"]
+keywords = ["bevy", "ai", "behavior-tree", "macro"]
 categories = ["game-development"]
 
 version = { workspace = true }

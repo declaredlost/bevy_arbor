@@ -34,7 +34,7 @@ fn a_tree_acts_on_what_perception_noticed_the_same_tick() {
             .with_interval(Duration::ZERO),
         Team(1),
         GlobalTransform::IDENTITY,
-        BehaviourTree::new(behaviour_tree! {
+        BehaviorTree::new(behavior_tree! {
             Select => { when(sees_enemy) => act(attack) }
         }),
     ));
@@ -47,11 +47,11 @@ fn a_tree_acts_on_what_perception_noticed_the_same_tick() {
     assert_eq!(
         app.world().resource::<Acted>().0,
         1,
-        "perception ran first, so the guard passed"
+        "perception ran first, so the decorator passed"
     );
     assert!(
         app.world()
-            .get::<BehaviourTree>(agent)
+            .get::<BehaviorTree>(agent)
             .unwrap()
             .outcome()
             .is_some()

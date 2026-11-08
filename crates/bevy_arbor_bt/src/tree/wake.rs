@@ -60,11 +60,6 @@ impl Plan {
         });
     }
 
-    /// Whether it waits on nothing at all.
-    pub(crate) fn is_empty(&self) -> bool {
-        !self.poll && self.at.is_none() && self.watches.is_empty()
-    }
-
     /// Whether any of it has come, as of the change tick `now`, or the clock
     /// is past a timer. Without a clock, a timer always is.
     pub(crate) fn due(&self, world: &World, clock: Option<Duration>, now: Tick) -> bool {
@@ -128,14 +123,14 @@ mod tests {
     }
 
     #[test]
-    fn a_tree_under_typed_guards_sleeps_until_what_they_read_changes() {
+    fn a_tree_under_typed_conditions_sleeps_until_what_they_read_changes() {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behaviour_tree! {
+            behavior_tree! {
                 Select => {
-                    when(high_and_counted) => task("Work", Work),
-                    task("Other", Other),
+                    when(high_and_counted) => task(Work),
+                    task(Other),
                 }
             },
         );
@@ -159,14 +154,14 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_guard_on_a_missing_component_fails_until_it_comes() {
+    fn a_typed_condition_on_a_missing_component_fails_until_it_comes() {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behaviour_tree! {
+            behavior_tree! {
                 Select => {
-                    when(sees) => task("Work", Work),
-                    task("Other", Other),
+                    when(sees) => task(Work),
+                    task(Other),
                 }
             },
         );
@@ -185,14 +180,14 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_guard_can_take_a_component_that_may_be_missing() {
+    fn a_typed_condition_can_take_a_component_that_may_be_missing() {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behaviour_tree! {
+            behavior_tree! {
                 Select => {
-                    when(calm) => task("Work", Work),
-                    task("Other", Other),
+                    when(calm) => task(Work),
+                    task(Other),
                 }
             },
         );
@@ -204,10 +199,10 @@ mod tests {
     }
 
     #[test]
-    fn typed_guards_combine_as_written() {
+    fn typed_conditions_combine_as_written() {
         let mut app = app();
         let tree = || {
-            behaviour_tree! {
+            behavior_tree! {
                 Select => {
                     when(is_high && !is_low) => act(count),
                 }
@@ -227,7 +222,7 @@ mod tests {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behaviour_tree! { While(is_high) => { task("Work", Work) } },
+            behavior_tree! { RepeatWhile(is_high) => { task(Work) } },
         );
         set(&mut app, npc, true, false);
         app.ticks(3);
@@ -246,16 +241,16 @@ mod tests {
     }
 
     #[test]
-    fn a_change_made_after_a_guard_looked_wakes_the_tree_next_tick() {
+    fn a_change_made_after_a_decorator_looked_wakes_the_tree_next_tick() {
         let mut app = app();
         agent(
             &mut app,
-            behaviour_tree! {
+            behavior_tree! {
                 Select => {
-                    when(is_low) => task("Other", Other),
+                    when(is_low) => task(Other),
                     Sequence => {
                         act(make_low),
-                        task("Work", Work),
+                        task(Work),
                     },
                 }
             },
@@ -264,7 +259,7 @@ mod tests {
         assert_eq!(
             app.count::<With<Work>>(),
             1,
-            "the guard said no, then the act ran"
+            "the decorator said no, then the act ran"
         );
         app.tick();
         assert_eq!(
@@ -280,10 +275,10 @@ mod tests {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behaviour_tree! {
+            behavior_tree! {
                 Select => {
-                    when(is_high) => task("Work", Work),
-                    task("Other", Other),
+                    when(is_high) => task(Work),
+                    task(Other),
                 }
             },
         );

@@ -25,8 +25,6 @@ pub(crate) use self::sensor::agent;
 pub use self::sensor::{SensorOf, Sensors};
 pub(crate) use self::share::told;
 pub use self::share::{Listeners, Share, Shared};
-#[cfg(feature = "gizmos")]
-pub(crate) use self::sight::ahead;
 pub use self::sight::{Facing, Perceivable, Sight};
 pub(crate) use self::sight::{build_grid, look};
 pub(crate) use self::touch::feel;

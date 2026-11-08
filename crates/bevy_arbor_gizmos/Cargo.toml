@@ -1,0 +1,46 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bevy_arbor_gizmos"
+description = "Drawing for Bevy AI: what agents perceive, how queries weighed their items, and smart objects' slots"
+readme = "./README.md"
+keywords = ["bevy", "ai", "gizmos", "game"]
+categories = ["game-development"]
+
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+authors = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# How queries weighed their items: `EqsGizmos`
+eqs = ["dep:bevy_arbor_eqs"]
+# Smart objects' slots: `SmartGizmos`
+smart = ["dep:bevy_arbor_smart"]
+# Where agents are going: `NavGizmos`
+nav = ["dep:bevy_arbor_nav"]
+
+[dependencies]
+# The parts it draws: perception always, the others with their features
+bevy_arbor_eqs = { workspace = true, optional = true }
+bevy_arbor_nav = { workspace = true, optional = true }
+bevy_arbor_perception = { workspace = true }
+bevy_arbor_smart = { workspace = true, optional = true }
+
+# Game engine
+bevy = { workspace = true, features = ["std", "bevy_log", "bevy_gizmos"] }
+
+[dev-dependencies]
+bevy_harness = { workspace = true }
+
+[lints]
+workspace = true
