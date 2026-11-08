@@ -1,7 +1,7 @@
 [book]
 title = "The bevy_arbor Book"
 authors = ["Oleh Martsokha"]
-description = "A guide to AI for Bevy with bevy_arbor: behaviour trees that sleep until something changes, and perception."
+description = "A guide to AI for Bevy with bevy_arbor: behavior trees that sleep until something changes, and perception."
 language = "en"
 
 [rust]

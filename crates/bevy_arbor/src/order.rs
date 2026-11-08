@@ -2,7 +2,8 @@ use bevy::ecs::schedule::InternedScheduleLabel;
 use bevy::prelude::*;
 
 /// Every part's systems, in each schedule they run in: perception, then trees,
-/// where both run in the same one.
+/// then the environment queries trees asked for, then navigation's `MoveTo`
+/// tasks, where they run in the same one.
 ///
 /// Put what keeps facts on agents before it, and task systems after it.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,6 +24,8 @@ impl Plugin for ArborSystemsPlugin {
     fn finish(&self, app: &mut App) {
         let perception = perception(app);
         trees(app, &perception);
+        queries(app);
+        navigation(app);
     }
 }
 
@@ -82,4 +85,42 @@ fn trees(app: &mut App, perception: &[InternedScheduleLabel]) {
         }
     }
     let _ = (app, perception);
+}
+
+/// Puts environment queries in [`ArborSystems`]: after trees, as their plugin
+/// says, so a query a tree asks for runs the same tick.
+fn queries(app: &mut App) {
+    #[cfg(feature = "eqs")]
+    {
+        use bevy_arbor_eqs::{EqsPlugin, EqsSystems};
+
+        let schedules: Vec<_> = app
+            .get_added_plugins::<EqsPlugin>()
+            .iter()
+            .map(|plugin| plugin.schedule())
+            .collect();
+        for schedule in schedules {
+            app.configure_sets(schedule, EqsSystems.in_set(ArborSystems));
+        }
+    }
+    let _ = app;
+}
+
+/// Puts navigation in [`ArborSystems`]: after trees and queries, as its
+/// plugin says.
+fn navigation(app: &mut App) {
+    #[cfg(feature = "nav")]
+    {
+        use bevy_arbor_nav::{NavPlugin, NavSystems};
+
+        let schedules: Vec<_> = app
+            .get_added_plugins::<NavPlugin>()
+            .iter()
+            .map(|plugin| plugin.schedule())
+            .collect();
+        for schedule in schedules {
+            app.configure_sets(schedule, NavSystems.in_set(ArborSystems));
+        }
+    }
+    let _ = app;
 }

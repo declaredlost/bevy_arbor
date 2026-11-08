@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::behaviour::Outcome;
+use crate::behavior::Outcome;
 
 /// On each task entity: how long it has run, and how it went.
 ///
@@ -110,35 +110,17 @@ impl AgentTasks {
     }
 }
 
-/// Triggered on a task as its tree takes it away, with how it ended.
-///
-/// Once it's reported, with how it went, or as it's cancelled: with how it
-/// went if it reported before the tree read it, else `None`. A task despawned
-/// some other way, or with its agent, goes without it.
-#[derive(EntityEvent, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TaskEnded {
-    /// The task.
-    pub entity: Entity,
-    /// The agent whose tree it was from.
-    pub agent: Entity,
-    /// How it went: `None` if it was cancelled before it reported.
-    ///
-    /// A task cancelled after it reported, before the tree read it, has what
-    /// it reported.
-    pub outcome: Option<Outcome>,
-}
-
 /// Marks a task to be told to stop and waited for, instead of despawned.
 ///
 /// In a task's bundle: when the tree wants it to stop, it isn't despawned but
 /// told ([`Task::interrupted`]), and the tree waits for it to report. Only
 /// force still despawns it: a `Timeout`, an `All`, `Any` or `Race` settling,
-/// anything above being cancelled, or the tree going. Under a `Commit` it isn't
+/// anything above being canceled, or the tree going. Under a `Commit` it isn't
 /// told at all.
 ///
 /// The tree waits as long as it takes: one that never reports holds its
-/// `Select` or `While` where it is for good. Put a `Timeout` around it if it
-/// might not.
+/// `Select` or `RepeatWhile` where it is for good. Put a `Timeout` around it if
+/// it might not.
 #[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component, Debug, Default)]
 pub struct Graceful;
@@ -160,7 +142,7 @@ mod tests {
     #[test]
     fn elapsed_is_how_long_it_has_run_by_the_trees_clock() {
         let mut app = app();
-        agent(&mut app, behaviour_tree! { task("Work", Work) });
+        agent(&mut app, behavior_tree! { task(Work) });
         app.tick();
         app.secs(1.0);
         let mut tasks = app.world_mut().query::<&Task>();

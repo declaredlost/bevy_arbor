@@ -2,9 +2,9 @@
 
 [package]
 name = "bevy_arbor"
-description = "AI for Bevy, one crate per part: behaviour trees, with more to come"
+description = "AI for Bevy, one crate per part: behavior trees, with more to come"
 readme = "./README.md"
-keywords = ["bevy", "ai", "behaviour-tree", "game"]
+keywords = ["bevy", "ai", "behavior-tree", "game"]
 categories = ["game-development"]
 
 version = { workspace = true }
@@ -23,12 +23,35 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["bt"]
-# Behaviour trees: `bevy_arbor_bt`, as `bevy_arbor::bt`
+# Behavior trees: `bevy_arbor_bt`, as `bevy_arbor::bt`
 bt = ["dep:bevy_arbor_bt"]
 # Perception: `bevy_arbor_perception`, as `bevy_arbor::perception`
 perception = ["dep:bevy_arbor_perception"]
-# Drawing what agents perceive, as `bevy_arbor::perception::gizmos`
-gizmos = ["perception", "bevy_arbor_perception/gizmos"]
+# Environment queries: `bevy_arbor_eqs`, as `bevy_arbor::eqs`, with the
+# avian crates' `LineOfSight` where those are on
+eqs = [
+    "bt",
+    "perception",
+    "dep:bevy_arbor_eqs",
+    "bevy_arbor_avian2d?/eqs",
+    "bevy_arbor_avian3d?/eqs",
+    "bevy_arbor_gizmos?/eqs",
+    "bevy_arbor_nav?/eqs",
+]
+# Smart objects: `bevy_arbor_smart`, as `bevy_arbor::smart`
+smart = ["eqs", "dep:bevy_arbor_smart", "bevy_arbor_gizmos?/smart"]
+# Navigation: `bevy_arbor_nav`, as `bevy_arbor::nav`, with `MoveTo::found` and
+# `PathDistance` where `eqs` is on
+nav = ["bt", "dep:bevy_arbor_nav", "bevy_arbor_gizmos?/nav"]
+# Drawing what agents perceive, queries weighed and slots: `bevy_arbor_gizmos`,
+# as `bevy_arbor::gizmos`, with what `eqs` and `smart` draw where those are on
+gizmos = [
+    "perception",
+    "dep:bevy_arbor_gizmos",
+    "bevy_arbor_gizmos?/eqs",
+    "bevy_arbor_gizmos?/smart",
+    "bevy_arbor_gizmos?/nav",
+]
 # Perception with avian2d: `bevy_arbor_avian2d`, as `bevy_arbor::avian2d`
 avian2d = ["perception", "dep:bevy_arbor_avian2d"]
 # Perception with avian3d: `bevy_arbor_avian3d`, as `bevy_arbor::avian3d`
@@ -38,6 +61,10 @@ avian3d = ["perception", "dep:bevy_arbor_avian3d"]
 # The parts, each behind its feature
 bevy_arbor_bt = { workspace = true, optional = true }
 bevy_arbor_perception = { workspace = true, optional = true }
+bevy_arbor_eqs = { workspace = true, optional = true }
+bevy_arbor_smart = { workspace = true, optional = true }
+bevy_arbor_nav = { workspace = true, optional = true }
+bevy_arbor_gizmos = { workspace = true, optional = true }
 bevy_arbor_avian2d = { workspace = true, optional = true }
 bevy_arbor_avian3d = { workspace = true, optional = true }
 

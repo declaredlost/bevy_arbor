@@ -1,0 +1,43 @@
+# https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bevy_arbor_nav"
+description = "Navigation for Bevy AI: where agents are asked to go and how it goes, for trees and environment queries, over any pathfinding"
+readme = "./README.md"
+keywords = ["bevy", "ai", "navigation", "pathfinding", "game"]
+categories = ["game-development"]
+
+version = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+authors = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["eqs"]
+# Environment queries: `MoveTo::found` and `PathDistance`
+eqs = ["dep:bevy_arbor_eqs"]
+
+[dependencies]
+# The parts it runs with: trees move agents with `MoveTo`, and queries
+# measure path costs
+bevy_arbor_bt = { workspace = true, features = [] }
+bevy_arbor_eqs = { workspace = true, optional = true, features = [] }
+
+# Game engine
+bevy = { workspace = true, features = ["std", "bevy_log"] }
+
+[dev-dependencies]
+bevy_harness = { workspace = true }
+bevy_arbor_perception = { workspace = true }
+
+[lints]
+workspace = true

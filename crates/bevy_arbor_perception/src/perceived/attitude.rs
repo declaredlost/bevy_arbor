@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-/// How an agent stands towards what it perceives.
+/// How an agent stands toward what it perceives.
 #[derive(Reflect, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[reflect(Debug, PartialEq, Hash, Default)]
 pub enum Attitude {
@@ -25,7 +25,7 @@ pub enum Attitude {
 pub struct Team(pub u8);
 
 impl Team {
-    /// How `mine` stands towards `theirs`, by teams alone.
+    /// How `mine` stands toward `theirs`, by teams alone.
     #[must_use]
     pub fn attitude(mine: Option<Self>, theirs: Option<Self>) -> Attitude {
         match (mine, theirs) {

@@ -21,10 +21,6 @@ documentation = { workspace = true }
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[features]
-# Drawing what agents perceive: `PerceptionGizmosPlugin`
-gizmos = ["bevy/bevy_gizmos"]
-
 [dependencies]
 # Game engine
 bevy = { workspace = true, features = ["std", "bevy_log"] }

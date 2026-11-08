@@ -1,46 +1,103 @@
-# Sleeping trees
+# Sleeping
 
-A tree is ticked only when something it waits on comes. Each tick records what
-that is, and the tree sleeps until then:
+A tree only ticks when something it waits on happens. Between those moments
+it sleeps, and costs almost nothing. A hundred patrolling guards cost little
+until one of them sees something.
 
-| It waits on | Because |
+## What the patrolling guard waits on
+
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+# #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
+# #[derive(Component, Clone)] struct Chase;
+# fn sees_intruder(seen: &Perceived<Sight>) -> bool { seen.active().any(Percept::is_hostile) }
+# fn tree() -> Behavior {
+behavior_tree! {
+    Forever => {
+        Select => {
+            when(sees_intruder) => task(Chase),
+            task(Patrol { from: -10.0, to: 10.0 }),
+        }
+    }
+}
+# }
+```
+
+While it patrols, this tree waits on two things:
+
+- `Perceived<Sight>` changing, because `sees_intruder` reads it.
+- The `Patrol` task reporting.
+
+Nothing else wakes it. The patrol system moves the guard every frame, but the
+tree doesn't tick.
+
+## What wakes a tree
+
+| It waits on | Because of |
 |---|---|
-| A component a typed guard read | The guard's answer may have changed |
-| Its task's report | The task may have ended |
-| A timer | A `Wait` or `Timeout` is up |
-| Nothing: every tick | A system guard could matter, or a custom node polls |
+| A component changing, coming or going | A typed condition that reads it |
+| A task's report | A running task |
+| A time | A `Wait`, a `Timeout` or a cooldown |
+| Every tick | A system condition that could matter |
+| Every tick | A custom node or decorator that says nothing |
 
-A sleeping tree costs a look at the change ticks of what it watches: about 20
-nanoseconds an agent, against about 150 for one asking four system guards
-every tick ([Performance](performance.md)).
+A sleeping tree costs a check of the change ticks it watches. That's about 20
+nanoseconds an agent, against about 150 for one asking four system conditions
+every tick. See [Performance](performance.md).
 
 ## What "changed" means
 
-A watch remembers the component's change tick as the guard looked, and the tree
-wakes once it moves past that, or the component comes or goes. So the tree's
-own writes before the look don't wake it, but a change after it does, even one
-made by a later act in the same tick.
+The tree remembers each component's change tick when it reads it. It wakes
+once the tick moves past that, or the component comes or goes. So the tree
+doesn't wake for its own writes made before the read. A change after the read
+does wake it, even one made later in the same tick.
 
 ## Keeping trees asleep
 
-Bevy marks a component changed on any mutable access, not only on a change of
-value. A system that writes a component every frame keeps every tree watching
-it awake. Write with `set_if_neq`, and only what changes:
+Bevy marks a component changed on any mutable access, even if the value
+stays the same. A system that writes a component every frame keeps every tree
+that reads it awake.
+
+Write with `set_if_neq`. An armory refills the guard's ammo, but marks it
+changed only when the count really changes:
 
 ```rust
 # use bevy::prelude::*;
 #[derive(Component, PartialEq)]
-struct Hungry(bool);
+struct Ammo(u32);
 
 #[derive(Component)]
-struct Food(f32);
+struct AtArmory;
 
-fn hunger(mut agents: Query<(&Food, &mut Hungry)>) {
-    for (food, mut hungry) in &mut agents {
-        hungry.set_if_neq(Hungry(food.0 < 10.0));
+fn refill(mut guards: Query<&mut Ammo, With<AtArmory>>) {
+    for mut ammo in &mut guards {
+        ammo.set_if_neq(Ammo(6));
     }
 }
 ```
 
-A tree whose guard reads `Hungry` wakes once, when hunger flips, not each
-frame `Food` drops.
+Keep components small and specific. A typed condition reading a big
+component wakes for changes to any part of it.
+
+## The polling rule
+
+A system condition can read anything, so the tree can't know when its answer
+changes. While one could matter, its tree ticks every frame.
+
+The same goes for custom nodes and decorators. Each says what it waits on as
+it runs, with `cx.watch`, `cx.wake_at` or `cx.poll`. A running node that
+says nothing is ticked again next frame. That way a mistake costs time, not a
+stuck tree.
+
+A decorator whose answer changes only when its own branch starts or ends says
+so with `cx.wait_on_nothing()`. An idle cooldown does this. See
+[Custom nodes](custom-nodes.md#sleeping).
+
+## Pitfalls
+
+- One system condition near the top of the tree keeps it awake all the time.
+  Prefer typed conditions. Keep what a system condition would compute on the
+  agent, with a system of your own that writes it with `set_if_neq`.
+- A system writing `Transform` every frame wakes any typed condition reading
+  `Transform`. Read a derived component instead.

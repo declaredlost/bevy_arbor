@@ -1,32 +1,36 @@
 # Introduction
 
-bevy_arbor is AI for [Bevy](https://bevyengine.org): behaviour trees that
-react to what changes, and perception that tells them what changed. Each part
-is its own crate, and `bevy_arbor` brings them together.
+bevy_arbor is AI for [Bevy](https://bevyengine.org). It gives your agents
+behavior trees to decide what to do, and perception to tell them what they
+sense. Environment queries help them pick a place or a target. Smart objects
+let them find and use things in the world. Navigation connects them to your
+game's movement.
+
+This book builds one agent from start to finish: a guard in a 2D
+side-scroller. Here it is after the first chapter:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-#[derive(Component, Clone)]
-struct Chase;
-
-#[derive(Component, Clone)]
-struct Wander;
-
-fn sees_enemy(seen: &Perceived<Sight>) -> bool {
+# #[derive(Component)] struct Guard;
+# #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
+# #[derive(Component, Clone)] struct Chase;
+fn sees_intruder(seen: &Perceived<Sight>) -> bool {
     seen.active().any(Percept::is_hostile)
 }
 
-fn spawn(mut commands: Commands) {
+fn spawn_guard(mut commands: Commands) {
     commands.spawn((
-        Sight::new(12.0),
+        Guard,
+        Sight::new(12.0).with_lose_range(15.0),
         Team(1),
-        Transform::default(),
-        BehaviourTree::new(behaviour_tree! {
+        Facing(Dir3::X),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        BehaviorTree::new(behavior_tree! {
             Forever => {
                 Select => {
-                    when(sees_enemy) => task("Chase", Chase),
-                    task("Wander", Wander),
+                    when(sees_intruder) => task(Chase),
+                    task(Patrol { from: -10.0, to: 10.0 }),
                 }
             }
         }),
@@ -34,39 +38,45 @@ fn spawn(mut commands: Commands) {
 }
 ```
 
-The monster wanders until it sees an enemy, then chases it, and wanders again
-once it's lost it. Nothing in the tree is asked every frame: the tree sleeps
-until what `sees_enemy` reads, the monster's `Perceived<Sight>`, changes.
+The guard patrols until it sees the intruder. Then it chases. When the
+intruder gets away, the guard goes back to its patrol. Later chapters teach
+it to shoot, reload, take cover, call for help and man a turret.
 
-## What bevy_arbor does for you
+## What you get
 
-- **Reactive behaviour trees**: a `Select` switches branches the moment a
-  guard changes its answer, cancelling what was running.
-- **Trees that sleep**: a tree is ticked only when something it waits on
-  comes: a component its guards read changes, its task reports, a timer is up.
-  An idle tree costs about 20 nanoseconds a tick.
-- **Tasks as entities**: each task the tree reaches is an entity, ticked by
-  your systems, and despawned when it's done or no longer wanted.
-- **Perception**: sight, hearing, touch and allies sharing what they know, in
-  2D or 3D, written to the agent one component per sense.
-- **Sensors and senses of your own**: eyes on a head, a rear motion sensor,
-  a sense of smell or a radar, all through the same API as the built-in ones.
-- **Physics-free**: line of sight, attitudes and senses plug in as ordinary
-  systems, so it works with any physics engine, or none; with avian, line of
-  sight and touch from contacts come ready-made.
+- **Reactive behavior trees.** A branch switches the moment its condition
+  changes. What was running is canceled.
+- **Trees that sleep.** A tree is ticked only when something it waits on
+  changes. An idle tree costs almost nothing.
+- **Tasks as entities.** Each task the tree starts is an entity. Your own
+  systems do the work.
+- **Perception.** Sight, hearing, touch, and allies sharing what they know.
+  It works in 2D and 3D, and you can add senses of your own.
+- **Environment queries.** Score places or things around an agent and pick
+  the best one, such as cover or a target.
+- **Smart objects.** Things in the world with slots an agent can claim and
+  use, such as a turret with a gunner's seat.
+- **Navigation, your way.** A `MoveTo` task and path costs for queries,
+  over whatever pathfinding and movement your game has.
+- **No physics required.** Line of sight is a system you can replace. With
+  avian, line of sight and touch come ready-made.
 
 ## The crates
 
-Most projects depend only on `bevy_arbor`, which re-exports the rest behind
-feature flags:
+Most projects only depend on `bevy_arbor`. It re-exports the other crates
+behind feature flags.
 
 | Crate | Contains |
 |---|---|
-| `bevy_arbor` | The facade: every part, one prelude, one plugin group |
-| `bevy_arbor_bt` | Behaviour trees, tasks and guards |
-| `bevy_arbor_perception` | Perception: senses, sensors, memory |
-| `bevy_arbor_avian2d`, `bevy_arbor_avian3d` | Perception with avian: line of sight, touch from contacts |
-| `bevy_arbor_macros` | The `behaviour_tree!` macro |
+| `bevy_arbor` | Every part, with one prelude and one plugin group |
+| `bevy_arbor_bt` | Behavior trees, tasks and decorators |
+| `bevy_arbor_perception` | Senses, sensors and memory |
+| `bevy_arbor_eqs` | Environment queries |
+| `bevy_arbor_smart` | Smart objects |
+| `bevy_arbor_nav` | Navigation: `MoveTo` and path costs |
+| `bevy_arbor_gizmos` | Debug drawing |
+| `bevy_arbor_avian2d`, `bevy_arbor_avian3d` | Line of sight and touch with avian |
+| `bevy_arbor_macros` | The `behavior_tree!` macro |
 
-The API reference is on [docs.rs](https://docs.rs/bevy_arbor). This book is
-the guide: how the pieces fit together, chapter by chapter.
+This book is the guide. The API reference is on
+[docs.rs](https://docs.rs/bevy_arbor).

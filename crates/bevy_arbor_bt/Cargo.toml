@@ -2,9 +2,9 @@
 
 [package]
 name = "bevy_arbor_bt"
-description = "Reactive behaviour trees for Bevy: trees that sleep until something they wait on changes, tasks as entities"
+description = "Reactive behavior trees for Bevy: trees that sleep until something they wait on changes, tasks as entities"
 readme = "./README.md"
-keywords = ["bevy", "ai", "behaviour-tree", "game"]
+keywords = ["bevy", "ai", "behavior-tree", "game"]
 categories = ["game-development"]
 
 version = { workspace = true }
@@ -31,7 +31,7 @@ bevy = { workspace = true, features = ["std", "bevy_log"] }
 [dev-dependencies]
 bevy_harness = { workspace = true }
 
-# What guards cost: `cargo run --release -p bevy_arbor_bt --example load`.
+# What decorators cost: `cargo run --release -p bevy_arbor_bt --example load`.
 [[example]]
 name = "load"
 test = false

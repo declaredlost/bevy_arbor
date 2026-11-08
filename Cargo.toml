@@ -7,8 +7,12 @@ members = [
     "./crates/bevy_arbor_avian2d",
     "./crates/bevy_arbor_avian3d",
     "./crates/bevy_arbor_bt",
+    "./crates/bevy_arbor_eqs",
+    "./crates/bevy_arbor_gizmos",
     "./crates/bevy_arbor_macros",
+    "./crates/bevy_arbor_nav",
     "./crates/bevy_arbor_perception",
+    "./crates/bevy_arbor_smart",
 ]
 
 [workspace.package]
@@ -52,8 +56,12 @@ type_complexity = "allow"
 bevy_arbor_avian2d = { path = "./crates/bevy_arbor_avian2d", version = "0.1.0", default-features = false }
 bevy_arbor_avian3d = { path = "./crates/bevy_arbor_avian3d", version = "0.1.0", default-features = false }
 bevy_arbor_bt = { path = "./crates/bevy_arbor_bt", version = "0.1.0" }
+bevy_arbor_eqs = { path = "./crates/bevy_arbor_eqs", version = "0.1.0" }
+bevy_arbor_gizmos = { path = "./crates/bevy_arbor_gizmos", version = "0.1.0" }
 bevy_arbor_macros = { path = "./crates/bevy_arbor_macros", version = "0.1.0" }
+bevy_arbor_nav = { path = "./crates/bevy_arbor_nav", version = "0.1.0", default-features = false }
 bevy_arbor_perception = { path = "./crates/bevy_arbor_perception", version = "0.1.0" }
+bevy_arbor_smart = { path = "./crates/bevy_arbor_smart", version = "0.1.0" }
 
 # Game engine (headless by default)
 bevy = { version = "0.20", default-features = false, features = ["std"] }

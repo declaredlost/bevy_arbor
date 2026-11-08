@@ -57,7 +57,7 @@ impl Grid {
         } else {
             0
         };
-        let centre = if live {
+        let center = if live {
             space.cell(point, size)
         } else {
             IVec3::ZERO
@@ -69,7 +69,7 @@ impl Grid {
                     .flat_map(move |y| (-depth..=depth).map(move |z| IVec3::new(x, y, z)))
             })
             .filter(move |_| live)
-            .filter_map(move |offset| self.cells.get(&(centre + offset)))
+            .filter_map(move |offset| self.cells.get(&(center + offset)))
             .flatten()
             .copied()
     }

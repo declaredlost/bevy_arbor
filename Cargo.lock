@@ -414,7 +414,11 @@ dependencies = [
  "bevy_arbor_avian2d",
  "bevy_arbor_avian3d",
  "bevy_arbor_bt",
+ "bevy_arbor_eqs",
+ "bevy_arbor_gizmos",
+ "bevy_arbor_nav",
  "bevy_arbor_perception",
+ "bevy_arbor_smart",
  "bevy_harness",
 ]
 
@@ -424,6 +428,7 @@ version = "0.1.0"
 dependencies = [
  "avian2d",
  "bevy",
+ "bevy_arbor_eqs",
  "bevy_arbor_perception",
  "bevy_harness",
 ]
@@ -434,6 +439,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_arbor_eqs",
  "bevy_arbor_perception",
  "bevy_harness",
 ]
@@ -444,6 +450,28 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_arbor_macros",
+ "bevy_harness",
+]
+
+[[package]]
+name = "bevy_arbor_eqs"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_arbor_bt",
+ "bevy_arbor_perception",
+ "bevy_harness",
+]
+
+[[package]]
+name = "bevy_arbor_gizmos"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_arbor_eqs",
+ "bevy_arbor_nav",
+ "bevy_arbor_perception",
+ "bevy_arbor_smart",
  "bevy_harness",
 ]
 
@@ -460,10 +488,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_arbor_nav"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_arbor_bt",
+ "bevy_arbor_eqs",
+ "bevy_arbor_perception",
+ "bevy_harness",
+]
+
+[[package]]
 name = "bevy_arbor_perception"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_harness",
+]
+
+[[package]]
+name = "bevy_arbor_smart"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_arbor_bt",
+ "bevy_arbor_eqs",
+ "bevy_arbor_perception",
  "bevy_harness",
 ]
 

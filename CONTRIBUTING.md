@@ -58,7 +58,7 @@ cargo deny check all
 
 2. Make your changes following the [code style](#code-style)
 
-3. Add tests for new behaviour
+3. Add tests for new behavior
 
 4. Ensure all checks pass
 

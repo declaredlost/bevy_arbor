@@ -151,7 +151,7 @@ pub(crate) fn look(
             candidates.next_look = Some(now + sight.interval);
             let eye = space.flatten(transform.transform_point(sight.eye));
             candidates.look_from(eye);
-            let ahead = ahead(space, transform, facing);
+            let ahead = space.looking(transform, facing);
             let (agent, all_round) = (agent(sensor, of), sight.half_angle >= PI);
             let cos = sight.half_angle.cos();
             for (entity, point) in grid.near(eye, sight.reach()) {
@@ -173,14 +173,6 @@ pub(crate) fn look(
                 }
             }
         });
-}
-
-/// Which way a sensor looks: its [`Facing`], else as its transform does.
-pub(crate) fn ahead(space: Space, transform: &GlobalTransform, facing: Option<&Facing>) -> Vec3 {
-    facing.map_or_else(
-        || space.ahead(transform),
-        |facing| space.flatten(*facing.0).normalize_or_zero(),
-    )
 }
 
 /// When `sensor` first looks, within `interval` of starting: looks spread

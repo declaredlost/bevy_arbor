@@ -1,15 +1,16 @@
 use bevy::ecs::schedule::{InternedScheduleLabel, ScheduleLabel};
 use bevy::prelude::*;
 
-use crate::behaviour::{Outcome, Status};
+use crate::behavior::{Outcome, Status};
 use crate::task::{AgentTasks, Graceful, Task, TaskOf};
 use crate::tree::{self, TreePaused, TreeTrace};
 
-/// The system set trees tick in: what guards read goes before it, tasks after.
+/// The system set trees tick in: what decorators read goes before it, tasks
+/// after.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TreeSystems;
 
-/// Ticks every [`BehaviourTree`](crate::tree::BehaviourTree), in `FixedUpdate`
+/// Ticks every [`BehaviorTree`](crate::tree::BehaviorTree), in `FixedUpdate`
 /// unless told otherwise.
 pub struct TreePlugin {
     schedule: InternedScheduleLabel,
@@ -50,6 +51,14 @@ impl Plugin for TreePlugin {
             .add_systems(self.schedule, tree::tick.in_set(TreeSystems))
             .add_observer(tree::check_ticks);
     }
+
+    fn finish(&self, app: &mut App) {
+        if !app.is_plugin_added::<bevy::time::TimePlugin>() {
+            warn!(
+                "TreePlugin without Bevy's TimePlugin: waits, timeouts and cooldowns never run out"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -80,5 +89,21 @@ mod tests {
                 "{ty:?}"
             );
         }
+    }
+
+    #[derive(Component, Clone)]
+    struct Work;
+
+    #[test]
+    fn without_time_trees_run_rather_than_panic() {
+        let mut app = App::new();
+        app.add_plugins(TreePlugin::new(Update));
+        app.world_mut().spawn(BehaviorTree::new(behavior_tree! {
+            Sequence => { task(Work), Wait(1.0) }
+        }));
+        app.update();
+        app.update();
+        let mut works = app.world_mut().query_filtered::<(), With<Work>>();
+        assert_eq!(works.iter(app.world()).count(), 1);
     }
 }

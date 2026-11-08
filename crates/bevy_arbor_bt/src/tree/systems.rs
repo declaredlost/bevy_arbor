@@ -4,9 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bevy::ecs::change_detection::CheckChangeTicks;
 use bevy::prelude::*;
 
-use super::components::{BehaviourTree, TreePaused, TreeTrace};
+use super::components::{BehaviorTree, TreePaused};
 use super::events::TreeFinished;
-use crate::behaviour::{Context, Systems};
+use super::trace::TreeTrace;
+use crate::behavior::Context;
+use crate::behavior::system::Systems;
 use crate::task::Task;
 
 /// Set as the tree being ticked goes: by the tree's hook, read by its nodes.
@@ -14,14 +16,14 @@ use crate::task::Task;
 pub(crate) struct Ticking(pub(crate) Arc<AtomicBool>);
 
 /// Ticks every tree that's woken. Each one's root comes out of its component
-/// for the tick, as guards and acts need the world: one of them may even take
-/// the tree away, or replace it, and then nothing more of it runs.
+/// for the tick, as decorators and acts need the world: one of them may even
+/// take the tree away, or replace it, and then nothing more of it runs.
 ///
 /// What each tick waits on is kept on the tree, and it sleeps until that
 /// comes. Then tasks are told how long they've run.
 pub(crate) fn tick(
     world: &mut World,
-    trees: &mut QueryState<(Entity, &BehaviourTree), Without<TreePaused>>,
+    trees: &mut QueryState<(Entity, &BehaviorTree), Without<TreePaused>>,
     tasks: &mut QueryState<&mut Task>,
     mut agents: Local<Vec<Entity>>,
 ) {
@@ -44,7 +46,7 @@ pub(crate) fn tick(
         if entity.contains::<TreePaused>() {
             continue;
         }
-        let Some(mut tree) = entity.get_mut::<BehaviourTree>() else {
+        let Some(mut tree) = entity.get_mut::<BehaviorTree>() else {
             continue;
         };
         if tree.outcome.is_some() {
@@ -56,13 +58,8 @@ pub(crate) fn tick(
         gone.store(false, Ordering::Relaxed);
         let mut cx = Context::ticking(world, agent, &gone, clock, Some(&mut systems));
         let status = root.tick(&mut cx);
-        let mut plan = cx.finish();
-        // Running, and waiting on nothing it said: asked again next tick, so a
-        // node that forgot to say can't leave it asleep for good.
-        if status == crate::behaviour::Status::Running && plan.is_empty() {
-            plan.poll();
-        }
-        match world.get_mut::<BehaviourTree>(agent) {
+        let plan = cx.finish();
+        match world.get_mut::<BehaviorTree>(agent) {
             Some(mut tree) if tree.root.is_none() => {
                 tree.root = Some(root);
                 tree.outcome = status.outcome();
@@ -78,11 +75,14 @@ pub(crate) fn tick(
             _ => root.cancel(&mut Context::new(world, agent)),
         }
         if world.get::<TreeTrace>(agent).is_some()
-            && let Some(outline) = world.get::<BehaviourTree>(agent).map(ToString::to_string)
+            && let Some(traced) = world
+                .get::<BehaviorTree>(agent)
+                .and_then(|tree| tree.root.as_ref())
+                .map(TreeTrace::of)
             && let Some(mut trace) = world.get_mut::<TreeTrace>(agent)
         {
-            // Changed only when what's running is.
-            trace.set_if_neq(TreeTrace(outline));
+            // Changed only when the tree is.
+            trace.set_if_neq(traced);
         }
     }
     world.insert_resource(systems);
@@ -99,7 +99,7 @@ pub(crate) fn tick(
 /// as a schedule does for its own systems.
 pub(crate) fn check_ticks(
     check: On<CheckChangeTicks>,
-    mut trees: Query<&mut BehaviourTree>,
+    mut trees: Query<&mut BehaviorTree>,
     systems: Option<ResMut<Systems>>,
 ) {
     for mut tree in &mut trees {

@@ -1,9 +1,9 @@
 //! What ticking trees costs, with a tree shaped like a monster's: a `Select` of
-//! four guards, the last branch's task running.
+//! four decorators, the last branch's task running.
 //!
-//! Three ways: system guards, asked every tick; typed guards with nothing
-//! changing, so trees sleep; and typed guards with a tenth of the agents'
-//! moods changing every tick, so those wake.
+//! Three ways: system conditions, asked every tick; typed conditions with
+//! nothing changing, so trees sleep; and typed conditions with a tenth of the
+//! agents' moods changing every tick, so those wake.
 //!
 //! `cargo run --release -p bevy_arbor_bt --example load`
 
@@ -34,14 +34,14 @@ fn fourth(In(agent): In<Entity>, moods: Query<&Mood>) -> bool {
     moods.get(agent).is_ok_and(|mood| !mood.0)
 }
 
-fn systems() -> Behaviour {
-    behaviour_tree! {
+fn systems() -> Behavior {
+    behavior_tree! {
         Forever => {
             Select => {
-                when(first) => task("Roam", Roam),
-                when(second) => task("Roam", Roam),
-                when(third) => task("Roam", Roam),
-                when(fourth) => task("Roam", Roam),
+                when(first) => task(Roam),
+                when(second) => task(Roam),
+                when(third) => task(Roam),
+                when(fourth) => task(Roam),
             }
         }
     }
@@ -63,14 +63,14 @@ fn fourth_typed(mood: &Mood) -> bool {
     !mood.0
 }
 
-fn typed() -> Behaviour {
-    behaviour_tree! {
+fn typed() -> Behavior {
+    behavior_tree! {
         Forever => {
             Select => {
-                when(first_typed) => task("Roam", Roam),
-                when(second_typed) => task("Roam", Roam),
-                when(third_typed) => task("Roam", Roam),
-                when(fourth_typed) => task("Roam", Roam),
+                when(first_typed) => task(Roam),
+                when(second_typed) => task(Roam),
+                when(third_typed) => task(Roam),
+                when(fourth_typed) => task(Roam),
             }
         }
     }
@@ -87,7 +87,7 @@ fn churn(mut moods: Query<&mut Mood>, mut round: Local<usize>) {
     }
 }
 
-fn run(label: &str, tree: fn() -> Behaviour, churning: bool) {
+fn run(label: &str, tree: fn() -> Behavior, churning: bool) {
     const TICKS: u32 = 2_000;
     for agents in [100, 500, 2_000] {
         let mut app = App::new();
@@ -98,7 +98,7 @@ fn run(label: &str, tree: fn() -> Behaviour, churning: bool) {
         }
         for _ in 0..agents {
             app.world_mut()
-                .spawn((Mood(false), BehaviourTree::new(tree())));
+                .spawn((Mood(false), BehaviorTree::new(tree())));
         }
         // Started, so what's measured is the steady state.
         app.update();
@@ -113,7 +113,7 @@ fn run(label: &str, tree: fn() -> Behaviour, churning: bool) {
 }
 
 fn main() {
-    run("system guards", systems, false);
-    run("typed guards, still", typed, false);
-    run("typed guards, 10% churn", typed, true);
+    run("system conditions", systems, false);
+    run("typed conditions, still", typed, false);
+    run("typed conditions, 10% churn", typed, true);
 }
