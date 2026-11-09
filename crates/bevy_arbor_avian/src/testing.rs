@@ -9,14 +9,8 @@ use bevy_arbor_perception::prelude::*;
 use bevy_harness::TestApp;
 
 use crate::avian::prelude::*;
+pub(crate) use crate::dim::SPACE;
 use crate::prelude::*;
-
-/// The space this crate's dimension is.
-#[cfg(dim = "2d")]
-pub(crate) const SPACE: Space = Space::Planar;
-/// The space this crate's dimension is.
-#[cfg(dim = "3d")]
-pub(crate) const SPACE: Space = Space::Volume;
 
 /// Perception and physics, with this crate's plugins.
 pub(crate) fn app() -> TestApp {

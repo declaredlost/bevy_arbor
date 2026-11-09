@@ -5,6 +5,7 @@ use bevy_arbor_perception::sense::{Perceivable, SightIndex, SightIndexApp};
 
 use crate::avian::prelude::*;
 use crate::dim;
+use crate::plugin::check_space;
 
 /// The layers what can be seen is on: what sight asks avian for, as it
 /// finds what's near a sensor. Every layer, unless set.
@@ -40,6 +41,7 @@ impl Plugin for ColliderSightPlugin {
     }
 
     fn finish(&self, app: &mut App) {
+        check_space(app);
         // Without avian's spatial queries, perception's own grid stays.
         if !app.is_plugin_added::<SpatialQueryPlugin>() {
             warn!("`ColliderSightPlugin` needs avian's `PhysicsPlugins`: sight uses its own grid");

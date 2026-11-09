@@ -89,7 +89,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             PhysicsPlugins::default(),
-            ArborPlugins.set(PerceptionPlugin::default().with_space(Space::Planar)),
+            ArborPlugins.with_space(Space::Planar),
         ))
         .add_env_query(Cover, cover())
         .add_env_query(Target, target())

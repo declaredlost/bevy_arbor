@@ -1,8 +1,9 @@
 //! Generators: what a query weighs. Places in a [`Donut`], [`Grid`] or
 //! [`Fan`] around an anchor; things the agent perceives ([`Percepts`]), or
 //! things with a component near an anchor ([`Nearby`]); or a [`Generate`] of
-//! your own.
+//! your own, keeping its Bevy query in a [`CachedQuery`].
 
+mod cached;
 mod donut;
 mod fan;
 mod grid;
@@ -13,6 +14,7 @@ use std::f32::consts::TAU;
 use bevy::prelude::*;
 use bevy_arbor_perception::Space;
 
+pub use self::cached::CachedQuery;
 pub use self::donut::Donut;
 pub use self::fan::Fan;
 pub use self::grid::Grid;

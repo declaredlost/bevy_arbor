@@ -1,9 +1,17 @@
 //! Where 2D and 3D differ: perception's points as avian's.
 
 use bevy::prelude::*;
+use bevy_arbor_perception::Space;
 
 use crate::avian::math::{RVector, ToRealPrecision};
 use crate::avian::prelude::Collider;
+
+/// The space perception works in with this dimension.
+#[cfg(dim = "2d")]
+pub(crate) const SPACE: Space = Space::Planar;
+/// The space perception works in with this dimension.
+#[cfg(dim = "3d")]
+pub(crate) const SPACE: Space = Space::Volume;
 
 /// `point`, from perception, as avian takes it.
 #[cfg(dim = "2d")]

@@ -41,7 +41,7 @@ and a noise doesn't wake it.
 ## 2D and 3D
 
 Perception works in 3D by default. The guard lives in a side-scroller, so
-tell perception to work in the plane:
+tell it to work in the plane:
 
 ```rust,no_run
 # use bevy::prelude::*;
@@ -49,13 +49,15 @@ tell perception to work in the plane:
 # fn main() {
 App::new().add_plugins((
     MinimalPlugins,
-    ArborPlugins.set(PerceptionPlugin::default().with_space(Space::Planar)),
+    ArborPlugins.with_space(Space::Planar),
 ));
 # }
 ```
 
 With [`Space::Planar`], perception works in the XY plane. It ignores z, which
 2D uses for layering. Ahead is +X. In 3D, ahead is -Z, Bevy's forward.
+Queries, avian and the gizmos work in the same space. With avian2d, a space
+other than `Planar` is warned about at startup.
 
 ## The senses
 

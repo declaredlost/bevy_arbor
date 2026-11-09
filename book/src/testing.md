@@ -40,7 +40,7 @@ use bevy_harness::TestApp;
 /// An app with the guard at the origin, looking right.
 fn guard_app() -> (TestApp, Entity) {
     let mut app = TestApp::builder()
-        .plugins(ArborPlugins.set(PerceptionPlugin::default().with_space(Space::Planar)))
+        .plugins(ArborPlugins.with_space(Space::Planar))
         .build();
     let guard = app.spawn((
         Sight::new(12.0).with_lose_range(15.0).with_interval(Duration::ZERO),

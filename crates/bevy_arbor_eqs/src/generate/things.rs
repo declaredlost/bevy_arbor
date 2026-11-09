@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use bevy_arbor_perception::perceived::{Perceived, Traces};
 use bevy_arbor_perception::sense::Sense;
 
-use super::Generate;
+use super::{CachedQuery, Generate};
 use crate::anchor::{Locate, Located};
 use crate::query::{Item, QueryContext};
 
@@ -79,7 +79,7 @@ impl<S: Sense> Generate for Percepts<S> {
 pub struct Nearby<C: Component> {
     around: Arc<dyn Locate>,
     range: f32,
-    component: PhantomData<fn() -> C>,
+    things: CachedQuery<(Entity, &'static GlobalTransform), With<C>>,
 }
 
 impl<C: Component> Nearby<C> {
@@ -88,7 +88,7 @@ impl<C: Component> Nearby<C> {
         Self {
             around: Arc::new(around),
             range,
-            component: PhantomData,
+            things: CachedQuery::default(),
         }
     }
 }
@@ -99,23 +99,20 @@ impl<C: Component> Generate for Nearby<C> {
         if anchors.is_empty() {
             return;
         }
-        let world = cx.world();
-        let Some(mut things) = world.try_query_filtered::<(Entity, &GlobalTransform), With<C>>()
-        else {
-            return;
-        };
         let agent = cx.agent();
-        for (entity, transform) in things.iter(world) {
-            if entity == agent {
-                continue;
+        self.things.with(cx.world(), |things| {
+            for (entity, transform) in &things {
+                if entity == agent {
+                    continue;
+                }
+                let position = cx.space().flatten(transform.translation());
+                let near = anchors
+                    .iter()
+                    .any(|Located { position: at, .. }| at.distance(position) <= self.range);
+                if near {
+                    out.push(Item::Entity { entity, position });
+                }
             }
-            let position = cx.space().flatten(transform.translation());
-            let near = anchors
-                .iter()
-                .any(|Located { position: at, .. }| at.distance(position) <= self.range);
-            if near {
-                out.push(Item::Entity { entity, position });
-            }
-        }
+        });
     }
 }

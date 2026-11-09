@@ -34,7 +34,10 @@ through colliders, and touch from contacts. Built as `bevy_arbor_avian2d` and
   whether an anchor can see each item; `Clearance`, whether there's room to
   stand at it; and `OccluderDistance`, how far it is from what blocks sight.
   Together they find cover: room to stand, out of sight, up against a wall.
-- `AvianPerceptionPlugins` adds both plugins.
+- `AvianPerceptionPlugins` adds all three plugins.
+- Perception has to work in the space of the crate's dimension:
+  `Space::Planar` with avian2d, `Space::Volume` with avian3d. Otherwise the
+  plugins warn at startup.
 
 ## Installation
 

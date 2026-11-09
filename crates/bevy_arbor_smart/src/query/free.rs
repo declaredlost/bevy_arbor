@@ -1,9 +1,8 @@
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bevy::prelude::*;
 use bevy_arbor_eqs::anchor::{Locate, Located};
-use bevy_arbor_eqs::generate::Generate;
+use bevy_arbor_eqs::generate::{CachedQuery, Generate};
 use bevy_arbor_eqs::query::{Item, QueryContext};
 
 use crate::claim::ClaimedBy;
@@ -12,6 +11,9 @@ use crate::slot::{SlotDisabled, SlotOf};
 /// The slots offering `A` within `range` of an anchor that the agent could
 /// claim: free or its own already, and not disabled. Each is a thing item, at
 /// its slot.
+///
+/// It looks through every slot offering `A`, so keep `A` to an activity, not a
+/// marker every slot has.
 ///
 /// ```
 /// # use bevy::prelude::*;
@@ -25,7 +27,10 @@ use crate::slot::{SlotDisabled, SlotOf};
 pub struct FreeSlots<A: Component> {
     around: Arc<dyn Locate>,
     range: f32,
-    activity: PhantomData<fn() -> A>,
+    slots: CachedQuery<
+        (Entity, &'static GlobalTransform, Option<&'static ClaimedBy>),
+        (With<SlotOf>, With<A>, Without<SlotDisabled>),
+    >,
 }
 
 impl<A: Component> FreeSlots<A> {
@@ -34,7 +39,7 @@ impl<A: Component> FreeSlots<A> {
         Self {
             around: Arc::new(around),
             range,
-            activity: PhantomData,
+            slots: CachedQuery::default(),
         }
     }
 }
@@ -45,30 +50,24 @@ impl<A: Component> Generate for FreeSlots<A> {
         if anchors.is_empty() {
             return;
         }
-        let world = cx.world();
-        let Some(mut slots) = world.try_query_filtered::<(
-            Entity,
-            &GlobalTransform,
-            Option<&ClaimedBy>,
-        ), (With<SlotOf>, With<A>, Without<SlotDisabled>)>() else {
-            return;
-        };
         let agent = cx.agent();
-        for (slot, transform, claimed) in slots.iter(world) {
-            if claimed.is_some_and(|claimed| claimed.agent() != agent) {
-                continue;
+        self.slots.with(cx.world(), |slots| {
+            for (slot, transform, claimed) in &slots {
+                if claimed.is_some_and(|claimed| claimed.agent() != agent) {
+                    continue;
+                }
+                let position = cx.space().flatten(transform.translation());
+                let near = anchors
+                    .iter()
+                    .any(|Located { position: at, .. }| at.distance(position) <= self.range);
+                if near {
+                    out.push(Item::Entity {
+                        entity: slot,
+                        position,
+                    });
+                }
             }
-            let position = cx.space().flatten(transform.translation());
-            let near = anchors
-                .iter()
-                .any(|Located { position: at, .. }| at.distance(position) <= self.range);
-            if near {
-                out.push(Item::Entity {
-                    entity: slot,
-                    position,
-                });
-            }
-        }
+        });
     }
 }
 
