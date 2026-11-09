@@ -9,8 +9,9 @@ use crate::plugin::{check_space, schedule};
 
 /// What touches an agent with [`Touch`] is felt: avian's `CollisionStart`,
 /// written as [`Touched`], before perception gathers. An agent with `Touch`
-/// gets avian's `CollisionEventsEnabled`, so its own collider reports; a
-/// collider on a child of it needs one too.
+/// gets avian's `CollisionEventsEnabled`, so its own collider reports, and
+/// loses it with `Touch`, unless it had one of its own; a collider on a child
+/// of it needs one too.
 ///
 /// Only colliders on `layers` touch, every layer unless set: a monster feels
 /// a sword's hitbox, not the grass. Needs avian's `PhysicsPlugins`; without
@@ -35,7 +36,9 @@ struct Felt(LayerMask);
 
 impl Plugin for ContactTouchPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Felt(self.layers)).add_observer(report);
+        app.insert_resource(Felt(self.layers))
+            .add_observer(report)
+            .add_observer(unreport);
     }
 
     fn finish(&self, app: &mut App) {
@@ -54,12 +57,34 @@ impl Plugin for ContactTouchPlugin {
     }
 }
 
+/// On an agent whose `CollisionEventsEnabled` came with its `Touch`: taken
+/// off with it.
+#[derive(Component)]
+struct Reports;
+
 /// An agent with `Touch`: its collider reports what touches it.
-fn report(added: On<Add<Touch>>, mut commands: Commands) {
+fn report(
+    added: On<Add<Touch>>,
+    reporting: Query<(), With<CollisionEventsEnabled>>,
+    mut commands: Commands,
+) {
+    if reporting.contains(added.entity) {
+        return;
+    }
     // Despawned meanwhile, it's nothing to report for.
     commands
         .entity(added.entity)
-        .try_insert_if_new(CollisionEventsEnabled);
+        .try_insert_if_new((CollisionEventsEnabled, Reports));
+}
+
+/// An agent losing `Touch`: its collider stops reporting, if it reported for
+/// it.
+fn unreport(removed: On<Remove<Touch>>, reports: Query<(), With<Reports>>, mut commands: Commands) {
+    if reports.contains(removed.entity) {
+        commands
+            .entity(removed.entity)
+            .try_remove::<(CollisionEventsEnabled, Reports)>();
+    }
 }
 
 /// Each contact an agent with `Touch` is in: felt, if what touched it is on
@@ -141,6 +166,26 @@ mod tests {
         assert!(!felt(&app, agent, grass), "not on the sword's layer");
         let (agent, blade) = bump(&mut app, CollisionLayers::new(sword, LayerMask::ALL));
         assert!(felt(&app, agent, blade), "on it");
+    }
+
+    #[test]
+    fn touch_taken_off_takes_off_the_reporting_it_brought_and_only_that() {
+        let mut app = app();
+        let brought = app.spawn(Touch);
+        let own = app.spawn((Touch, CollisionEventsEnabled));
+        app.tick();
+        assert!(app.world().get::<CollisionEventsEnabled>(brought).is_some());
+        app.entity_mut(brought).remove::<Touch>();
+        app.entity_mut(own).remove::<Touch>();
+        app.tick();
+        assert!(
+            app.world().get::<CollisionEventsEnabled>(brought).is_none(),
+            "brought with `Touch`, gone with it"
+        );
+        assert!(
+            app.world().get::<CollisionEventsEnabled>(own).is_some(),
+            "its own, kept"
+        );
     }
 
     #[test]

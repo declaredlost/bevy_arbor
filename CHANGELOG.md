@@ -63,11 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what's near through avian's colliders (`PerceivableLayers`) instead of
   perception's grid. `LineOfSightPlugin` blocks what's out of
   sight with ray casts (`Occluders`, `SensorOccluders`, `SightPoints`);
-  `ContactTouchPlugin` turns collisions into `Touched`. Each warns at startup
+  `ContactTouchPlugin` turns collisions into `Touched`, enabling avian's
+  collision events on an agent while it has `Touch`. Each warns at startup
   if perception isn't in its dimension's `Space`. In `ArborPlugins`
   through the facade's `avian2d` and `avian3d` features.
 - `bevy_arbor_eqs`: environment queries. A query
-  generates places (`Donut`, `Grid`, `Fan` round an anchor) or things
+  generates places (`Donut`, `Grid`, `Fan` round an anchor, a `Row` through
+  it) or things
   (`Percepts<S>`, `Nearby<C>`, or your own, keeping its Bevy query in a
   `CachedQuery`), filters and scores them (`Distance`, `Dot`,
   `Perceives<S>`, `Random`, a system of yours as a `Measure`, or your own
@@ -76,7 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `task(Survey::of(Cover))` within a per-tick budget, and written to the
   agent as `Found<Cover>`. In the avian crates, with their `eqs`
   feature, tests for cover: `LineOfSight`, `Clearance` (room to stand) and
-  `OccluderDistance` (how near what blocks sight). In the facade through the
+  `OccluderDistance` (how near what blocks sight); a thing item's own
+  colliders, the body it's on included, are the same to each as to sight. In
+  the facade through the
   `eqs` feature.
 - `bevy_arbor_smart`: smart objects. Slots are entities `SlotOf` an object,
   offering what a component of yours on them says; `FreeSlots<A>` finds the

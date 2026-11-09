@@ -20,7 +20,7 @@ now.
 
 - An [`EnvQuery`] generates items, filters them, scores what's left, and picks
   the best. Generators make places round an anchor ([`Donut`], [`Grid`],
-  [`Fan`]) or find things ([`Percepts<S>`], [`Nearby<C>`]).
+  [`Fan`], [`Row`]) or find things ([`Percepts<S>`], [`Nearby<C>`]).
 - Tests measure each item from an anchor: [`Distance`], [`Dot`],
   [`Perceives<S>`], [`Random`], line of sight with the avian crates, or your
   own [`Test`]. Anchors are the agent, a point, a thing, or the hostiles it
@@ -109,6 +109,7 @@ or [MIT license](https://github.com/declaredlost/bevy_arbor/blob/main/LICENSE-MI
 [`Donut`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Donut.html
 [`Grid`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Grid.html
 [`Fan`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Fan.html
+[`Row`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Row.html
 [`Percepts<S>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Percepts.html
 [`Nearby<C>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Nearby.html
 [`Distance`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Distance.html

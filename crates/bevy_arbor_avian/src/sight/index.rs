@@ -1,3 +1,4 @@
+use bevy::ecs::entity::EntityHashSet;
 use bevy::ecs::system::SystemParamItem;
 use bevy::prelude::*;
 use bevy_arbor_perception::Space;
@@ -74,7 +75,7 @@ impl SightIndex for Colliders {
     ) {
         let mask = layers.as_ref().map_or(LayerMask::ALL, |layers| layers.0);
         let filter = SpatialQueryFilter::from_mask(mask);
-        let mut seen: Vec<Entity> = Vec::new();
+        let mut seen = EntityHashSet::default();
         spatial.shape_intersections_callback(
             &dim::ball(radius),
             dim::point(point),
@@ -86,11 +87,11 @@ impl SightIndex for Colliders {
                 let thing = [collider, body]
                     .into_iter()
                     .find(|&entity| perceivable.contains(entity));
+                // Once each, however many colliders it has.
                 if let Some(thing) = thing
-                    && !seen.contains(&thing)
                     && let Ok(transform) = perceivable.get(thing)
+                    && seen.insert(thing)
                 {
-                    seen.push(thing);
                     found(thing, space.flatten(transform.translation()));
                 }
                 true

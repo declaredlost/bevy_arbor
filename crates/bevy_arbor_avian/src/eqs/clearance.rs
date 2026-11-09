@@ -5,7 +5,7 @@ use bevy_arbor_eqs::test::{Cost, Test};
 use super::Reads;
 use crate::avian::prelude::*;
 use crate::dim;
-use crate::sight::under;
+use crate::sight::{owns, under};
 
 /// What looking for room reads.
 type Room = (
@@ -39,7 +39,7 @@ impl Clearance {
         Self {
             shape,
             layers: LayerMask::ALL,
-            room: Reads::new(),
+            room: Reads::new("Clearance"),
         }
     }
 
@@ -76,13 +76,12 @@ impl Test for Clearance {
                             &filter,
                             |entity| {
                                 // Trigger volumes, the agent's own colliders
-                                // and
-                                // a thing item's own take no room.
+                                // and a thing item's own take no room.
                                 let solid = !triggers.contains(entity)
                                     && !under(&colliders, &parents, entity, agent)
-                                    && !item.entity().is_some_and(|own| {
-                                        under(&colliders, &parents, entity, own)
-                                    });
+                                    && !item
+                                        .entity()
+                                        .is_some_and(|own| owns(&colliders, &parents, entity, own));
                                 room &= !solid;
                                 room
                             },

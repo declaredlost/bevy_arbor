@@ -6,7 +6,7 @@ use super::Reads;
 use crate::avian::math::ToF32Precision;
 use crate::avian::prelude::*;
 use crate::dim;
-use crate::sight::{Occluders, under};
+use crate::sight::{Occluders, owns, under};
 
 /// What looking for the nearest occluder reads.
 type Nearest = (
@@ -37,7 +37,7 @@ impl OccluderDistance {
     pub fn new() -> Self {
         Self {
             layers: None,
-            nearest: Reads::new(),
+            nearest: Reads::new("OccluderDistance"),
         }
     }
 
@@ -84,7 +84,7 @@ impl Test for OccluderDistance {
                                     && !under(&colliders, &parents, entity, agent)
                                     && !item
                                         .entity()
-                                        .is_some_and(|own| under(&colliders, &parents, entity, own))
+                                        .is_some_and(|own| owns(&colliders, &parents, entity, own))
                             };
                             // Solid: a point inside a collider is on it, 0
                             // away.

@@ -212,7 +212,7 @@ fn fire_turret() -> Behavior {
 
 fn cover() -> EnvQuery {
     let intruders = || Hostiles::<Sight>::remembered();
-    EnvQuery::new(Donut::around(Agent).radius(2.0, 8.0).rings(3).points(16))
+    EnvQuery::new(Row::along(Agent).extent(8.0).spacing(0.5))
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         .filter(LineOfSight::from(intruders()), Filter::is(false))
         .score(OccluderDistance::new(), Score::lower())

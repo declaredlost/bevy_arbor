@@ -1,12 +1,14 @@
 //! Generators: what a query weighs. Places in a [`Donut`], [`Grid`] or
-//! [`Fan`] around an anchor; things the agent perceives ([`Percepts`]), or
-//! things with a component near an anchor ([`Nearby`]); or a [`Generate`] of
-//! your own, keeping its Bevy query in a [`CachedQuery`].
+//! [`Fan`] around an anchor, or in a [`Row`] through it; things the agent
+//! perceives ([`Percepts`]), or things with a component near an anchor
+//! ([`Nearby`]); or a [`Generate`] of your own, keeping its Bevy query in a
+//! [`CachedQuery`].
 
 mod cached;
 mod donut;
 mod fan;
 mod grid;
+mod row;
 mod things;
 
 use std::f32::consts::TAU;
@@ -18,6 +20,7 @@ pub use self::cached::CachedQuery;
 pub use self::donut::Donut;
 pub use self::fan::Fan;
 pub use self::grid::Grid;
+pub use self::row::Row;
 pub use self::things::{Nearby, Percepts};
 use crate::query::{Item, QueryContext};
 
@@ -35,6 +38,28 @@ pub(crate) fn round(space: Space, center: Vec3, angle: f32, radius: f32) -> Vec3
         Space::Planar => center + Vec3::new(cos, sin, 0.0) * radius,
         Space::Volume => center + Vec3::new(cos, 0.0, -sin) * radius,
     }
+}
+
+/// How many points a grid or row has each way of its anchor, at most: one
+/// asking for more is spread further apart, so a tiny spacing can't hang the
+/// game.
+pub(crate) const MOST_STEPS: i32 = 50;
+
+/// How many points each way, and how far apart, out to `extent`, `spacing`
+/// apart; if that's more than [`MOST_STEPS`], how far apart they're spread
+/// instead.
+pub(crate) fn steps(extent: f32, spacing: f32) -> Result<(i32, f32), f32> {
+    let wanted = (extent / spacing).floor();
+    #[expect(clippy::cast_precision_loss, reason = "a small step count")]
+    let most = MOST_STEPS as f32;
+    if wanted > most {
+        return Err(extent / most);
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "at most MOST_STEPS, and never negative"
+    )]
+    Ok((wanted as i32, spacing))
 }
 
 /// `count` angles evenly round a circle.
@@ -130,6 +155,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_row_is_behind_and_ahead_of_its_anchor_the_way_it_looks() {
+        for space in [Space::Planar, Space::Volume] {
+            let mut app = app(space);
+            let agent = app.spawn(GlobalTransform::from_xyz(1.0, 2.0, 0.0));
+            let row = Row::along(Agent).extent(2.0).spacing(1.0);
+            let points = points(&generated(&app, agent, space, &row));
+            let ahead = match space {
+                Space::Planar => Vec3::X,
+                Space::Volume => Vec3::NEG_Z,
+            };
+            let center = Vec3::new(1.0, 2.0, 0.0);
+            let expected: Vec<Vec3> = [-2.0, -1.0, 0.0, 1.0, 2.0]
+                .into_iter()
+                .map(|out_by| center + ahead * out_by)
+                .collect();
+            assert_eq!(points, expected, "{space:?}");
+        }
+    }
+
+    #[test]
+    fn a_row_through_what_looks_nowhere_has_nothing() {
+        let mut app = app(Space::Volume);
+        let agent = app.spawn(GlobalTransform::IDENTITY);
+        let row = Row::along(At(Vec3::ZERO));
+        assert_eq!(generated(&app, agent, Space::Volume, &row).len(), 0);
+    }
+
+    #[test]
+    fn a_row_too_fine_is_spread_out_rather_than_hang() {
+        let mut app = app(Space::Volume);
+        let agent = app.spawn(GlobalTransform::IDENTITY);
+        let row = Row::along(Agent).extent(5.0).spacing(0.0);
+        assert_eq!(generated(&app, agent, Space::Volume, &row).len(), 101);
     }
 
     #[test]

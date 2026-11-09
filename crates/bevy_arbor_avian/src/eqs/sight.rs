@@ -8,7 +8,7 @@ use bevy_arbor_eqs::test::{Cost, Test};
 use super::Reads;
 use crate::avian::prelude::*;
 use crate::dim;
-use crate::sight::{Occluders, SensorOccluders, under};
+use crate::sight::{Occluders, SensorOccluders, owns, under};
 
 /// What casting a ray reads.
 type Rays = (
@@ -26,7 +26,8 @@ type Rays = (
 /// What blocks the ray is what blocks sight: what's on [`Occluders`]' layers,
 /// or the anchor's own [`SensorOccluders`] where it's a thing with them. The
 /// agent's own colliders, the anchor's, trigger volumes (avian's `Sensor`),
-/// and a thing item's own colliders don't. Costly, a ray an item: filter
+/// and a thing item's own colliders (on it, below it, or on the body it's on)
+/// don't, as for sight. Costly, a ray an item: filter
 /// cheaply first.
 ///
 /// `LineOfSight::from(Hostiles::<Sight>::remembered())`, filtered to 0, keeps
@@ -41,7 +42,7 @@ impl LineOfSight {
     pub fn from(from: impl Locate) -> Self {
         Self {
             from: Arc::new(from),
-            rays: Reads::new(),
+            rays: Reads::new("LineOfSight"),
         }
     }
 }
@@ -73,8 +74,7 @@ impl Test for LineOfSight {
                             .map_or(everywhere, |own| own.0);
                         let filter = SpatialQueryFilter::from_mask(mask);
                         // Neither the agent's own colliders nor the anchor's,
-                        // where the ray starts, nor
-                        // trigger volumes.
+                        // where the ray starts, nor trigger volumes.
                         let blocks = |entity: Entity| {
                             !triggers.contains(entity)
                                 && !under(&colliders, &parents, entity, agent)
@@ -94,9 +94,11 @@ impl Test for LineOfSight {
                             &filter,
                             &blocks,
                         );
+                        // A thing item's own: on it, below it, or the body
+                        // it's on.
                         hit.is_none_or(|hit| {
                             item.entity().is_some_and(|target| {
-                                under(&colliders, &parents, hit.entity, target)
+                                owns(&colliders, &parents, hit.entity, target)
                             })
                         })
                     };
@@ -194,6 +196,24 @@ mod tests {
         let cx = QueryContext::new(app.world(), agent, SPACE, 1);
         let item = Item::Entity {
             entity: crate_,
+            position: ahead(5.0),
+        };
+        assert_eq!(test.test(&cx, &item), Some(1.0));
+    }
+
+    #[test]
+    fn a_thing_item_is_not_blocked_by_the_body_it_is_on() {
+        // A rider, on the rigid body it's a child of, as sight finds it.
+        let mut app = app();
+        let agent = looker(&mut app);
+        let body = wall(&mut app, 5.0, 2.0, CollisionLayers::default());
+        let rider = app.spawn((Transform::default(), ChildOf(body)));
+        app.ticks(3);
+        let test = LineOfSight::from(Agent);
+        test.prepare(app.world_mut());
+        let cx = QueryContext::new(app.world(), agent, SPACE, 1);
+        let item = Item::Entity {
+            entity: rider,
             position: ahead(5.0),
         };
         assert_eq!(test.test(&cx, &item), Some(1.0));
