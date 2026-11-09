@@ -5,7 +5,7 @@ use bevy_arbor_perception::PerceptionSystems;
 use bevy_arbor_perception::sense::{Touch, Touched};
 
 use crate::avian::prelude::*;
-use crate::plugin::schedule;
+use crate::plugin::{check_space, schedule};
 
 /// What touches an agent with [`Touch`] is felt: avian's `CollisionStart`,
 /// written as [`Touched`], before perception gathers. An agent with `Touch`
@@ -43,6 +43,7 @@ impl Plugin for ContactTouchPlugin {
             warn!("`ContactTouchPlugin` needs `PerceptionPlugin`");
             return;
         };
+        check_space(app);
         // Without avian's collision events, there's nothing to feel: say so,
         // rather than fail each tick.
         if !app.world().contains_resource::<Messages<CollisionStart>>() {

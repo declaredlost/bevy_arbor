@@ -71,7 +71,7 @@ fn main() {
         .add_plugins((
             MinimalPlugins,
             PhysicsPlugins::default(),
-            ArborPlugins.set(PerceptionPlugin::default().with_space(Space::Planar)),
+            ArborPlugins.with_space(Space::Planar),
         ))
         // Walls and glass block sight. Other guards don't.
         .insert_resource(Occluders(LayerMask::from([Layer::Walls, Layer::Glass])))
@@ -280,6 +280,9 @@ the guard's tree wakes and sees an enemy.
   otherwise. Add your stage systems to the same schedule.
 - **A step behind.** Avian runs in `FixedPostUpdate`, so a ray sees colliders
   where the last physics step left them. An AI won't notice.
+- **The wrong space.** With avian2d, perception has to work in
+  `Space::Planar`, and with avian3d in `Space::Volume`. Otherwise it looks
+  where the physics isn't, and a warning says so at startup.
 - **Perceivable without a collider.** With avian, sight finds things through
   their colliders. Without one, a perceivable is never seen.
 - **Two classifiers on one candidate.** The last to run wins, and their order

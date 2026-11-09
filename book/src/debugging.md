@@ -113,7 +113,7 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
-            ArborPlugins.set(PerceptionPlugin::default().with_space(Space::Planar)),
+            ArborPlugins.with_space(Space::Planar),
             ArborGizmosPlugin,
         ))
         .run();

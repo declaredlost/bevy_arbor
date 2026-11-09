@@ -13,8 +13,9 @@ use crate::slot::{SlotDisabled, SlotOf, Using};
 /// On a slot: the agent holding it, as a Bevy relationship. Free without one.
 ///
 /// Added and removed by [`claim`]; an observer of `On<Add<ClaimedBy>>` or
-/// `On<Remove<ClaimedBy>>` hears it claimed or given up. Despawning the agent
-/// gives it up.
+/// `On<Remove<ClaimedBy>>` hears it claimed or given up. Removing it yourself
+/// takes the slot from its agent: the branch holding it is cancelled, as its
+/// `claim` stops passing. Despawning the agent gives it up.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
 #[reflect(Component, Debug, PartialEq)]
 #[relationship(relationship_target = Claims)]
@@ -47,6 +48,9 @@ impl Claims {
 pub struct Claim<Q: Send + Sync + 'static> {
     /// The slot it holds, while its branch runs.
     held: Option<Entity>,
+    /// Whether it claimed the slot itself, so gives it up as its branch ends:
+    /// not if the agent held it already, by another branch.
+    claimed: bool,
     /// What the slot plugged into the agent, and what the agent had plugged
     /// in before, set aside to put back as the branch ends.
     swapped: Option<(Plugged<Using>, Option<Plugged<Using>>)>,
@@ -57,15 +61,24 @@ pub struct Claim<Q: Send + Sync + 'static> {
 /// its branch runs: `when(found::<Bench> && claim::<Bench>()) => ..`.
 ///
 /// It passes while that slot is free, or already the agent's, and isn't
-/// disabled: so a slot taken by another agent first, or disabled, keeps the
-/// branch out, or cancels it. As its branch starts, the slot is claimed, and
-/// its `Plugged<Using>`, if it has one, is plugged into the agent, for
+/// disabled; once claimed, while it's still the agent's. So a slot taken by
+/// another agent first, disabled, or taken from the agent (its [`ClaimedBy`]
+/// removed) keeps the branch out, or cancels it.
+///
+/// As its branch starts, the slot is claimed, if it can be, and its
+/// `Plugged<Using>`, if it has one, is plugged into the agent, for
 /// `Socket(Using)` to run; as it ends, however it ends, both are given up,
-/// and what the agent had plugged in before is put back.
+/// and what the agent had plugged in before is put back. A slot the agent
+/// already held, by another branch, stays held.
+///
+/// A branch tells every decorator in its condition it's starting, even one
+/// under `!` or on the side of `||` that wasn't asked: so under `||`, each
+/// side whose slot can be claimed claims it, and under `!` nothing is.
 #[must_use]
 pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
     Claim {
         held: None,
+        claimed: false,
         swapped: None,
         key: PhantomData,
     }
@@ -80,6 +93,21 @@ impl<Q: Send + Sync + 'static> Claim<Q> {
     }
 }
 
+/// Whether `agent` can claim `slot`: a slot, not disabled, and free or its
+/// own already. Held already, only its own.
+fn claimable(world: &World, slot: Entity, agent: Entity, held: bool) -> bool {
+    let Ok(slot) = world.get_entity(slot) else {
+        return false;
+    };
+    let holder = slot.get::<ClaimedBy>().map(ClaimedBy::agent);
+    let free = if held {
+        holder == Some(agent)
+    } else {
+        holder.is_none_or(|holder| holder == agent)
+    };
+    slot.contains::<SlotOf>() && !slot.contains::<SlotDisabled>() && free
+}
+
 impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
     fn passes(&mut self, cx: &mut Context) -> bool {
         let agent = cx.agent();
@@ -92,14 +120,7 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         // Taken, given up or disabled elsewhere wakes the tree.
         cx.watch::<ClaimedBy>(slot);
         cx.watch::<SlotDisabled>(slot);
-        let Ok(slot) = cx.world().get_entity(slot) else {
-            return false;
-        };
-        slot.contains::<SlotOf>()
-            && !slot.contains::<SlotDisabled>()
-            && slot
-                .get::<ClaimedBy>()
-                .is_none_or(|claimed| claimed.agent() == agent)
+        claimable(cx.world(), slot, agent, self.held.is_some())
     }
 
     fn start(&mut self, cx: &mut Context) {
@@ -107,19 +128,29 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         let Some(slot) = Self::found(cx) else {
             return;
         };
+        // Started without passing, under `!` or `||`: nothing to hold.
+        if !claimable(cx.world(), slot, agent, false) {
+            return;
+        }
         let world = cx.world_mut();
         let Ok(mut entity) = world.get_entity_mut(slot) else {
             return;
         };
-        entity.insert(ClaimedBy(agent));
+        self.claimed = entity.get::<ClaimedBy>().is_none();
+        if self.claimed {
+            entity.insert(ClaimedBy(agent));
+        }
         let brought = entity.get::<Plugged<Using>>().cloned();
         if let Some(brought) = brought
             && let Ok(mut agent) = world.get_entity_mut(agent)
         {
-            // The agent's own, set aside while the slot's runs.
+            // The agent's own, set aside while the slot's runs; unless the
+            // slot's is plugged in already.
             let own = agent.get::<Plugged<Using>>().cloned();
-            agent.insert(brought.clone());
-            self.swapped = Some((brought, own));
+            if !own.as_ref().is_some_and(|own| own.same(&brought)) {
+                agent.insert(brought.clone());
+                self.swapped = Some((brought, own));
+            }
         }
         self.held = Some(slot);
     }
@@ -128,9 +159,11 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         let Some(slot) = self.held.take() else {
             return;
         };
+        let claimed = std::mem::take(&mut self.claimed);
         let agent = cx.agent();
         let world = cx.world_mut();
-        if let Ok(mut entity) = world.get_entity_mut(slot)
+        if claimed
+            && let Ok(mut entity) = world.get_entity_mut(slot)
             && entity
                 .get::<ClaimedBy>()
                 .is_some_and(|claimed| claimed.agent() == agent)
@@ -165,6 +198,7 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
 mod tests {
     use bevy::prelude::*;
     use bevy_arbor_bt::prelude::*;
+    use bevy_arbor_eqs::prelude::*;
 
     use crate::prelude::*;
     use crate::testing::*;
@@ -307,5 +341,107 @@ mod tests {
             app.world().get::<Plugged<Using>>(agent).is_some(),
             "its own stays"
         );
+    }
+
+    /// What an agent does while it holds what it wanted.
+    #[derive(Component, Clone)]
+    struct Idle;
+
+    /// A second query, finding the same seats as [`Seat`].
+    struct AnySeat;
+
+    /// Reports every running `T` task as done.
+    fn finish<T: Component>(app: &mut bevy_harness::TestApp) {
+        let mut tasks = app.world_mut().query_filtered::<&mut Task, With<T>>();
+        for mut task in tasks.iter_mut(app.world_mut()) {
+            task.succeed();
+        }
+    }
+
+    #[test]
+    fn not_claiming_takes_no_one_elses_seat() {
+        let mut app = app();
+        let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
+        let owner = app.spawn(GlobalTransform::IDENTITY);
+        let other = app.spawn((
+            GlobalTransform::IDENTITY,
+            BehaviorTree::new(behavior_tree! {
+                Sequence => {
+                    task(Survey::of(Seat)),
+                    task(GoThere),
+                    Select => { when(!claim::<Seat>()) => task(Idle) },
+                }
+            }),
+        ));
+        app.ticks(2);
+        // Found free, then taken while it walks.
+        app.entity_mut(seats[0]).insert(ClaimedBy(owner));
+        arrive(&mut app);
+        app.ticks(2);
+        assert_eq!(app.count::<With<Idle>>(), 1, "taken, so `!claim` passes");
+        assert_eq!(
+            app.world().get::<ClaimedBy>(seats[0]).map(ClaimedBy::agent),
+            Some(owner),
+            "still the owner's"
+        );
+        assert_eq!(held(&app, other), None);
+        assert!(
+            app.world().get::<Plugged<Using>>(other).is_none(),
+            "nor what it brings"
+        );
+    }
+
+    #[test]
+    fn a_seat_taken_from_its_agent_cancels_and_unplugs() {
+        let mut app = app();
+        let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
+        let agent = sitter(&mut app);
+        app.ticks(2);
+        arrive(&mut app);
+        app.tick();
+        assert_eq!(app.count::<With<Rest>>(), 1);
+        app.entity_mut(seats[0]).remove::<ClaimedBy>();
+        app.tick();
+        assert_eq!(app.count::<With<Rest>>(), 0, "cancelled");
+        assert!(
+            app.world().get::<Plugged<Using>>(agent).is_none(),
+            "unplugged"
+        );
+    }
+
+    #[test]
+    fn a_seat_claimed_twice_stays_held_until_the_first_claim_ends() {
+        let mut app = app();
+        app.app_mut().add_env_query(
+            AnySeat,
+            EnvQuery::new(FreeSlots::<Sit>::within(Agent, 20.0)),
+        );
+        let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
+        let agent = app.spawn((
+            GlobalTransform::IDENTITY,
+            BehaviorTree::new(behavior_tree! {
+                Sequence => {
+                    task(Survey::of(Seat)),
+                    task(Survey::of(AnySeat)),
+                    Select => {
+                        when(claim::<Seat>()) => Sequence => {
+                            Select => { when(claim::<AnySeat>()) => task(Idle) },
+                            task(GoThere),
+                        },
+                    },
+                }
+            }),
+        ));
+        app.ticks(4);
+        assert_eq!(app.count::<With<Idle>>(), 1);
+        finish::<Idle>(&mut app);
+        app.ticks(2);
+        assert_eq!(app.count::<With<GoThere>>(), 1, "the first claim's branch");
+        assert_eq!(held(&app, agent), Some(seats[0]), "still held");
+        assert_eq!(app.count::<With<Rest>>(), 0);
+        arrive(&mut app);
+        app.ticks(2);
+        assert_eq!(held(&app, agent), None, "given up as the first ends");
+        assert!(app.world().get::<Plugged<Using>>(agent).is_none());
     }
 }

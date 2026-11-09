@@ -39,8 +39,8 @@ fn main() {
 ```
 
 Trees and perception run in `FixedUpdate`. Perception works in 3D by
-default. The guard lives in a side-scroller, so switch perception to 2D. Use
-`set`, as with Bevy's own plugin groups:
+default. The guard lives in a side-scroller, so switch it to 2D with
+`with_space`:
 
 ```rust,no_run
 # use bevy::prelude::*;
@@ -49,14 +49,18 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
-            ArborPlugins.set(PerceptionPlugin::default().with_space(Space::Planar)),
+            ArborPlugins.with_space(Space::Planar),
         ))
         .run();
 }
 ```
 
-To run trees in another schedule, set [`TreePlugin::new`] the same way:
-`ArborPlugins.set(TreePlugin::new(Update))`.
+To change a plugin, use `set`, as with Bevy's own plugin groups. To run
+trees in another schedule, set [`TreePlugin::new`]:
+`ArborPlugins.with_space(Space::Planar).set(TreePlugin::new(Update))`.
+`with_space` sets `PerceptionPlugin`, so to change perception's schedule as
+well, set that one with both:
+`ArborPlugins.set(PerceptionPlugin::new(Update).with_space(Space::Planar))`.
 
 ## Using one part alone
 

@@ -63,11 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what's near through avian's colliders (`PerceivableLayers`) instead of
   perception's grid. `LineOfSightPlugin` blocks what's out of
   sight with ray casts (`Occluders`, `SensorOccluders`, `SightPoints`);
-  `ContactTouchPlugin` turns collisions into `Touched`. In `ArborPlugins`
+  `ContactTouchPlugin` turns collisions into `Touched`. Each warns at startup
+  if perception isn't in its dimension's `Space`. In `ArborPlugins`
   through the facade's `avian2d` and `avian3d` features.
 - `bevy_arbor_eqs`: environment queries. A query
   generates places (`Donut`, `Grid`, `Fan` round an anchor) or things
-  (`Percepts<S>`, `Nearby<C>`), filters and scores them (`Distance`, `Dot`,
+  (`Percepts<S>`, `Nearby<C>`, or your own, keeping its Bevy query in a
+  `CachedQuery`), filters and scores them (`Distance`, `Dot`,
   `Perceives<S>`, `Random`, a system of yours as a `Measure`, or your own
   `Test`), and picks the best, a random
   one of the best, or all. Added with `add_env_query`, run by a tree as
@@ -81,8 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ones an agent could claim, for environment queries; the `claim::<Q>()`
   decorator holds the slot a query found while its branch runs (`ClaimedBy`,
   `Claims`), and plugs the slot's own `Plugged<Using>` into the agent, for
-  `Socket(Using)`. `ClaimedSlots` is a query anchor at the slots an agent
-  holds. In the facade through the `smart` feature.
+  `Socket(Using)`. Removing a slot's `ClaimedBy` takes it from its agent; a
+  claim releases only a slot it claimed itself, and a `claim` started without
+  passing (under `!` or `||`) claims nothing. `ClaimedSlots` is a query anchor
+  at the slots an agent holds. In the facade through the `smart` feature.
 - `bevy_arbor_nav`: navigation, as the contract between AI and the game's
   own movement and pathfinding. `Destination` is where an agent is asked to
   go, `Travel` how it's going (written by your movement), and `Route` the way
@@ -100,5 +104,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiled and run as doctests, published to GitHub Pages.
 - `bevy_arbor_macros`: the macros of every part, `behavior_tree!` so far.
 - `bevy_arbor`: a facade over the parts, each crate re-exported whole behind
-  a feature, with one prelude, an `ArborPlugins` group, and `ArborSystems` ordering the parts
-  (perception, then trees) in each schedule they share.
+  a feature, with one prelude, an `ArborPlugins` group
+  (`ArborPlugins.with_space(Space::Planar)` for 2D), and `ArborSystems`
+  ordering the parts (perception, then trees) in each schedule they share.

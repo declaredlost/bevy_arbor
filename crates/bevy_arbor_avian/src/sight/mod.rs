@@ -13,7 +13,7 @@ use bevy_arbor_perception::{PerceptionSystems, Space};
 pub use self::index::{ColliderSightPlugin, PerceivableLayers};
 use crate::avian::prelude::*;
 use crate::dim;
-use crate::plugin::schedule;
+use crate::plugin::{check_space, schedule};
 
 /// Blocks what's out of sight: a ray from where each sensor looked to each of
 /// its candidates for `S`, in [`PerceptionSystems::Occlude`]. What the ray hits
@@ -50,6 +50,7 @@ impl<S: Sense> Plugin for LineOfSightPlugin<S> {
             warn!("`LineOfSightPlugin` needs `PerceptionPlugin`");
             return;
         };
+        check_space(app);
         // Without avian's spatial queries, there's nothing to cast rays with:
         // say so, rather than fail each tick.
         if !app.is_plugin_added::<SpatialQueryPlugin>() {

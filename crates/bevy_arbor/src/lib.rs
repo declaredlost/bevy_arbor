@@ -97,7 +97,8 @@ plugin_group! {
     /// The plugin of every part its features enable.
     ///
     /// Each keeps its defaults; change one with
-    /// `ArborPlugins.set(TreePlugin::new(Update))`.
+    /// `ArborPlugins.set(TreePlugin::new(Update))`. For a 2D game, set the
+    /// space with `ArborPlugins.with_space(Space::Planar)`.
     pub struct ArborPlugins {
         #[cfg(feature = "bt")]
         bt:::TreePlugin,
@@ -116,6 +117,34 @@ plugin_group! {
         #[plugin_group]
         #[cfg(feature = "avian3d")]
         avian3d:::AvianPerceptionPlugins,
+    }
+}
+
+#[cfg(feature = "perception")]
+impl ArborPlugins {
+    /// Every part's plugin, with perception in `space`: [`Space::Planar`] for
+    /// 2D. Everything that works in a space (perception, queries, avian, the
+    /// gizmos) takes it from there.
+    ///
+    /// The same as
+    /// `ArborPlugins.set(PerceptionPlugin::default().with_space(space))`,
+    /// so a `PerceptionPlugin` set after it replaces it, space and all: to
+    /// change its schedule too, set it with both.
+    ///
+    /// ```
+    /// # use bevy::prelude::*;
+    /// # use bevy_arbor::prelude::*;
+    /// App::new()
+    ///     .add_plugins((MinimalPlugins, ArborPlugins.with_space(Space::Planar)));
+    /// ```
+    ///
+    /// [`Space::Planar`]: bevy_arbor_perception::Space::Planar
+    #[must_use]
+    pub fn with_space(self, space: bevy_arbor_perception::Space) -> bevy::app::PluginGroupBuilder {
+        use bevy::app::PluginGroup;
+
+        self.build()
+            .set(bevy_arbor_perception::PerceptionPlugin::default().with_space(space))
     }
 }
 
@@ -172,5 +201,34 @@ mod book {
         Testing: "testing.md",
         Performance: "performance.md",
         Features: "features.md",
+    }
+}
+
+#[cfg(all(test, feature = "perception"))]
+mod tests {
+    use bevy::prelude::*;
+    use bevy_arbor_perception::{PerceptionPlugin, Space};
+
+    use crate::ArborPlugins;
+
+    fn space(plugins: impl PluginGroup) -> Space {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, plugins));
+        *app.world().resource::<Space>()
+    }
+
+    #[test]
+    fn with_space_sets_perceptions() {
+        assert_eq!(space(ArborPlugins), Space::Volume, "3D unless told");
+        assert_eq!(space(ArborPlugins.with_space(Space::Planar)), Space::Planar);
+        assert_eq!(
+            space(
+                ArborPlugins
+                    .with_space(Space::Planar)
+                    .set(PerceptionPlugin::default())
+            ),
+            Space::Volume,
+            "a perception plugin set after replaces it"
+        );
     }
 }
