@@ -30,10 +30,9 @@ through colliders, and touch from contacts. Built as `bevy_arbor_avian2d` and
   `Sensor`) never block sight.
 - `ContactTouchPlugin` turns avian's collisions into perception's `Touched`,
   for agents with `Touch`, from colliders on the layers you choose.
-- With the `eqs` feature, four environment query tests: `LineOfSight`,
+- With the `eqs` feature, three environment query tests: `LineOfSight`,
   whether an anchor can see each item; `Clearance`, whether there's room to
-  stand at it; `OccluderDistance`, how far it is from what blocks sight; and
-  `Footing`, how far down the ground is under it, in a side view.
+  stand at it; and `OccluderDistance`, how far it is from what blocks sight.
   Together they find cover: room to stand, out of sight, up against a wall.
 - `AvianPerceptionPlugins` adds all three plugins.
 - Perception has to work in the space of the crate's dimension:
@@ -60,7 +59,7 @@ bevy_arbor_avian2d = "0.1"
 | Feature | Default | Enables |
 |---|---|---|
 | `parry-f32` | Yes | avian's single-precision collider backend. For double precision, turn it off and enable `parry-f64` on your own avian dependency. |
-| `eqs` | No | `LineOfSight`, `Clearance`, `OccluderDistance` and `Footing`, environment query tests |
+| `eqs` | No | `LineOfSight`, `Clearance` and `OccluderDistance`, environment query tests |
 
 ## Usage
 

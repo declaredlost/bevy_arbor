@@ -77,10 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one of the best, or all. Added with `add_env_query`, run by a tree as
   `task(Survey::of(Cover))` within a per-tick budget, and written to the
   agent as `Found<Cover>`. In the avian crates, with their `eqs`
-  feature, tests for cover: `LineOfSight`, `Clearance` (room to stand),
-  `OccluderDistance` (how near what blocks sight) and `Footing` (how far down
-  the ground is, in a side view); a thing item's own colliders, the body it's
-  on included, are the same to each as to sight. In the facade through the
+  feature, tests for cover: `LineOfSight`, `Clearance` (room to stand) and
+  `OccluderDistance` (how near what blocks sight); a thing item's own
+  colliders, the body it's on included, are the same to each as to sight. In
+  the facade through the
   `eqs` feature.
 - `bevy_arbor_smart`: smart objects. Slots are entities `SlotOf` an object,
   offering what a component of yours on them says; `FreeSlots<A>` finds the

@@ -1,12 +1,10 @@
 //! Environment query tests that ask avian, with the `eqs` feature: whether an
 //! anchor can see each item ([`LineOfSight`]), whether there's room to stand
-//! at it ([`Clearance`]), how far it is from what blocks sight
-//! ([`OccluderDistance`]), and how far down the ground is under it
-//! ([`Footing`]).
+//! at it ([`Clearance`]), and how far it is from what blocks sight
+//! ([`OccluderDistance`]).
 
 mod clearance;
 mod distance;
-mod footing;
 mod sight;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,7 +16,6 @@ use bevy::prelude::*;
 
 pub use self::clearance::Clearance;
 pub use self::distance::OccluderDistance;
-pub use self::footing::Footing;
 pub use self::sight::LineOfSight;
 
 /// What a test reads from the world, as a system would, kept for the world

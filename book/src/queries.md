@@ -13,17 +13,8 @@ and picks one. Here is the guard's cover:
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-use avian2d::prelude::*;
-use bevy_arbor::avian2d::eqs::{Clearance, Footing, LineOfSight, OccluderDistance};
-
-/// The level's collision layers: walls to hide behind, and the floor.
-#[derive(PhysicsLayer, Default)]
-enum Layer {
-    #[default]
-    Default,
-    Walls,
-    Floor,
-}
+use avian2d::prelude::Collider;
+use bevy_arbor::avian2d::eqs::{Clearance, LineOfSight, OccluderDistance};
 
 /// Somewhere out of the intruder's sight.
 struct Cover;
@@ -31,25 +22,21 @@ struct Cover;
 fn cover() -> EnvQuery {
     // Where the intruder is, or was last seen.
     let intruders = || Hostiles::<Sight>::remembered();
-    // Points along the floor, either side of the guard.
+    // Points level with the guard, either side of it.
     EnvQuery::new(Row::along(Agent).extent(8.0).spacing(0.5))
-        // Keep the points over the floor, not over a drop.
-        .filter(Footing::new(), Filter::at_most(1.5))
-        // That the guard fits in.
+        // Keep the points the guard fits in.
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         // And that the intruder can't see.
         .filter(LineOfSight::from(intruders()), Filter::is(false))
-        // Prefer up against a wall, near the guard, far from the intruder.
-        .score(OccluderDistance::new().on(Layer::Walls), Score::lower())
+        // Prefer up against the wall, near the guard, far from the intruder.
+        .score(OccluderDistance::new(), Score::lower())
         .score(Distance::to(Agent), Score::lower().weight(0.5))
         .score(Distance::to(intruders()), Score::higher().weight(0.5))
 }
 ```
 
-The guard's world is seen from the side. Its middle is 1 above the floor, so
-a point where the floor is further down than 1.5 is over a drop. The floor
-blocks nothing between points level with the guard, but it's the nearest
-collider to all of them, so `OccluderDistance` measures to walls only.
+The guard's world is seen from the side, so its cover is a `Row` along the
+ground at its height, not a `Donut`, whose points would be in the air.
 
 `remembered()` is where the intruder is while it's in view, and where it was
 last seen after. So the guard can still take cover once it's lost sight of
@@ -125,7 +112,6 @@ A test gives each item a number.
 | `LineOfSight::from(a)` | 1 if a ray from the anchor reaches the item (avian, with `eqs`) |
 | `Clearance::of(shape)` | 1 if the shape, centered on the item, overlaps no collider: room to stand (avian, with `eqs`) |
 | `OccluderDistance::new()` | How far the item is from the nearest collider that blocks sight: `.on(layers)` for others (avian, with `eqs`) |
-| `Footing::new()` | How far down the ground is under the item, in a side view: `.on(layers)`, `.within(reach)` (avian, with `eqs`) |
 
 A test can have no answer for an item: `Perceives` for a place, say. The item
 then fails any filter on that test, and scores nothing by it.
@@ -172,8 +158,9 @@ item kept 1.
   is out of sight, so it passes a line-of-sight filter. Filter on
   `Clearance` first.
 - **Points in mid-air.** In a side view, points level with the guard can be
-  over a drop. Filter on `Footing`. A `Row` doesn't follow the floor up a
-  slope or onto a ledge either: the points there are inside it, or over it.
+  over a drop, and a `Row` doesn't follow the floor up a slope or onto a
+  ledge. Rule them out with a [test of your own](running-queries.md): a
+  `Measure` that casts a ray down from each point.
 - **Straight lines.** `Distance` is as the crow flies. A spot behind a wall
   may be near but a long walk away.
 - **Too many items.** Every item runs every test. A donut of 3 rings of 16 is
