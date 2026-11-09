@@ -8,7 +8,7 @@
 #[doc(no_inline)]
 pub use crate::anchor::{Agent, At, Hostiles, Thing};
 #[doc(no_inline)]
-pub use crate::generate::{Donut, Fan, Grid, Nearby, Percepts};
+pub use crate::generate::{Donut, Fan, Grid, Nearby, Percepts, Row};
 #[doc(no_inline)]
 pub use crate::query::{EnvQuery, Filter, Item, Pick, Score, Scored};
 #[doc(no_inline)]

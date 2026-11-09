@@ -6,7 +6,7 @@
 |---|---|---|
 | `bt` | Yes | Behavior trees: `bevy_arbor_bt` as `bevy_arbor::bt`. Adds `TreePlugin` to `ArborPlugins`. |
 | `perception` | No | Perception: `bevy_arbor_perception` as `bevy_arbor::perception`. Adds `PerceptionPlugin` to `ArborPlugins`. |
-| `eqs` | No | Environment queries: `bevy_arbor_eqs` as `bevy_arbor::eqs`. Adds `EqsPlugin` to `ArborPlugins`. Turns on `bt` and `perception`, and the avian crates' tests (`LineOfSight`, `Clearance`, `OccluderDistance`) where they're on. |
+| `eqs` | No | Environment queries: `bevy_arbor_eqs` as `bevy_arbor::eqs`. Adds `EqsPlugin` to `ArborPlugins`. Turns on `bt` and `perception`, and the avian crates' tests (`LineOfSight`, `Clearance`, `OccluderDistance`, `Footing`) where they're on. |
 | `smart` | No | Smart objects: `bevy_arbor_smart` as `bevy_arbor::smart`. Adds `SmartPlugin` to `ArborPlugins`. Turns on `eqs`. |
 | `nav` | No | Navigation: `bevy_arbor_nav` as `bevy_arbor::nav`. Adds `NavPlugin` to `ArborPlugins`. Turns on `bt`. With `eqs` on too, `MoveTo::found` and `PathDistance`. |
 | `gizmos` | No | Debug drawing: `bevy_arbor_gizmos` as `bevy_arbor::gizmos`, with what queries, smart objects and navigation draw when those parts are on. Turns on `perception`. `ArborGizmosPlugin` isn't in `ArborPlugins`, since it needs a renderer. |
@@ -38,7 +38,7 @@ It always draws perception, as `PerceptionGizmos`.
 | Feature | Default | Enables |
 |---|---|---|
 | `parry-f32` | Yes | avian's single-precision collider backend |
-| `eqs` | No | `LineOfSight`, `Clearance` and `OccluderDistance`, environment query tests |
+| `eqs` | No | `LineOfSight`, `Clearance`, `OccluderDistance` and `Footing`, environment query tests |
 
 For double precision, turn off default features and enable `parry-f64` on
 your own avian dependency. The two backends can't both be on.

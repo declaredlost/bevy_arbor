@@ -105,6 +105,22 @@ pub(crate) fn under(
     })
 }
 
+/// Whether `hit`, a collider, is `thing`'s own: on it or below it, or on the
+/// body it's on (a rigid body above it). What a ray to `thing` hits of its
+/// own doesn't block it.
+pub(crate) fn owns(
+    colliders: &Query<&ColliderOf>,
+    parents: &Query<&ChildOf>,
+    hit: Entity,
+    thing: Entity,
+) -> bool {
+    let body = colliders.get(hit).map_or(hit, |of| of.body);
+    under(colliders, parents, hit, thing)
+        || std::iter::successors(Some(thing), |&at| parents.get(at).ok().map(ChildOf::parent))
+            .take(DEPTH)
+            .any(|at| at == body)
+}
+
 /// Each sensor that looked blocks the candidates something's in the way of.
 fn occlude<S: Sense>(
     spatial: SpatialQuery,
@@ -138,14 +154,7 @@ fn occlude<S: Sense>(
             let target = candidate.entity();
             // The target's own: a collider on it or below it, or the body it's
             // on.
-            let reaches = |hit: Entity| {
-                under(hit, target)
-                    || std::iter::successors(Some(target), |&at| {
-                        parents.get(at).ok().map(ChildOf::parent)
-                    })
-                    .take(DEPTH)
-                    .any(|at| colliders.get(hit).map_or(hit, |of| of.body) == at)
-            };
+            let reaches = |hit: Entity| owns(&colliders, &parents, hit, target);
             let in_sight = |point: Vec3| {
                 let Some(direction) = dim::direction(point - eye) else {
                     return true;

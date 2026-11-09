@@ -3,13 +3,9 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use bevy_arbor_perception::Space;
 
-use super::Generate;
+use super::{Generate, MOST_STEPS, steps};
 use crate::anchor::{Locate, Located};
 use crate::query::{Item, QueryContext};
-
-/// How many points a grid has each way of its anchor, at most: a grid asking
-/// for more is spread further apart, so a tiny spacing can't hang the game.
-const MOST_STEPS: u16 = 50;
 
 /// Points on a square grid round an anchor, in the plane things stand on: at
 /// most 101 each way, spread further apart than asked if need be.
@@ -48,25 +44,14 @@ impl Grid {
 impl Generate for Grid {
     fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
         let anchors = cx.locate(&self.around);
-        let wanted = (self.extent / self.spacing).floor();
-        let (steps, spacing) = if wanted > f32::from(MOST_STEPS) {
+        let (steps, spacing) = steps(self.extent, self.spacing).unwrap_or_else(|spread| {
             warn_once!(
-                "a Grid {} out, {} apart, is too many points: spread {} apart instead",
+                "a Grid {} out, {} apart, is too many points: spread {spread} apart instead",
                 self.extent,
                 self.spacing,
-                self.extent / f32::from(MOST_STEPS)
             );
-            (MOST_STEPS, self.extent / f32::from(MOST_STEPS))
-        } else {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "at most MOST_STEPS, and never negative"
-            )]
-            let steps = wanted as u16;
-            (steps, self.spacing)
-        };
-        let steps = i32::from(steps);
+            (MOST_STEPS, spread)
+        });
         for &Located { position, .. } in anchors.iter() {
             for a in -steps..=steps {
                 for b in -steps..=steps {

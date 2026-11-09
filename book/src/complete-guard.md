@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use avian2d::prelude::*;
 use bevy::prelude::*;
-use bevy_arbor::avian2d::eqs::{Clearance, LineOfSight, OccluderDistance};
+use bevy_arbor::avian2d::eqs::{Clearance, Footing, LineOfSight, OccluderDistance};
 use bevy_arbor::prelude::*;
 
 // The guard, the intruder, and what the guard does.
@@ -62,6 +62,16 @@ struct Shout;
 
 #[derive(Component, Clone)]
 struct FireTurret;
+
+// The level's collision layers.
+
+#[derive(PhysicsLayer, Default)]
+enum Layer {
+    #[default]
+    Default,
+    Walls,
+    Floor,
+}
 
 // The turret on the wall, and its gunner's slot.
 
@@ -133,7 +143,19 @@ fn spawn(mut commands: Commands) {
         Transform::from_xyz(30.0, 0.0, 0.0),
     ));
     // A wall: it blocks sight.
-    commands.spawn((RigidBody::Static, Collider::rectangle(1.0, 6.0), Transform::from_xyz(5.0, 0.0, 0.0)));
+    commands.spawn((
+        RigidBody::Static,
+        Collider::rectangle(1.0, 6.0),
+        CollisionLayers::new(Layer::Walls, LayerMask::ALL),
+        Transform::from_xyz(5.0, 0.0, 0.0),
+    ));
+    // The floor, 1 below the guard's middle.
+    commands.spawn((
+        RigidBody::Static,
+        Collider::rectangle(80.0, 1.0),
+        CollisionLayers::new(Layer::Floor, LayerMask::ALL),
+        Transform::from_xyz(0.0, -1.5, 0.0),
+    ));
     // A turret, with one place for a gunner.
     commands
         .spawn((WallTurret, Transform::from_xyz(-6.0, 2.0, 0.0)))
@@ -212,10 +234,11 @@ fn fire_turret() -> Behavior {
 
 fn cover() -> EnvQuery {
     let intruders = || Hostiles::<Sight>::remembered();
-    EnvQuery::new(Donut::around(Agent).radius(2.0, 8.0).rings(3).points(16))
+    EnvQuery::new(Row::along(Agent).extent(8.0).spacing(0.5))
+        .filter(Footing::new(), Filter::at_most(1.5))
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         .filter(LineOfSight::from(intruders()), Filter::is(false))
-        .score(OccluderDistance::new(), Score::lower())
+        .score(OccluderDistance::new().on(Layer::Walls), Score::lower())
         .score(Distance::to(Agent), Score::lower().weight(0.5))
         .score(Distance::to(intruders()), Score::higher().weight(0.5))
 }
@@ -378,6 +401,6 @@ mod systems {
   `ArborSystems`. See [How it fits together](concepts.md#one-tick).
 - **`Facing` written every tick.** The patrol uses `set_if_neq`. See
   [Sleeping trees](sleeping.md#keeping-trees-asleep).
-- **Physics for walls.** The wall and the cover query's `LineOfSight` need
+- **Physics for walls.** The wall and the cover query's avian tests need
   avian's `PhysicsPlugins`. Without them, sight isn't blocked and the cover
-  test has no answer.
+  tests have no answer.

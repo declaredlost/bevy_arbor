@@ -13,8 +13,17 @@ and picks one. Here is the guard's cover:
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-use avian2d::prelude::Collider;
-use bevy_arbor::avian2d::eqs::{Clearance, LineOfSight, OccluderDistance};
+use avian2d::prelude::*;
+use bevy_arbor::avian2d::eqs::{Clearance, Footing, LineOfSight, OccluderDistance};
+
+/// The level's collision layers: walls to hide behind, and the floor.
+#[derive(PhysicsLayer, Default)]
+enum Layer {
+    #[default]
+    Default,
+    Walls,
+    Floor,
+}
 
 /// Somewhere out of the intruder's sight.
 struct Cover;
@@ -22,18 +31,25 @@ struct Cover;
 fn cover() -> EnvQuery {
     // Where the intruder is, or was last seen.
     let intruders = || Hostiles::<Sight>::remembered();
-    // Points on rings round the guard.
-    EnvQuery::new(Donut::around(Agent).radius(2.0, 8.0).rings(3).points(16))
-        // Keep the points the guard fits in.
+    // Points along the floor, either side of the guard.
+    EnvQuery::new(Row::along(Agent).extent(8.0).spacing(0.5))
+        // Keep the points over the floor, not over a drop.
+        .filter(Footing::new(), Filter::at_most(1.5))
+        // That the guard fits in.
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         // And that the intruder can't see.
         .filter(LineOfSight::from(intruders()), Filter::is(false))
-        // Prefer up against the wall, near the guard, far from the intruder.
-        .score(OccluderDistance::new(), Score::lower())
+        // Prefer up against a wall, near the guard, far from the intruder.
+        .score(OccluderDistance::new().on(Layer::Walls), Score::lower())
         .score(Distance::to(Agent), Score::lower().weight(0.5))
         .score(Distance::to(intruders()), Score::higher().weight(0.5))
 }
 ```
+
+The guard's world is seen from the side. Its middle is 1 above the floor, so
+a point where the floor is further down than 1.5 is over a drop. The floor
+blocks nothing between points level with the guard, but it's the nearest
+collider to all of them, so `OccluderDistance` measures to walls only.
 
 `remembered()` is where the intruder is while it's in view, and where it was
 last seen after. So the guard can still take cover once it's lost sight of
@@ -70,11 +86,14 @@ A generator makes the items.
 | [`Donut::around(a)`][`Donut`] | Points on rings round an anchor: `.radius(inner, outer)`, `.rings(n)`, `.points(n)` |
 | [`Grid::around(a)`][`Grid`] | Points on a square grid: `.extent(e)`, `.spacing(s)`, at most 50 steps each way |
 | [`Fan::from(a)`][`Fan`] | Points on rays ahead of an anchor: `.angle(a)`, `.range(near, far)`, `.rays(rays, steps)` |
+| [`Row::along(a)`][`Row`] | Points on a line through an anchor, the way it looks: `.extent(e)`, `.spacing(s)`, at most 50 steps each way |
 | [`Percepts::<S>::all()`][`Percepts`] | What the agent perceives by sense `S`: `.active()`, `.hostile()` |
 | [`Nearby::<C>::within(a, r)`][`Nearby`] | Things with component `C` near an anchor |
 
 Points lie in the plane things stand on. That's perception's [`Space`]: the
-XY plane in 2D, and in 3D the XZ plane at the anchor's height. Add more
+XY plane in 2D, and in 3D the XZ plane at the anchor's height. In a 2D side
+view, that plane is the wall, not the floor: a `Row` keeps to the guard's
+height, where a `Donut` would put points in the air. Add more
 generators with `.generate(..)`: the items of all of them are weighed
 together.
 
@@ -105,7 +124,8 @@ A test gives each item a number.
 | [`Random`] | A random number from 0 to 1 |
 | `LineOfSight::from(a)` | 1 if a ray from the anchor reaches the item (avian, with `eqs`) |
 | `Clearance::of(shape)` | 1 if the shape, centered on the item, overlaps no collider: room to stand (avian, with `eqs`) |
-| `OccluderDistance::new()` | How far the item is from the nearest collider that blocks sight (avian, with `eqs`) |
+| `OccluderDistance::new()` | How far the item is from the nearest collider that blocks sight: `.on(layers)` for others (avian, with `eqs`) |
+| `Footing::new()` | How far down the ground is under the item, in a side view: `.on(layers)`, `.within(reach)` (avian, with `eqs`) |
 
 A test can have no answer for an item: `Perceives` for a place, say. The item
 then fails any filter on that test, and scores nothing by it.
@@ -151,6 +171,9 @@ item kept 1.
 - **Points in walls.** Generators don't know about walls. A point inside one
   is out of sight, so it passes a line-of-sight filter. Filter on
   `Clearance` first.
+- **Points in mid-air.** In a side view, points level with the guard can be
+  over a drop. Filter on `Footing`. A `Row` doesn't follow the floor up a
+  slope or onto a ledge either: the points there are inside it, or over it.
 - **Straight lines.** `Distance` is as the crow flies. A spot behind a wall
   may be near but a long walk away.
 - **Too many items.** Every item runs every test. A donut of 3 rings of 16 is
@@ -162,6 +185,7 @@ item kept 1.
 [`Donut`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Donut.html
 [`Grid`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Grid.html
 [`Fan`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Fan.html
+[`Row`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Row.html
 [`Percepts`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Percepts.html
 [`Nearby`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Nearby.html
 [`Agent`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Agent.html
