@@ -68,6 +68,7 @@ impl Plugin for PerceptionPlugin {
         app.insert_resource(self.space)
             .insert_resource(PerceptionSchedule(self.schedule))
             .init_resource::<Grid>()
+            .init_resource::<sense::Told>()
             .add_message::<Noise>()
             .add_message::<Touched>()
             .add_message::<Share>()
@@ -91,6 +92,7 @@ impl Plugin for PerceptionPlugin {
                         .run_if(not(resource_exists::<sense::OwnSightIndex>)),
                     sense::hear,
                     sense::feel,
+                    sense::tell,
                 )
                     .in_set(Gather),
             )

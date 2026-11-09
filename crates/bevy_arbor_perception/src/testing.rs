@@ -71,6 +71,11 @@ pub(crate) fn perceived<S: Sense>(app: &TestApp, agent: Entity) -> &Perceived<S>
     app.world().get::<Perceived<S>>(agent).unwrap()
 }
 
+/// When and where `agent` sensed what it perceives by `S`.
+pub(crate) fn traces<S: Sense>(app: &TestApp, agent: Entity) -> &Traces<S> {
+    app.world().get::<Traces<S>>(agent).unwrap()
+}
+
 /// Whether `agent` has `thing` in view.
 pub(crate) fn sees(app: &TestApp, agent: Entity, thing: Entity) -> bool {
     app.world()

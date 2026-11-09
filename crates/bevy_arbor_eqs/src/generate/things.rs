@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_arbor_perception::perceived::Perceived;
+use bevy_arbor_perception::perceived::{Perceived, Traces};
 use bevy_arbor_perception::sense::Sense;
 
 use super::Generate;
@@ -45,7 +45,12 @@ impl<S: Sense> Percepts<S> {
 
 impl<S: Sense> Generate for Percepts<S> {
     fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
-        let Some(perceived) = cx.world().get::<Perceived<S>>(cx.agent()) else {
+        let Ok(agent) = cx.world().get_entity(cx.agent()) else {
+            return;
+        };
+        let (Some(perceived), Some(traces)) =
+            (agent.get::<Perceived<S>>(), agent.get::<Traces<S>>())
+        else {
             return;
         };
         for percept in perceived.iter() {
@@ -58,7 +63,7 @@ impl<S: Sense> Generate for Percepts<S> {
             let position = if percept.is_active() {
                 cx.position(entity)
             } else {
-                percept.trace().map(|trace| trace.position)
+                traces.get(entity).map(|trace| trace.position)
             };
             if let Some(position) = position {
                 out.push(Item::Entity { entity, position });

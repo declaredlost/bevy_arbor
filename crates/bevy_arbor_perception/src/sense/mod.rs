@@ -24,14 +24,14 @@ pub(crate) use self::hearing::hear;
 pub use self::hearing::{Hearing, Noise};
 pub(crate) use self::sensor::agent;
 pub use self::sensor::{SensorOf, Sensors};
-pub(crate) use self::share::told;
 pub use self::share::{Listeners, Share, Shared};
+pub(crate) use self::share::{Told, tell, told};
 pub use self::sight::{Facing, Perceivable, Sight, SightIndex};
 pub(crate) use self::sight::{GridIndex, build_grid, look};
 pub(crate) use self::touch::feel;
 pub use self::touch::{Touch, Touched};
 use crate::PerceptionSystems;
-use crate::perceived::{self, Candidates, Perceived};
+use crate::perceived::{self, Candidates, Perceived, Traces};
 
 /// A way of sensing: a component, and its own configuration.
 ///
@@ -122,6 +122,8 @@ pub(crate) struct PerceptionSchedule(pub(crate) InternedScheduleLabel);
 impl<S: Sense> Plugin for SensePlugin<S> {
     fn build(&self, app: &mut App) {
         app.register_type::<Perceived<S>>()
+            .register_type::<Traces<S>>()
+            .add_observer(perceived_removed::<S>)
             .add_observer(sense_added::<S>)
             .add_observer(sense_removed::<S>)
             .add_observer(sensor_attached::<S>)
@@ -143,7 +145,7 @@ impl<S: Sense> Plugin for SensePlugin<S> {
         app.add_systems(
             schedule,
             (
-                told::<S>.in_set(Gather),
+                told::<S>.in_set(Gather).before(tell),
                 (
                     perceived::settle::<S>,
                     perceived::commit::<S>,
@@ -155,6 +157,11 @@ impl<S: Sense> Plugin for SensePlugin<S> {
             ),
         );
     }
+}
+
+/// `Perceived<S>` taken off an entity: its traces go with it.
+fn perceived_removed<S: Sense>(removed: On<Remove<Perceived<S>>>, mut commands: Commands) {
+    commands.entity(removed.entity).try_remove::<Traces<S>>();
 }
 
 /// A sense on an entity: it gathers into `Candidates<S>`, and its agent keeps
@@ -357,7 +364,26 @@ mod tests {
             app.tick();
             let lost = perceived::<Radar>(&app, agent).get(blip).unwrap();
             assert!(!lost.is_active(), "{space:?}: lost");
-            assert!(lost.trace().is_some(), "{space:?}: remembered");
+            assert!(
+                traces::<Radar>(&app, agent).get(blip).is_some(),
+                "{space:?}: remembered"
+            );
+        }
+    }
+
+    #[test]
+    fn traces_go_with_perceived() {
+        for space in SPACES {
+            let mut app = app(space);
+            let agent = looker(&mut app, Sight::new(10.0));
+            thing(&mut app, ahead(space, 5.0));
+            app.tick();
+            assert!(!traces::<Sight>(&app, agent).is_empty(), "{space:?}");
+            app.entity_mut(agent).remove::<Perceived<Sight>>();
+            assert!(
+                app.world().get::<Traces<Sight>>(agent).is_none(),
+                "{space:?}: taken off with it"
+            );
         }
     }
 }

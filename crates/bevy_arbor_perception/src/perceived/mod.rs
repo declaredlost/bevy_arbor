@@ -6,6 +6,7 @@ mod candidate;
 mod commit;
 mod events;
 mod memory;
+mod trace;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -18,14 +19,17 @@ pub use self::candidate::{Candidate, Candidates};
 pub(crate) use self::commit::{commit, settle};
 pub use self::events::{Forgotten, Lost, Noticed};
 pub(crate) use self::memory::{clear, forget};
+pub use self::trace::{Trace, Traces};
 use crate::sense::Sense;
 
 /// On an agent: what it perceives and remembers by the sense `S`, from
 /// itself and its sensors.
 ///
 /// Changes only when something is noticed, lost or forgotten, or its attitude
-/// changes, never as things move: so a tree whose decorators read it sleeps in
-/// between, and one reading `Perceived<Sight>` isn't woken by a noise. While
+/// changes: never as things move, or as what's remembered is sensed again. So
+/// a tree whose decorators read it sleeps in between, and one reading
+/// `Perceived<Sight>` isn't woken by a noise. When and where each thing was
+/// sensed is in its [`Traces<S>`](Traces), which comes with it. While
 /// something is active (in view, for sight), read its `Transform` for where
 /// it is now.
 ///
@@ -34,6 +38,7 @@ use crate::sense::Sense;
 /// long after it was last sensed, and is then forgotten.
 #[derive(Component, Reflect)]
 #[reflect(Component, Default)]
+#[require(Traces<S>)]
 pub struct Perceived<S: Sense> {
     percepts: Vec<Percept>,
     memory: Duration,
@@ -149,14 +154,14 @@ impl<S: Sense> Perceived<S> {
     }
 }
 
-/// Something an agent perceives or remembers by one sense.
+/// Something an agent perceives or remembers by one sense. When and where it
+/// was sensed is in the agent's [`Traces<S>`](Traces).
 #[derive(Reflect, Debug, Clone, PartialEq)]
 #[reflect(Debug, PartialEq)]
 pub struct Percept {
     entity: Entity,
     attitude: Attitude,
     active: bool,
-    trace: Option<Trace>,
 }
 
 impl Percept {
@@ -165,7 +170,6 @@ impl Percept {
             entity,
             attitude,
             active: false,
-            trace: None,
         }
     }
 
@@ -200,82 +204,16 @@ impl Percept {
         self.active
     }
 
-    /// When and where it was sensed: for a sustained sense, as it became
-    /// active, or as it stopped being; else, last.
-    #[must_use]
-    pub fn trace(&self) -> Option<Trace> {
-        self.trace
-    }
-
     pub(crate) fn set_attitude(&mut self, attitude: Attitude) -> bool {
         let changed = self.attitude != attitude;
         self.attitude = attitude;
         changed
     }
 
-    /// Sensed at `trace`, a moment: kept if it's newer. Whether it changed.
-    pub(crate) fn sense(&mut self, trace: Trace) -> bool {
-        if self
-            .trace
-            .is_some_and(|known| known.at > trace.at || known == trace)
-        {
-            return false;
-        }
-        self.trace = Some(trace);
-        true
+    /// Becomes active, or stops being: whether it changed.
+    pub(crate) fn set_active(&mut self, active: bool) -> bool {
+        let changed = self.active != active;
+        self.active = active;
+        changed
     }
-
-    /// Becomes active at `trace`, if it isn't: whether it changed.
-    pub(crate) fn activate(&mut self, trace: Trace) -> bool {
-        if self.active {
-            return false;
-        }
-        self.active = true;
-        self.trace = Some(trace);
-        true
-    }
-
-    /// Stops being active at `trace`, if it is: whether it changed.
-    pub(crate) fn deactivate(&mut self, trace: Trace) -> bool {
-        if !self.active {
-            return false;
-        }
-        self.active = false;
-        self.trace = Some(trace);
-        true
-    }
-
-    /// Lets it fade, if `memory` no longer holds it at `now`: whether it did.
-    /// What's active never fades.
-    pub(crate) fn fade(&mut self, memory: Duration, now: Duration) -> bool {
-        if self.active || self.fades_at(memory).is_none_or(|at| now < at) {
-            return false;
-        }
-        self.trace = None;
-        true
-    }
-
-    /// When `memory` lets it fade, if it can.
-    pub(crate) fn fades_at(&self, memory: Duration) -> Option<Duration> {
-        if self.active {
-            return None;
-        }
-        self.trace.map(|trace| trace.at.saturating_add(memory))
-    }
-
-    /// Whether anything still remembers it.
-    pub(crate) fn remembered(&self) -> bool {
-        self.active || self.trace.is_some()
-    }
-}
-
-/// When and where something was sensed, by the clock perception runs on, and in
-/// its [`Space`](crate::Space).
-#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Debug, PartialEq)]
-pub struct Trace {
-    /// When.
-    pub at: Duration,
-    /// Where.
-    pub position: Vec3,
 }

@@ -4,7 +4,8 @@ Senses tell the guard what's around it. It sees the intruder, hears footsteps,
 feels a hit, and hears what other guards shout.
 
 Each sense is a component on the guard. What it senses is written back to the
-guard as [`Perceived<S>`], one per sense. The guard's conditions read it:
+guard as [`Perceived<S>`], one per sense, with when and where in
+[`Traces<S>`]. The guard's conditions read them:
 
 ```rust
 # use bevy::prelude::*;
@@ -33,8 +34,9 @@ commands.spawn((
 ```
 
 `Perceived<S>` changes only when something is noticed, lost or forgotten. It
-doesn't change as things move. So a tree reading `Perceived<Sight>` sleeps
-until something comes into view, and a noise doesn't wake it.
+doesn't change as things move, or as something already heard is heard again.
+So a tree reading `Perceived<Sight>` sleeps until something comes into view,
+and a noise doesn't wake it.
 
 ## 2D and 3D
 
@@ -140,12 +142,12 @@ The guard needs a `Facing` for this query to find it. Spawn it with
 
 ### What's seen
 
-What's in view is active. Its `trace` says when and where it came into view.
-Once lost, it's no longer active. Its trace then says when and where it was
-lost. It stays like that until the guard forgets it
+What's in view is active. Its trace, in `Traces<Sight>`, says when and where
+it came into view. Once lost, it's no longer active. Its trace then says when
+and where it was lost. It stays like that until the guard forgets it
 ([Sensors, memory and events](sensors-memory.md)).
 
-For where the intruder is *now*, read its `Transform`. `Perceived` keeps no
+For where the intruder is *now*, read its `Transform`. Perception keeps no
 live positions.
 
 ## Hearing
@@ -211,7 +213,7 @@ fn shout(mut tasks: Tasks<&Shout, Entity>, mut shares: MessageWriter<Share>) {
 ```
 
 Listeners are agents with [`Shared`]. They get what they're told as
-`Perceived<Shared>`. Give the other guards `Shared` so they hear the shout.
+`Perceived<Shared>`, and when and where as `Traces<Shared>`. Give the other guards `Shared` so they hear the shout.
 
 | Builder | Who's told |
 |---|---|
@@ -224,9 +226,11 @@ What it sees now is passed on where it is now. What it only remembers is
 passed on from when and where it last sensed it. Each listener gives it its
 own attitude. A listener keeps what it already knew if that's newer.
 
-## Perceived and Percept
+## Perceived, Percept and Traces
 
 [`Perceived<S>`] holds one [`Percept`] per thing the agent perceives by `S`.
+[`Traces<S>`] holds when and where each was sensed. It comes with
+`Perceived<S>` and goes with it.
 
 | On `Perceived<S>` | Gives |
 |---|---|
@@ -241,7 +245,16 @@ own attitude. A listener keeps what it already knew if that's newer.
 | `attitude()` | Hostile, neutral or friendly |
 | `is_hostile()`, `is_friendly()` | Shortcuts for the attitude |
 | `is_active()` | Whether it's active now |
-| `trace()` | When and where it was last sensed |
+
+| On `Traces<S>` | Gives |
+|---|---|
+| `get(entity)` | When and where that thing was sensed: as it came into view or was lost, for sight; last, for the others |
+| `iter()` | Each thing and its trace |
+
+The two are apart so a tree can sleep through what it doesn't ask about. A
+footstep from the intruder the guard already heard changes its trace, not
+`Perceived<Hearing>`. A condition asking whether the guard heard anything
+stays asleep. One reading `Traces<Hearing>` wakes.
 
 ## Pitfalls
 
@@ -251,11 +264,12 @@ own attitude. A listener keeps what it already knew if that's newer.
 - **Nothing is seen.** The intruder needs `Perceivable`. And in 2D, set
   `Space::Planar`, or sight looks down -Z into the screen.
 - **A flipped sprite sees behind it.** Use `Facing`, as above.
-- **Where is it now?** `trace()` is where it was sensed, not where it is.
+- **Where is it now?** A trace is where it was sensed, not where it is.
   Read the transform for that.
 
 [`Perceived<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Perceived.html
 [`Percept`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Percept.html
+[`Traces<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Traces.html
 [`Space::Planar`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/enum.Space.html
 [`Sight`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Sight.html
 [`Perceivable`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Perceivable.html

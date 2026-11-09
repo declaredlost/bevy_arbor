@@ -46,8 +46,9 @@ it. The camera looking away doesn't lose what the guard still sees.
 ## Memory
 
 When the intruder goes out of view, the guard doesn't forget it at once. The
-percept stays in `Perceived<Sight>`, no longer active. Its trace says when and
-where the guard lost it. That's what `remembers_intruder` reads:
+percept stays in `Perceived<Sight>`, no longer active. Its trace, in
+`Traces<Sight>`, says when and where the guard lost it. `remembers_intruder`
+reads the first:
 
 ```rust
 # use bevy::prelude::*;
@@ -76,18 +77,21 @@ behavior_tree! {
 # }
 ```
 
-The `Search` task walks to where the intruder was lost:
+The `Search` task reads the trace and walks to where the intruder was lost:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Search;
-fn search(time: Res<Time>, mut tasks: Tasks<&Search, (&Perceived<Sight>, &mut Transform)>) {
-    tasks.for_each(|_, mut task, (seen, mut at)| {
+fn search(
+    time: Res<Time>,
+    mut tasks: Tasks<&Search, (&Perceived<Sight>, &Traces<Sight>, &mut Transform)>,
+) {
+    tasks.for_each(|_, mut task, (seen, traces, mut at)| {
         let last = seen
             .iter()
             .filter(|p| p.is_hostile() && !p.is_active())
-            .find_map(Percept::trace);
+            .find_map(|p| traces.get(p.entity()));
         let Some(last) = last else {
             task.fail();
             return;
@@ -140,7 +144,7 @@ commands.spawn((
 `Duration::MAX` remembers for good.
 
 Memory belongs to the agent, not to a sensor. The guard and its camera share
-one memory of sight.
+one memory of sight, and one set of traces.
 
 ## Events
 
@@ -179,7 +183,7 @@ forgotten.
   `remembers_intruder`, and keep events for side effects.
 - **A sensor that doesn't follow.** `SensorOf` doesn't move the sensor. Add
   `ChildOf` for that.
-- **`trace` is the past.** For the intruder's position while in view, read
+- **A trace is the past.** For the intruder's position while in view, read
   its transform.
 
 [`SensorOf`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.SensorOf.html

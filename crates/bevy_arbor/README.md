@@ -61,6 +61,8 @@ A guard that patrols, and chases what it sees:
 use bevy::prelude::*;
 use bevy_arbor::prelude::*;
 
+/// A task is a component of yours: the tree spawns an entity with it, and
+/// your systems tick it.
 #[derive(Component, Clone)]
 struct Patrol;
 

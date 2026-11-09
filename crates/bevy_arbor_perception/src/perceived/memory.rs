@@ -2,52 +2,57 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use super::{Candidates, Forgotten, Perceived};
+use super::{Candidates, Forgotten, Perceived, Traces};
 use crate::sense::Sense;
 
-/// Each agent whose memory of something by `S` is due to fade lets it, and
-/// forgets what nothing remembers: triggering [`Forgotten`].
+/// Each agent whose memory of something by `S` is due to fade forgets it:
+/// what's no longer active, sensed longer ago than it remembers. Triggers
+/// [`Forgotten`].
 pub(crate) fn forget<S: Sense>(
     time: Res<Time>,
     commands: ParallelCommands,
-    mut agents: Query<(Entity, &mut Perceived<S>)>,
+    mut agents: Query<(Entity, &mut Perceived<S>, &mut Traces<S>)>,
 ) {
     let now = time.elapsed();
-    agents.par_iter_mut().for_each(|(agent, mut perceived)| {
-        if perceived.next_fade.is_some_and(|next| now < next) {
-            return;
-        }
-        let percepts = perceived.bypass_change_detection();
-        let memory = percepts.memory();
-        let mut changed = false;
-        for percept in percepts.iter_mut() {
-            changed |= percept.fade(memory, now);
-        }
-        let mut forgotten = Vec::new();
-        percepts.retain(|percept| {
-            let kept = percept.remembered();
-            if !kept {
-                forgotten.push(percept.entity());
+    agents
+        .par_iter_mut()
+        .for_each(|(agent, mut perceived, mut traces)| {
+            if perceived.next_fade.is_some_and(|next| now < next) {
+                return;
             }
-            kept
-        });
-        percepts.next_fade = percepts
-            .iter()
-            .filter_map(|percept| percept.fades_at(memory))
-            .min()
-            // Nothing to fade: looked at again once something changes.
-            .or(Some(Duration::MAX));
-        if changed {
+            let percepts = perceived.bypass_change_detection();
+            let known = traces.bypass_change_detection();
+            let memory = percepts.memory();
+            // What's active never fades; what has no trace is gone already.
+            let fades_at = |entity: Entity| known.get(entity).map(|trace| trace.fades_at(memory));
+            let mut forgotten = Vec::new();
+            percepts.retain(|percept| {
+                let kept =
+                    percept.is_active() || fades_at(percept.entity()).is_some_and(|at| now < at);
+                if !kept {
+                    forgotten.push(percept.entity());
+                }
+                kept
+            });
+            percepts.next_fade = percepts
+                .iter()
+                .filter(|percept| !percept.is_active())
+                .filter_map(|percept| fades_at(percept.entity()))
+                .min()
+                // Nothing to fade: looked at again once something changes.
+                .or(Some(Duration::MAX));
+            if forgotten.is_empty() {
+                return;
+            }
+            known.retain(|entity| !forgotten.contains(&entity));
             perceived.set_changed();
-        }
-        if !forgotten.is_empty() {
+            traces.set_changed();
             commands.command_scope(|mut commands| {
                 for what in forgotten {
                     commands.trigger(Forgotten::<S>::new(agent, what));
                 }
             });
-        }
-    });
+        });
 }
 
 /// Empties every sensor's candidates for `S`, ready for the next tick.
@@ -94,6 +99,10 @@ mod tests {
                 perceived::<Sight>(&app, agent).get(target).is_none(),
                 "{space:?}: forgotten"
             );
+            assert!(
+                traces::<Sight>(&app, agent).is_empty(),
+                "{space:?}: its trace with it"
+            );
             assert_eq!(
                 app.world().resource::<Changes>().0,
                 changes + 1,
@@ -120,9 +129,8 @@ mod tests {
                 app.tick();
             }
             assert!(sees(&app, agent, target), "{space:?}");
-            let percept = perceived::<Sight>(&app, agent).get(target).unwrap();
             assert!(
-                percept.trace().is_some(),
+                traces::<Sight>(&app, agent).get(target).is_some(),
                 "{space:?}: when it came into view, kept"
             );
         }
