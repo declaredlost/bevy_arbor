@@ -300,11 +300,12 @@ mod systems {
     }
 
     pub fn search(
-        mut tasks: Tasks<&Search, (&Perceived<Sight>, &mut Transform)>,
+        mut tasks: Tasks<&Search, (&Perceived<Sight>, &Traces<Sight>, &mut Transform)>,
         time: Res<Time>,
     ) {
-        tasks.for_each(|_, mut task, (seen, mut at)| {
-            let last_seen = seen.iter().find(|p| p.is_hostile()).and_then(|p| p.trace());
+        tasks.for_each(|_, mut task, (seen, traces, mut at)| {
+            let intruder = seen.iter().find(|p| p.is_hostile());
+            let last_seen = intruder.and_then(|p| traces.get(p.entity()));
             if task.elapsed() > Duration::from_secs(8) {
                 task.fail();
             } else if let Some(there) = last_seen {

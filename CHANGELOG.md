@@ -47,11 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over its senses. Each sense is a component (`Sight`, `Hearing`, `Touch`,
   `Shared`, or your own, registered with `SensePlugin`), and what it senses
   is written to the agent's `Perceived<S>`, which changes only when something
-  is noticed, lost or forgotten by that sense. Senses can sit on sensor
+  is noticed, lost or forgotten by that sense; when and where each was
+  sensed is in `Traces<S>` beside it, so a footstep from what an agent
+  already heard wakes only trees reading the traces. Senses can sit on sensor
   entities (`SensorOf`), each sensing from its own transform. Sight goes
   through a spatial index (its own grid, or yours through `SightIndex`), by
   range, cone and `lose_range`, looks staggered across ticks; hearing from `Noise`, touch from `Touched`, and allies pass on
-  what they perceive with `Share`. Systems of your own block and classify
+  what they perceive with `Share`, by every sense, each share's listeners
+  found once. Systems of your own block and classify
   candidates in `PerceptionSystems::Occlude` and `Classify`; `Team` gives the
   attitude nothing else did. `Noticed<S>`, `Lost<S>` and `Forgotten<S>` are
   triggered on the agent.

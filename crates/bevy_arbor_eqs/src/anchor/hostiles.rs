@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
-use bevy_arbor_perception::perceived::Perceived;
+use bevy_arbor_perception::perceived::{Perceived, Traces};
 use bevy_arbor_perception::sense::Sense;
 
 use super::{Locate, Located};
@@ -36,7 +36,12 @@ impl<S: Sense> Hostiles<S> {
 
 impl<S: Sense> Locate for Hostiles<S> {
     fn locate(&self, cx: &QueryContext, out: &mut Vec<Located>) {
-        let Some(perceived) = cx.world().get::<Perceived<S>>(cx.agent()) else {
+        let Ok(agent) = cx.world().get_entity(cx.agent()) else {
+            return;
+        };
+        let (Some(perceived), Some(traces)) =
+            (agent.get::<Perceived<S>>(), agent.get::<Traces<S>>())
+        else {
             return;
         };
         for percept in perceived.iter().filter(|percept| percept.is_hostile()) {
@@ -46,7 +51,7 @@ impl<S: Sense> Locate for Hostiles<S> {
             let (position, ahead) = if percept.is_active() {
                 (cx.position(entity), cx.ahead(entity))
             } else if self.remembered {
-                (percept.trace().map(|trace| trace.position), Vec3::ZERO)
+                (traces.get(entity).map(|trace| trace.position), Vec3::ZERO)
             } else {
                 (None, Vec3::ZERO)
             };

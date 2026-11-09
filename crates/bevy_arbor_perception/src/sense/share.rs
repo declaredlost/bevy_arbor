@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use super::Sense;
-use crate::perceived::{Attitude, Candidates, Perceived, Team};
+use crate::perceived::{Attitude, Candidates, Perceived, Team, Trace, Traces};
 use crate::space::Space;
 
 /// On an agent: it takes what others [`Share`] with it, as
@@ -75,51 +75,97 @@ impl Share {
     }
 }
 
-/// What a teller perceived by `S` is passed on to its listeners, as
-/// candidates for [`Shared`]: one of these runs for each sense.
+/// What tellers pass on, by every sense, for [`tell`] to hand their
+/// listeners: each with the order of the [`Share`] it's for.
+#[derive(Resource, Default)]
+pub(crate) struct Told(Vec<Passed>);
+
+/// One thing passed on.
+struct Passed {
+    /// The order of the share it's for.
+    share: usize,
+    what: Entity,
+    trace: Trace,
+}
+
+/// What each teller perceives by `S` is gathered to be passed on: what's
+/// active for it, where it is now; else when and where it was last sensed.
+/// One of these runs for each sense, before [`tell`].
 pub(crate) fn told<S: Sense>(
     time: Res<Time>,
     space: Res<Space>,
     mut shares: MessageReader<Share>,
-    tellers: Query<(&Perceived<S>, &GlobalTransform, Option<&Team>)>,
+    tellers: Query<(&Perceived<S>, &Traces<S>)>,
     places: Query<&GlobalTransform>,
+    mut told: ResMut<Told>,
+) {
+    let (now, space) = (time.elapsed(), *space);
+    for (share, id) in shares.read_with_id() {
+        let Ok((perceived, traces)) = tellers.get(share.from) else {
+            continue;
+        };
+        let about = perceived
+            .iter()
+            .filter(|percept| share.about.is_none_or(|about| percept.entity() == about));
+        for percept in about {
+            let entity = percept.entity();
+            let live = percept
+                .is_active()
+                .then(|| places.get(entity).ok())
+                .flatten()
+                .map(|transform| Trace {
+                    at: now,
+                    position: space.flatten(transform.translation()),
+                });
+            if let Some(trace) = live.or_else(|| traces.get(entity)) {
+                told.0.push(Passed {
+                    share: id.id,
+                    what: entity,
+                    trace,
+                });
+            }
+        }
+    }
+}
+
+/// Each [`Share`]'s listeners are found once, and handed what its teller
+/// passes on by every sense, as candidates for [`Shared`].
+pub(crate) fn tell(
+    space: Res<Space>,
+    mut shares: MessageReader<Share>,
+    tellers: Query<(&GlobalTransform, Option<&Team>)>,
     mut listeners: Query<(
         Entity,
         &GlobalTransform,
         Option<&Team>,
         &mut Candidates<Shared>,
     )>,
+    mut told: ResMut<Told>,
 ) {
-    let (now, space) = (time.elapsed(), *space);
-    for share in shares.read() {
-        let Ok((perceived, teller, team)) = tellers.get(share.from) else {
-            continue;
-        };
-        // In view, where it is now; else when and where it was last sensed.
-        let told: Vec<(Entity, Vec3, Duration)> = perceived
-            .iter()
-            .filter(|percept| share.about.is_none_or(|about| percept.entity() == about))
-            .filter_map(|percept| {
-                let live = percept
-                    .is_active()
-                    .then(|| places.get(percept.entity()).ok())
-                    .flatten()
-                    .map(|transform| (space.flatten(transform.translation()), now));
-                let (position, at) =
-                    live.or_else(|| percept.trace().map(|trace| (trace.position, trace.at)))?;
-                Some((percept.entity(), position, at))
-            })
-            .collect();
+    if told.0.is_empty() {
+        shares.clear();
+        return;
+    }
+    let space = *space;
+    // Gathered sense by sense: each share's together, in the order written.
+    told.0.sort_by_key(|passed| passed.share);
+    for (share, id) in shares.read_with_id() {
+        let from = told.0.partition_point(|passed| passed.share < id.id);
+        let to = told.0.partition_point(|passed| passed.share <= id.id);
+        let told = &told.0[from..to];
         if told.is_empty() {
             continue;
         }
         let tell = |listener: Entity, mut candidates: Mut<Candidates<Shared>>| {
-            for &(entity, position, at) in told.iter().filter(|(e, ..)| *e != listener) {
-                candidates.sense_at(entity, position, at);
+            for passed in told.iter().filter(|passed| passed.what != listener) {
+                candidates.sense_at(passed.what, passed.trace.position, passed.trace.at);
             }
         };
         match &share.to {
             Listeners::Allies { range } => {
+                let Ok((teller, team)) = tellers.get(share.from) else {
+                    continue;
+                };
                 let at = space.flatten(teller.translation());
                 for (listener, transform, theirs, candidates) in &mut listeners {
                     let near = *range > 0.0
@@ -144,6 +190,7 @@ pub(crate) fn told<S: Sense>(
             }
         }
     }
+    told.0.clear();
 }
 
 #[cfg(test)]
@@ -193,7 +240,7 @@ mod tests {
             app.tick();
             let told = perceived::<Shared>(&app, ally).get(target).unwrap();
             assert_eq!(
-                told.trace().unwrap().position,
+                traces::<Shared>(&app, ally).get(target).unwrap().position,
                 space.flatten(ahead(space, 6.0)),
                 "{space:?}: where it is now"
             );
@@ -220,18 +267,11 @@ mod tests {
             app.entity_mut(target)
                 .insert(GlobalTransform::from_translation(ahead(space, 50.0)));
             app.tick();
-            let lost = perceived::<Sight>(&app, teller)
-                .get(target)
-                .unwrap()
-                .trace()
-                .unwrap();
+            let lost = traces::<Sight>(&app, teller).get(target).unwrap();
             app.ticks(5);
             app.write(Share::to(teller, [ally]));
             app.tick();
-            let told = perceived::<Shared>(&app, ally)
-                .get(target)
-                .and_then(Percept::trace)
-                .unwrap();
+            let told = traces::<Shared>(&app, ally).get(target).unwrap();
             assert_eq!(told, lost, "{space:?}: when and where it was lost");
         }
     }
@@ -314,6 +354,54 @@ mod tests {
             app.write(Share::allies(teller, -10.0));
             app.tick();
             assert!(perceived::<Shared>(&app, ally).is_empty(), "{space:?}");
+        }
+    }
+
+    #[test]
+    fn what_it_perceives_by_every_sense_is_told_once_to_each_listener() {
+        for space in SPACES {
+            let mut app = app(space);
+            let teller = teller(&mut app);
+            app.entity_mut(teller).insert(Hearing::new(10.0));
+            let seen = enemy(&mut app, ahead(space, 5.0));
+            let heard = app.spawn(GlobalTransform::IDENTITY);
+            let ally = listener(&mut app, 1, behind(space, 3.0));
+            app.write(Noise::new(heard, behind(space, 4.0)));
+            app.tick();
+            app.write(Share::allies(teller, 10.0));
+            app.tick();
+            let told = perceived::<Shared>(&app, ally);
+            assert!(told.get(seen).is_some(), "{space:?}: what it sees");
+            assert!(told.get(heard).is_some(), "{space:?}: what it heard");
+            assert_eq!(told.iter().count(), 2, "{space:?}: once each");
+        }
+    }
+
+    #[test]
+    fn shares_in_one_tick_each_tell_their_own() {
+        for space in SPACES {
+            let mut app = app(space);
+            let teller = teller(&mut app);
+            let first = enemy(&mut app, ahead(space, 5.0));
+            let second = enemy(&mut app, behind(space, 5.0));
+            let one = listener(&mut app, 1, behind(space, 3.0));
+            let other = listener(&mut app, 1, behind(space, 3.0));
+            app.tick();
+            app.write(Share::to(teller, [one]).about(first));
+            app.write(Share::to(teller, [other]).about(second));
+            app.tick();
+            let (one, other) = (
+                perceived::<Shared>(&app, one),
+                perceived::<Shared>(&app, other),
+            );
+            assert!(
+                one.get(first).is_some() && one.get(second).is_none(),
+                "{space:?}"
+            );
+            assert!(
+                other.get(second).is_some() && other.get(first).is_none(),
+                "{space:?}"
+            );
         }
     }
 }

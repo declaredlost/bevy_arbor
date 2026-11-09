@@ -1,7 +1,7 @@
 use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::*;
 
-use super::{Attitude, Candidates, Lost, Noticed, Perceived, Team, Trace};
+use super::{Attitude, Candidate, Candidates, Lost, Noticed, Perceived, Team, Trace, Traces};
 use crate::sense::{Sense, Sensors};
 use crate::space::Space;
 
@@ -25,9 +25,36 @@ pub(crate) fn settle<S: Sense>(mut sensors: Query<&mut Candidates<S>>) {
     });
 }
 
+/// One attitude for each thing sensed, however many sensors sensed it: one a
+/// system set beats `mine` against its team's.
+fn attitudes<'a>(
+    sensed: impl Iterator<Item = &'a Candidate>,
+    mine: Option<Team>,
+    teams: &Query<&Team>,
+) -> EntityHashMap<Attitude> {
+    let mut attitudes = EntityHashMap::<(Attitude, bool)>::default();
+    for candidate in sensed {
+        let set = candidate.attitude();
+        let slot = attitudes.entry(candidate.entity()).or_insert_with(|| {
+            let team = Team::attitude(mine, teams.get(candidate.entity()).ok().copied());
+            (set.unwrap_or(team), set.is_some())
+        });
+        if let Some(set) = set
+            && !slot.1
+        {
+            *slot = (set, true);
+        }
+    }
+    attitudes
+        .into_iter()
+        .map(|(entity, (attitude, _))| (entity, attitude))
+        .collect()
+}
+
 /// Writes what an agent and its sensors sensed by `S` to its `Perceived<S>`,
-/// changing it only when something is noticed, lost, sensed anew, or its
-/// attitude changes; and triggers [`Noticed`] and [`Lost`].
+/// changing it only when something is noticed or lost, or its attitude
+/// changes, and when and where to its `Traces<S>`; and triggers [`Noticed`]
+/// and [`Lost`].
 pub(crate) fn commit<S: Sense>(
     time: Res<Time>,
     space: Res<Space>,
@@ -35,12 +62,12 @@ pub(crate) fn commit<S: Sense>(
     teams: Query<&Team>,
     places: Query<&GlobalTransform>,
     readings: Query<&Candidates<S>>,
-    mut agents: Query<(Entity, &mut Perceived<S>, Option<&Sensors>)>,
+    mut agents: Query<(Entity, &mut Perceived<S>, &mut Traces<S>, Option<&Sensors>)>,
 ) {
     let (now, space) = (time.elapsed(), *space);
     agents
         .par_iter_mut()
-        .for_each(|(agent, mut perceived, sensors)| {
+        .for_each(|(agent, mut perceived, mut traces, sensors)| {
             let sources: Vec<&Candidates<S>> = std::iter::once(agent)
                 .chain(sensors.into_iter().flat_map(Sensors::iter))
                 .filter_map(|sensor| readings.get(sensor).ok())
@@ -50,9 +77,10 @@ pub(crate) fn commit<S: Sense>(
             if !looked && sources.iter().all(|source| source.list.is_empty()) {
                 return;
             }
-            let mine = teams.get(agent).ok().copied();
-            let (mut changed, mut noticed, mut lost) = (false, Vec::new(), Vec::new());
+            let (mut changed, mut traced) = (false, false);
+            let (mut noticed, mut lost) = (Vec::new(), Vec::new());
             let percepts = perceived.bypass_change_detection();
+            let known = traces.bypass_change_detection();
             percepts.recheck = false;
             let memory = percepts.memory();
             let sensed = || {
@@ -61,21 +89,7 @@ pub(crate) fn commit<S: Sense>(
                     .flat_map(|source| source.list.iter())
                     .filter(|candidate| !candidate.blocked() && candidate.entity() != agent)
             };
-            // One attitude for each, however many sensors sensed it: one a
-            // system set beats the team's.
-            let mut attitudes = EntityHashMap::<(Attitude, bool)>::default();
-            for candidate in sensed() {
-                let set = candidate.attitude();
-                let slot = attitudes.entry(candidate.entity()).or_insert_with(|| {
-                    let team = Team::attitude(mine, teams.get(candidate.entity()).ok().copied());
-                    (set.unwrap_or(team), set.is_some())
-                });
-                if let Some(set) = set
-                    && !slot.1
-                {
-                    *slot = (set, true);
-                }
-            }
+            let attitudes = attitudes(sensed(), teams.get(agent).ok().copied(), &teams);
             for candidate in sensed() {
                 // Sensed so long ago it'd be forgotten at once, as an old
                 // memory shared: not noticed at all.
@@ -85,21 +99,24 @@ pub(crate) fn commit<S: Sense>(
                 if stale && percepts.get(candidate.entity()).is_none() {
                     continue;
                 }
-                let (attitude, _) = attitudes[&candidate.entity()];
+                let attitude = attitudes[&candidate.entity()];
                 let trace = Trace {
                     at: candidate.at().unwrap_or(now),
                     position: candidate.position(),
                 };
                 let (percept, added) = percepts.entry(candidate.entity(), attitude);
                 changed |= percept.set_attitude(attitude);
-                let sensed = if S::SUSTAINED {
-                    percept.activate(trace)
-                } else {
-                    percept.sense(trace)
-                };
-                changed |= added || sensed;
+                // A sustained sense's trace is from as it became active; a
+                // moment's, the newest.
+                let activated = S::SUSTAINED && percept.set_active(true);
+                if activated {
+                    traced |= known.set(candidate.entity(), trace);
+                } else if !S::SUSTAINED {
+                    traced |= known.renew(candidate.entity(), trace);
+                }
+                changed |= added || activated;
                 // New to it, or active again.
-                if added || (S::SUSTAINED && sensed) {
+                if added || activated {
                     noticed.push(candidate.entity());
                 }
             }
@@ -114,19 +131,25 @@ pub(crate) fn commit<S: Sense>(
                     }
                     // Where it was as it was lost; gone altogether, where it
                     // was sensed last.
-                    let position = places.get(percept.entity()).map_or_else(
-                        |_| percept.trace().map_or(Vec3::ZERO, |trace| trace.position),
+                    let entity = percept.entity();
+                    let position = places.get(entity).map_or_else(
+                        |_| known.get(entity).map_or(Vec3::ZERO, |trace| trace.position),
                         |transform| space.flatten(transform.translation()),
                     );
-                    if percept.deactivate(Trace { at: now, position }) {
-                        lost.push(percept.entity());
-                        changed = true;
-                    }
+                    percept.set_active(false);
+                    known.set(entity, Trace { at: now, position });
+                    lost.push(entity);
+                    (changed, traced) = (true, true);
                 }
             }
             if changed {
                 perceived.set_changed();
-                // What it knows changed, so when it next forgets may have too.
+            }
+            if traced {
+                traces.set_changed();
+            }
+            if changed || traced {
+                // When it next forgets may have changed.
                 perceived.bypass_change_detection().next_fade = None;
             }
             if noticed.is_empty() && lost.is_empty() {

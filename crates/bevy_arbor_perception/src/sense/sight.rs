@@ -326,7 +326,8 @@ mod tests {
             let percept = perceived::<Sight>(&app, agent).get(target).unwrap();
             assert!(!percept.is_active(), "{space:?}: lost");
             let lost_at = Space::flatten(space, ahead(space, 20.0));
-            assert_eq!(percept.trace().unwrap().position, lost_at, "{space:?}");
+            let trace = traces::<Sight>(&app, agent).get(target).unwrap();
+            assert_eq!(trace.position, lost_at, "{space:?}");
         }
     }
 
@@ -412,7 +413,7 @@ mod tests {
             let percept = perceived::<Sight>(&app, agent).get(target).unwrap();
             assert!(!percept.is_active(), "{space:?}");
             assert_eq!(
-                percept.trace().unwrap().position,
+                traces::<Sight>(&app, agent).get(target).unwrap().position,
                 Space::flatten(space, ahead(space, 5.0)),
                 "{space:?}"
             );

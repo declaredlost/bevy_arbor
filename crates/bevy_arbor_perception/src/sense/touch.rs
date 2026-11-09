@@ -73,7 +73,7 @@ mod tests {
             app.write(Touched { agent, by });
             app.tick();
             let percept = perceived::<Touch>(&app, agent).get(by).unwrap();
-            let felt = percept.trace().unwrap();
+            let felt = traces::<Touch>(&app, agent).get(by).unwrap();
             assert_eq!(
                 felt.position,
                 space.flatten(behind(space, 1.0)),

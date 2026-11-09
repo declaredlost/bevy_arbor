@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_arbor_perception::Space;
-use bevy_arbor_perception::perceived::{Attitude, Perceived};
+use bevy_arbor_perception::perceived::{Attitude, Perceived, Traces};
 use bevy_arbor_perception::sense::Sense;
 
 use super::{PerceptionGizmos, ShowPerception};
@@ -12,17 +12,24 @@ pub(super) fn draw<S: Sense>(
     mut gizmos: Gizmos<PerceptionGizmos>,
     space: Res<Space>,
     places: Query<&GlobalTransform>,
-    agents: Query<(&Perceived<S>, &GlobalTransform, Has<ShowPerception>)>,
+    agents: Query<(
+        &Perceived<S>,
+        &Traces<S>,
+        &GlobalTransform,
+        Has<ShowPerception>,
+    )>,
 ) {
     let (space, config) = (*space, gizmos.config_ext.clone());
-    for (perceived, transform, shown) in &agents {
+    for (perceived, traces, transform, shown) in &agents {
         if !config.shows(shown) {
             continue;
         }
         let at = space.flatten(transform.translation());
         for percept in perceived.iter() {
             if !percept.is_active() {
-                if let (Some(color), Some(trace)) = (config.remembered, percept.trace()) {
+                if let (Some(color), Some(trace)) =
+                    (config.remembered, traces.get(percept.entity()))
+                {
                     gizmos.cross(
                         Isometry3d::from_translation(trace.position),
                         config.cross_size,
