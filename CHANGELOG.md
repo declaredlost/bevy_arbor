@@ -103,11 +103,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what agents perceive, and, with its `eqs`, `smart` and `nav` features, how
   queries weighed their items (a `SurveyTrace`), slots, free, claimed or
   disabled, and where agents are going.
-  In the facade through the `gizmos` feature.
+  In the facade through the `gizmos` feature, drawing what the parts turned
+  on there have.
 - The book, `book/`: a guide to bevy_arbor, chapter by chapter, its examples
   compiled and run as doctests, published to GitHub Pages.
 - `bevy_arbor_macros`: the macros of every part, `behavior_tree!` so far.
 - `bevy_arbor`: a facade over the parts, each crate re-exported whole behind
   a feature, with one prelude, an `ArborPlugins` group
   (`ArborPlugins.with_space(Space::Planar)` for 2D), and `ArborSystems`
-  ordering the parts (perception, then trees) in each schedule they share.
+  ordering the parts (perception, then trees, then queries, then navigation)
+  in each schedule they share.
