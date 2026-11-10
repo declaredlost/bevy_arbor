@@ -79,9 +79,12 @@ that order.
   `TreePlugin` warns if it's missing.
 - **Gizmos.** `ArborGizmosPlugin` isn't in `ArborPlugins`, because it needs a
   renderer. Add it yourself. [Debugging](debugging.md) shows how.
-- **Both avian features.** With `avian2d` and `avian3d` both on, neither is in
-  the prelude, since their names clash. Use `bevy_arbor::avian2d::...` or
-  `bevy_arbor::avian3d::...` instead.
+- **Both avian features.** A game is 2D or 3D: turn on one. With `avian2d`
+  and `avian3d` both on, neither is in the prelude, since their names clash:
+  use `bevy_arbor::avian2d::...` or `bevy_arbor::avian3d::...` instead.
+  `ArborPlugins` adds both crates' plugins too. The ones whose avian isn't in
+  the app warn at startup that they need its `PhysicsPlugins`, and that
+  perception is in the other space, and then do nothing.
 
 [`ArborPlugins`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/struct.ArborPlugins.html
 [`ArborSystemsPlugin`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/struct.ArborSystemsPlugin.html

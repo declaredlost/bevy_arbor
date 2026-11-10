@@ -2,7 +2,7 @@
 
 [package]
 name = "bevy_arbor_gizmos"
-description = "Drawing for Bevy AI: what agents perceive, how queries weighed their items, and smart objects' slots"
+description = "Drawing for Bevy AI: what agents perceive, how queries weighed their items, smart objects' slots, and where agents are going"
 readme = "./README.md"
 keywords = ["bevy", "ai", "gizmos", "game"]
 categories = ["game-development"]
