@@ -71,6 +71,25 @@ This project follows the standard Rust style guidelines:
 - Ensure `cargo clippy` passes with no warnings; `clippy::pedantic` is denied
 - Lint exceptions are `#[expect(..., reason = "...")]`, never `#[allow]`
 - Add documentation comments (`///`) for every item; `missing_docs` is denied
+- Keep each doc comment's first paragraph to one line in rustdoc's listings,
+  about 55 to 80 characters; say the rest in a second paragraph
+
+### Naming
+
+The public API follows Bevy's conventions:
+
+- **Building:** `new`, or a named constructor when there are several ways to
+  build one: `Noise::new`, `Share::allies`, `Cooling::new`.
+- **Setting a field** on a component, message or plugin: `with_*`, taking and
+  returning `self`, as Bevy's `Transform::with_rotation`: `Sight::with_eye`,
+  `Noise::with_loudness`, `Share::with_subject`.
+- **The query DSL** (generators, tests, `Score`, `Filter`, `MoveTo`): bare
+  words, as Bevy's system config (`.run_if`, `.after`), since a chain reads as
+  a sentence: `Donut::around(Querier).radius(2.0, 8.0).rings(3)`.
+- **Bools** read as questions: `is_*` or `has_*`.
+- **Names say their subject.** A crate's types are named after it
+  (`BehaviorTreePlugin`, `EnvQueryItem`), not generic words a game is likely to
+  use for its own (`Item`, `Team`, `Agent`), as the preludes are glob-imported.
 
 ## Submitting Changes
 

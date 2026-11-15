@@ -31,8 +31,8 @@ pub struct Share {
     pub from: Entity,
     /// Who's told.
     pub to: Listeners,
-    /// What about: everything it perceives, if `None`.
-    pub about: Option<Entity>,
+    /// What it's about: everything it perceives, if `None`.
+    pub subject: Option<Entity>,
 }
 
 /// Who's told what's shared: allies within range, or only the agents named.
@@ -54,7 +54,7 @@ impl Share {
         Self {
             from,
             to: Listeners::Allies { range },
-            about: None,
+            subject: None,
         }
     }
 
@@ -64,14 +64,14 @@ impl Share {
         Self {
             from,
             to: Listeners::Only(to.into_iter().collect()),
-            about: None,
+            subject: None,
         }
     }
 
-    /// Only about `about`.
+    /// Only about `subject`.
     #[must_use]
-    pub fn about(mut self, about: Entity) -> Self {
-        self.about = Some(about);
+    pub fn with_subject(mut self, subject: Entity) -> Self {
+        self.subject = Some(subject);
         self
     }
 }
@@ -108,9 +108,11 @@ pub(crate) fn told<S: Sense>(
         let Ok((perceived, stimuli)) = tellers.get(share.from) else {
             continue;
         };
-        let about = perceived
-            .iter()
-            .filter(|percept| share.about.is_none_or(|about| percept.entity() == about));
+        let about = perceived.iter().filter(|percept| {
+            share
+                .subject
+                .is_none_or(|subject| percept.entity() == subject)
+        });
         for percept in about {
             let entity = percept.entity();
             let live = percept
@@ -305,7 +307,7 @@ mod tests {
             ));
             app.tick();
             assert!(sees(&app, teller, ally), "{space:?}: it sees the ally too");
-            app.write(Share::to(teller, [ally]).about(first));
+            app.write(Share::to(teller, [ally]).with_subject(first));
             app.tick();
             let known = perceived::<Shared>(&app, ally);
             assert!(known.get(first).is_some(), "{space:?}");
@@ -401,8 +403,8 @@ mod tests {
             let one = listener(&mut app, 1, behind(space, 3.0));
             let other = listener(&mut app, 1, behind(space, 3.0));
             app.tick();
-            app.write(Share::to(teller, [one]).about(first));
-            app.write(Share::to(teller, [other]).about(second));
+            app.write(Share::to(teller, [one]).with_subject(first));
+            app.write(Share::to(teller, [other]).with_subject(second));
             app.tick();
             let (one, other) = (
                 perceived::<Shared>(&app, one),

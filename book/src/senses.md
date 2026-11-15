@@ -220,9 +220,9 @@ guards `Shared` so they hear the shout.
 
 | Builder | Who's told |
 |---|---|
-| `Share::allies(from, range)` | Agents on its `Allegiance` within `range` |
+| `Share::allies(from, range)` | Agents of its `Allegiance` within `range` |
 | `Share::to(from, [..])` | The agents listed, wherever they are |
-| `.about(entity)` | Only about that one thing |
+| `.with_subject(entity)` | Only about that one thing |
 
 Without `about`, the guard passes on everything it perceives, by every sense.
 What it sees now is passed on where it is now. What it only remembers is
