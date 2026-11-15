@@ -1,9 +1,8 @@
-use std::sync::Arc;
-
 use bevy::prelude::*;
 
-use super::{Generate, MOST_STEPS, steps};
-use crate::anchor::{Locate, Located};
+use super::Generate;
+use super::shape::steps;
+use crate::anchor::{EnvQueryAnchor, Locate, Located};
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// Points on a line through an anchor, the way it looks: behind it and ahead.
@@ -17,7 +16,7 @@ use crate::query::{EnvQueryContext, EnvQueryItem};
 /// or in a slope are left for a test to rule out.
 #[derive(Clone)]
 pub struct Row {
-    along: Arc<dyn Locate>,
+    along: EnvQueryAnchor,
     extent: f32,
     spacing: f32,
 }
@@ -26,7 +25,7 @@ impl Row {
     /// A row through `along`: 5 out each way, 1 apart, unless told otherwise.
     pub fn along(along: impl Locate) -> Self {
         Self {
-            along: Arc::new(along),
+            along: EnvQueryAnchor::new(along),
             extent: 5.0,
             spacing: 1.0,
         }
@@ -48,16 +47,11 @@ impl Row {
 }
 
 impl Generate for Row {
-    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+    type State = ();
+
+    fn generate(&self, (): &mut (), cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.along);
-        let (steps, spacing) = steps(self.extent, self.spacing).unwrap_or_else(|spread| {
-            warn_once!(
-                "a Row {} out, {} apart, is too many points: spread {spread} apart instead",
-                self.extent,
-                self.spacing,
-            );
-            (MOST_STEPS, spread)
-        });
+        let (steps, spacing) = steps("Row", self.extent, self.spacing);
         for &Located {
             position, ahead, ..
         } in anchors.iter()

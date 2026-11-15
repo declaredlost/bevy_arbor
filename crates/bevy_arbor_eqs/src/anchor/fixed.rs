@@ -9,7 +9,7 @@ pub struct Querier;
 
 impl Locate for Querier {
     fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
-        let agent = cx.agent();
+        let agent = cx.querier();
         if let Some(position) = cx.position(agent) {
             out.push(Located {
                 position,
@@ -17,6 +17,19 @@ impl Locate for Querier {
                 entity: Some(agent),
             });
         }
+    }
+}
+
+/// What carries the query: where it is now, and which way it looks.
+///
+/// A turret's "where to stand to use me" measures from it. For a query the
+/// agent carries itself, it's the agent, as [`Querier`] is.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Carrier;
+
+impl Locate for Carrier {
+    fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
+        Thing(cx.carrier()).locate(cx, out);
     }
 }
 

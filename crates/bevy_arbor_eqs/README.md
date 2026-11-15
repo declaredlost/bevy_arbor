@@ -23,10 +23,14 @@ now.
   [`Fan`], [`Row`]) or find things ([`Percepts<S>`], [`Nearby<C>`]).
 - Tests measure each item from an anchor: [`Distance`], [`Dot`],
   [`Perceives<S>`], [`Random`], line of sight with the avian crates, or your
-  own [`Test`]. Anchors are the agent, a point, a thing, or the hostiles it
-  perceives.
-- A behavior tree runs a query as a task, [`Survey<Q>`]. What it found goes on
-  the agent as [`Found<Q>`], for conditions to read with `found::<Q>`.
+  own [`Test`]. Anchors are the agent, a point, a thing, the hostiles it
+  perceives, or what carries the query.
+- A query is a component keyed by what it's for, `EnvQuery<Cover>`. An agent
+  carries the queries it asks of itself; a thing, such as a turret, the ones
+  agents ask of it, measured from it with the `Carrier` anchor.
+- A behavior tree runs a query as a task, [`Survey<Q>`]: the agent's own, or
+  one a thing carries, with `.on(entity)` or `.on_found::<J>()`. What it found
+  goes on the agent as [`Found<Q>`], for conditions to read with `found::<Q>`.
 - Queries run after the trees, within a per-tick budget, so many agents asking
   at once spread across ticks.
 
@@ -62,18 +66,15 @@ struct Cover;
 #[derive(Component, Clone)]
 struct TakeCover;
 
-fn setup(app: &mut App) {
-    app.add_env_query(
-        Cover,
-        // Points on rings round the agent.
-        EnvQuery::new(Donut::around(Querier).radius(3.0, 9.0).rings(3).points(16))
-            // Near the agent, and far from what's hostile.
-            .score(Distance::to(Querier), Score::lower())
-            .score(
-                Distance::to(Hostiles::<Sight>::remembered()),
-                Score::higher().weight(0.5),
-            ),
-    );
+fn cover() -> EnvQuery<Cover> {
+    // Points on rings round the agent.
+    EnvQuery::new(Cover, Donut::around(Querier).radius(3.0, 9.0).rings(3).points(16))
+        // Near the agent, and far from what's hostile.
+        .score(Distance::to(Querier), Score::lower())
+        .score(
+            Distance::to(Percepts::<Sight>::all().hostile()),
+            Score::higher().weight(0.5),
+        )
 }
 
 fn tree() -> Behavior {
@@ -85,6 +86,11 @@ fn tree() -> Behavior {
             task(Survey::of(Cover)),
         }
     }
+}
+
+fn spawn_agent(mut commands: Commands) {
+    // The agent carries its query, alongside its tree.
+    commands.spawn((Transform::default(), BehaviorTree::new(tree()), cover()));
 }
 ```
 
@@ -110,11 +116,11 @@ or [MIT license](https://github.com/declaredlost/bevy_arbor/blob/main/LICENSE-MI
 [`Grid`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Grid.html
 [`Fan`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Fan.html
 [`Row`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Row.html
-[`Percepts<S>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Percepts.html
+[`Percepts<S>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/perceived/struct.Percepts.html
 [`Nearby<C>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Nearby.html
 [`Distance`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Distance.html
 [`Dot`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Dot.html
-[`Perceives<S>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Perceives.html
+[`Perceives<S>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/perceived/struct.Perceives.html
 [`Random`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Random.html
 [`Test`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/trait.Test.html
 [`Survey<Q>`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/struct.Survey.html

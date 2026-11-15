@@ -30,7 +30,6 @@ type Room = (
 pub struct Clearance {
     shape: Collider,
     layers: LayerMask,
-    room: Reads<Room>,
 }
 
 impl Clearance {
@@ -42,7 +41,6 @@ impl Clearance {
         Self {
             shape,
             layers: LayerMask::ALL,
-            room: Reads::new("Clearance"),
         }
     }
 
@@ -56,18 +54,20 @@ impl Clearance {
 }
 
 impl Test for Clearance {
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-        self.test_all(cx, std::slice::from_ref(item))
-            .into_iter()
-            .next()
-            .flatten()
-    }
+    type State = Reads<Room>;
 
-    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
-        let agent = cx.agent();
+    fn test(
+        &self,
+        room: &mut Reads<Room>,
+        cx: &EnvQueryContext,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>> {
+        let agent = cx.querier();
         let filter = SpatialQueryFilter::from_mask(self.layers);
-        self.room
-            .with(cx.world(), |(spatial, colliders, parents, triggers)| {
+        room.with(
+            cx.world(),
+            "Clearance",
+            |(spatial, colliders, parents, triggers)| {
                 items
                     .iter()
                     .map(|item| {
@@ -92,24 +92,20 @@ impl Test for Clearance {
                         Some(f32::from(u8::from(room)))
                     })
                     .collect()
-            })
-            .unwrap_or_else(|| vec![None; items.len()])
+            },
+        )
+        .unwrap_or_else(|| vec![None; items.len()])
     }
 
     fn cost(&self) -> Cost {
         Cost::High
-    }
-
-    fn prepare(&self, world: &mut World) {
-        self.room.prepare(world);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
-    use bevy_arbor_eqs::test::Test;
+    use bevy_arbor_eqs::query::EnvQueryItem;
 
     use crate::avian::prelude::*;
     use crate::eqs::Clearance;
@@ -121,9 +117,7 @@ mod tests {
         test: &Clearance,
         item: EnvQueryItem,
     ) -> Option<f32> {
-        test.prepare(app.world_mut());
-        let cx = EnvQueryContext::new(app.world(), agent, SPACE, 1);
-        test.test(&cx, &item)
+        tested(app.world_mut(), agent, test, item)
     }
 
     fn body() -> Collider {

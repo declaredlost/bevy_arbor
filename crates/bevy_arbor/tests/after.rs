@@ -33,7 +33,6 @@ fn app() -> TestApp {
         .plugins(ArborPlugins)
         .with(|app| {
             app.init_resource::<Seen>()
-                .add_env_query(Spot, EnvQuery::new(Donut::around(Querier)))
                 .add_systems(FixedUpdate, look.after(ArborSystems));
         })
         .build()
@@ -69,6 +68,7 @@ fn a_task_system_sees_what_was_found_and_where_to_go_as_soon_as_asked() {
     let mut app = app();
     app.spawn((
         GlobalTransform::IDENTITY,
+        EnvQuery::new(Spot, Donut::around(Querier)),
         BehaviorTree::new(behavior_tree! {
             Sequence => { task(Survey::of(Spot)), task(MoveTo::found::<Spot>()) }
         }),

@@ -26,7 +26,7 @@ pub(crate) fn alarmed(_: &Alarmed) -> bool {
     true
 }
 
-/// Trees, queries and navigation, in 3D, with `Spot` added.
+/// Trees, queries and navigation, in 3D.
 pub(crate) fn app() -> TestApp {
     TestApp::builder()
         .plugins((
@@ -35,14 +35,17 @@ pub(crate) fn app() -> TestApp {
             EnvQueryPlugin::default(),
             NavPlugin::default(),
         ))
-        .with(|app| {
-            app.add_env_query(Spot, EnvQuery::new(Grid::around(At(SPOT)).extent(0.0)));
-        })
         .build()
 }
 
+/// Just [`SPOT`]: what agents carry.
+pub(crate) fn spot() -> EnvQuery<Spot> {
+    EnvQuery::new(Spot, Grid::around(At(SPOT)).extent(0.0))
+}
+
+/// An agent at the origin running `tree`, carrying [`spot`].
 pub(crate) fn agent(app: &mut TestApp, tree: Behavior) -> Entity {
-    app.spawn((GlobalTransform::IDENTITY, BehaviorTree::new(tree)))
+    app.spawn((GlobalTransform::IDENTITY, spot(), BehaviorTree::new(tree)))
 }
 
 /// How its tree ended, if it has: succeeded or not.

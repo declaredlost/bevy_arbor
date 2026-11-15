@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::query::EnvQueryItem;
+use crate::query::Weighed;
 
 /// On an agent: how its last query weighed every item, for gizmos or a test.
 ///
@@ -13,17 +13,4 @@ pub struct EnvQueryTrace {
     /// Every item, its score, or `None` if a filter dropped it, and whether
     /// it was picked.
     pub items: Vec<Weighed>,
-}
-
-/// An item as a query weighed it: its score, if kept, and whether it was
-/// picked.
-#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Debug, PartialEq)]
-pub struct Weighed {
-    /// What it is.
-    pub item: EnvQueryItem,
-    /// Its score, or `None` if a filter dropped it.
-    pub score: Option<f32>,
-    /// Whether it was picked.
-    pub picked: bool,
 }

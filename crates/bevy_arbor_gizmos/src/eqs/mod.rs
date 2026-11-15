@@ -105,8 +105,8 @@ mod tests {
 
     use bevy::gizmos::{GizmoAsset, GizmoHandles};
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::EnvQueryItem;
-    use bevy_arbor_eqs::survey::{EnvQueryTrace, Weighed};
+    use bevy_arbor_eqs::query::{EnvQueryItem, Weighed};
+    use bevy_arbor_eqs::survey::EnvQueryTrace;
     use bevy_arbor_perception::prelude::*;
     use bevy_harness::TestApp;
 

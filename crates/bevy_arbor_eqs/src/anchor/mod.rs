@@ -1,16 +1,17 @@
 //! Anchors: where generators and tests measure from: none, one or several
 //! places.
 //!
-//! [`Querier`], a fixed point [`At`], a fixed entity [`Thing`], what the agent
-//! perceives as hostile ([`Hostiles`]), or a [`Locate`] of your own.
+//! [`Querier`], the query's [`Carrier`], a fixed point [`At`], a fixed entity
+//! [`Thing`], what the agent perceives
+//! ([`Percepts`](crate::perceived::Percepts)), or a [`Locate`] of your own.
 
 mod fixed;
-mod hostiles;
+
+use std::sync::Arc;
 
 use bevy::prelude::*;
 
-pub use self::fixed::{At, Querier, Thing};
-pub use self::hostiles::Hostiles;
+pub use self::fixed::{At, Carrier, Querier, Thing};
 use crate::query::EnvQueryContext;
 
 /// A place an anchor is at, which way it looks there, and the thing it is, if
@@ -26,6 +27,28 @@ pub struct Located {
     pub ahead: Vec3,
     /// The thing it is, if it's one.
     pub entity: Option<Entity>,
+}
+
+/// An anchor as a generator or test keeps it: any [`Locate`], shared.
+///
+/// Located once a run, however many items and tests ask, by
+/// [`EnvQueryContext::locate`].
+#[derive(Clone)]
+pub struct EnvQueryAnchor(pub(crate) Arc<dyn Locate>);
+
+impl EnvQueryAnchor {
+    /// `anchor`, to keep.
+    pub fn new(anchor: impl Locate) -> Self {
+        Self(Arc::new(anchor))
+    }
+}
+
+impl Located {
+    /// Whether `position` is within `range` of here.
+    #[must_use]
+    pub fn reaches(&self, position: Vec3, range: f32) -> bool {
+        self.position.distance(position) <= range
+    }
 }
 
 /// A kind of anchor: where a generator or test measures from, for an agent's
@@ -64,30 +87,6 @@ mod tests {
         assert_eq!(
             located(&app, agent, &Thing(thing)),
             [Vec3::new(5.0, 0.0, 0.0)]
-        );
-    }
-
-    #[test]
-    fn hostiles_are_where_they_are_or_were_last_seen() {
-        let mut app = app(Space::Volume);
-        let agent = looker(&mut app);
-        let enemy = enemy(&mut app, Vec3::new(0.0, 0.0, -5.0));
-        app.tick();
-        assert_eq!(
-            located(&app, agent, &Hostiles::<Sight>::active()),
-            [Vec3::new(0.0, 0.0, -5.0)]
-        );
-        app.entity_mut(enemy)
-            .insert(GlobalTransform::from_xyz(0.0, 0.0, 50.0));
-        app.tick();
-        assert!(
-            located(&app, agent, &Hostiles::<Sight>::active()).is_empty(),
-            "out of view"
-        );
-        assert_eq!(
-            located(&app, agent, &Hostiles::<Sight>::remembered()).len(),
-            1,
-            "where it was last seen"
         );
     }
 }

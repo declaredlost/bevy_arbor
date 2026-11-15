@@ -30,17 +30,13 @@ type Nearest = (
 /// anywhere behind it. Costly, a lookup an item: filter cheaply first.
 pub struct OccluderDistance {
     layers: Option<LayerMask>,
-    nearest: Reads<Nearest>,
 }
 
 impl OccluderDistance {
     /// How far each item is from what blocks sight.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            layers: None,
-            nearest: Reads::new("OccluderDistance"),
-        }
+        Self { layers: None }
     }
 
     /// From colliders on `layers`, not [`Occluders`]'.
@@ -58,18 +54,19 @@ impl Default for OccluderDistance {
 }
 
 impl Test for OccluderDistance {
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-        self.test_all(cx, std::slice::from_ref(item))
-            .into_iter()
-            .next()
-            .flatten()
-    }
+    type State = Reads<Nearest>;
 
-    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
-        let agent = cx.agent();
-        self.nearest
+    fn test(
+        &self,
+        nearest: &mut Reads<Nearest>,
+        cx: &EnvQueryContext,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>> {
+        let agent = cx.querier();
+        nearest
             .with(
                 cx.world(),
+                "OccluderDistance",
                 |(spatial, occluders, colliders, parents, triggers)| {
                     let layers = self.layers.unwrap_or_else(|| {
                         occluders.map_or(LayerMask::ALL, |occluders| occluders.0)
@@ -103,17 +100,12 @@ impl Test for OccluderDistance {
     fn cost(&self) -> Cost {
         Cost::High
     }
-
-    fn prepare(&self, world: &mut World) {
-        self.nearest.prepare(world);
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
-    use bevy_arbor_eqs::test::Test;
+    use bevy_arbor_eqs::query::EnvQueryItem;
 
     use crate::avian::prelude::*;
     use crate::eqs::OccluderDistance;
@@ -125,9 +117,7 @@ mod tests {
         test: &OccluderDistance,
         at: Vec3,
     ) -> Option<f32> {
-        test.prepare(app.world_mut());
-        let cx = EnvQueryContext::new(app.world(), agent, SPACE, 1);
-        test.test(&cx, &EnvQueryItem::place(at))
+        tested(app.world_mut(), agent, test, EnvQueryItem::place(at))
     }
 
     #[test]

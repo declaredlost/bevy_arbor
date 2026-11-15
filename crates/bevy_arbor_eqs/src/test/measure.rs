@@ -1,20 +1,18 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bevy::ecs::system::{BoxedReadOnlySystem, ReadOnlySystem, SystemInput};
-use bevy::ecs::world::WorldId;
 use bevy::prelude::*;
 
 use super::{Cost, Test};
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
-/// What a [`Measure`]'s system is asked: the agent running the query, and
-/// every item.
+/// What a [`Measure`]'s system is asked: the querier, and every item.
 ///
 /// A system takes it as its first parameter, as an observer takes `On<E>`.
 #[derive(Debug, Clone, Copy)]
 pub struct Batch<'a> {
     /// The agent running the query.
-    pub agent: Entity,
+    pub querier: Entity,
     /// The items, in order: the system answers each, in the same order.
     pub items: &'a [EnvQueryItem],
 }
@@ -28,9 +26,6 @@ impl SystemInput for Batch<'_> {
     }
 }
 
-/// What a [`Measure`] runs: a read-only system answering a [`Batch`].
-type Measuring = BoxedReadOnlySystem<Batch<'static>, Vec<Option<f32>>>;
-
 /// A test whose numbers come from a system of yours, made by
 /// [`Measure::by`].
 ///
@@ -40,10 +35,10 @@ type Measuring = BoxedReadOnlySystem<Batch<'static>, Vec<Option<f32>>>;
 /// query: a single search from the agent to every item. An answer of the
 /// wrong length, or a system that can't run (a resource missing), is no
 /// answer for any item.
+#[derive(Clone)]
 pub struct Measure {
-    make: Arc<dyn Fn() -> Measuring + Send + Sync>,
+    make: Arc<dyn Fn() -> System + Send + Sync>,
     cost: Cost,
-    kept: Mutex<Option<(WorldId, Measuring)>>,
 }
 
 impl Measure {
@@ -58,9 +53,8 @@ impl Measure {
         S::System: ReadOnlySystem,
     {
         Self {
-            make: Arc::new(move || Box::new(IntoSystem::into_system(system.clone())) as Measuring),
+            make: Arc::new(move || Box::new(IntoSystem::into_system(system.clone())) as System),
             cost: Cost::High,
-            kept: Mutex::new(None),
         }
     }
 
@@ -73,36 +67,30 @@ impl Measure {
     }
 }
 
-impl Clone for Measure {
-    /// The same system, set up afresh: each clone keeps its own state.
-    fn clone(&self) -> Self {
-        Self {
-            make: Arc::clone(&self.make),
-            cost: self.cost,
-            kept: Mutex::new(None),
-        }
-    }
-}
+/// A [`Measure`]'s system, in the world it runs in: made as it's first
+/// prepared there.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct Measuring(Option<System>);
+
+/// What a [`Measure`] runs: a read-only system answering a [`Batch`].
+type System = BoxedReadOnlySystem<Batch<'static>, Vec<Option<f32>>>;
 
 impl Test for Measure {
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-        self.test_all(cx, std::slice::from_ref(item))
-            .into_iter()
-            .next()
-            .flatten()
-    }
+    type State = Measuring;
 
-    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
+    fn test(
+        &self,
+        Measuring(system): &mut Measuring,
+        cx: &EnvQueryContext,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>> {
         let none = || vec![None; items.len()];
-        let Ok(mut kept) = self.kept.lock() else {
-            return none();
-        };
-        let Some((_, system)) = kept.as_mut().filter(|(world, _)| *world == cx.world().id()) else {
-            warn_once!("a `Measure` asked before it was prepared for this world: no answers");
+        let Some(system) = system else {
             return none();
         };
         let batch = Batch {
-            agent: cx.agent(),
+            querier: cx.querier(),
             items,
         };
         match system.run_readonly(batch, cx.world()) {
@@ -115,14 +103,11 @@ impl Test for Measure {
         self.cost
     }
 
-    fn prepare(&self, world: &mut World) {
-        if let Ok(mut kept) = self.kept.lock()
-            && kept.as_ref().is_none_or(|(id, _)| *id != world.id())
-        {
-            // Built for this world: one built for another would fail it.
-            let mut system = (self.make)();
-            system.initialize(world);
-            *kept = Some((world.id(), system));
+    fn prepare(&self, Measuring(system): &mut Measuring, world: &mut World) {
+        if system.is_none() {
+            let mut made = (self.make)();
+            made.initialize(world);
+            *system = Some(made);
         }
     }
 }
@@ -133,8 +118,7 @@ mod tests {
     use bevy_arbor_perception::prelude::*;
 
     use super::{Batch, Measure};
-    use crate::query::{EnvQueryContext, EnvQueryItem};
-    use crate::test::Test;
+    use crate::query::EnvQueryItem;
     use crate::testing::*;
 
     #[derive(Resource)]
@@ -155,9 +139,7 @@ mod tests {
         items: &[EnvQueryItem],
     ) -> Vec<Option<f32>> {
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        test.prepare(app.world_mut());
-        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
-        test.test_all(&cx, items)
+        tested(app.world_mut(), agent, test, items)
     }
 
     #[test]

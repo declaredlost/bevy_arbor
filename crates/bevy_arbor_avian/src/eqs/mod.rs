@@ -8,100 +8,70 @@ mod clearance;
 mod distance;
 mod sight;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, PoisonError};
-
 use bevy::ecs::system::{ReadOnlySystemParam, SystemParam, SystemParamItem, SystemState};
-use bevy::ecs::world::WorldId;
 use bevy::prelude::*;
 
 pub use self::clearance::Clearance;
 pub use self::distance::OccluderDistance;
 pub use self::sight::LineOfSight;
 
-/// What a test reads from the world, as a system would, for the world it's
-/// built for.
+/// What a test reads from the world, as a system would: its state there.
 ///
-/// A test runs in any world its query is added to.
-struct Reads<P: SystemParam + 'static> {
-    /// The test's name, for what it warns of.
-    test: &'static str,
-    kept: Mutex<Option<(WorldId, SystemState<P>)>>,
+/// Made in the world its query runs in, the first time it does.
+#[doc(hidden)]
+pub struct Reads<P: SystemParam + 'static> {
+    state: SystemState<P>,
     /// Whether it's warned that it can't read, so it says so once.
-    warned: AtomicBool,
+    warned: bool,
+}
+
+impl<P: SystemParam + 'static> FromWorld for Reads<P> {
+    fn from_world(world: &mut World) -> Self {
+        Self {
+            state: SystemState::new(world),
+            warned: false,
+        }
+    }
 }
 
 impl<P: ReadOnlySystemParam + 'static> Reads<P> {
-    fn new(test: &'static str) -> Self {
-        Self {
-            test,
-            kept: Mutex::new(None),
-            warned: AtomicBool::new(false),
-        }
-    }
-
-    /// Builds it for `world`, unless it's built for it already.
+    /// `read` with what it reads from `world`, for the test named `test`.
     ///
-    /// One built for another would fail it.
-    fn prepare(&self, world: &mut World) {
-        let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
-        if kept.as_ref().is_none_or(|(id, _)| *id != world.id()) {
-            *kept = Some((world.id(), SystemState::new(world)));
-        }
-    }
-
-    /// `read` with what it reads from `world`, if it's built for it.
-    ///
-    /// Only if what it reads is there, too; if not, it warns, once.
-    fn with<R>(&self, world: &World, read: impl FnOnce(SystemParamItem<P>) -> R) -> Option<R> {
-        let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some((_, state)) = kept.as_mut().filter(|(id, _)| *id == world.id()) else {
-            self.warn("wasn't prepared for this world: call `Test::prepare` first");
-            return None;
-        };
-        let Ok(param) = state.get(world) else {
-            self.warn("can't read the world: it needs avian's `PhysicsPlugins`");
+    /// Only if what it reads is there; if not, it warns, once.
+    fn with<R>(
+        &mut self,
+        world: &World,
+        test: &str,
+        read: impl FnOnce(SystemParamItem<P>) -> R,
+    ) -> Option<R> {
+        let Ok(param) = self.state.get(world) else {
+            if !std::mem::replace(&mut self.warned, true) {
+                warn!(
+                    "`{test}` has no answer: it can't read the world: it needs avian's `PhysicsPlugins`"
+                );
+            }
             return None;
         };
         Some(read(param))
-    }
-
-    fn warn(&self, why: &str) {
-        if !self.warned.swap(true, Ordering::Relaxed) {
-            warn!("`{}` has no answer: it {why}", self.test);
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
-    use bevy_arbor_eqs::test::Test;
+    use bevy_arbor_eqs::query::EnvQueryItem;
 
     use super::LineOfSight;
     use crate::testing::*;
 
     #[test]
-    fn unprepared_or_without_physics_it_has_no_answer() {
-        let test = LineOfSight::from(bevy_arbor_eqs::anchor::Querier);
-        let mut app = app();
-        let agent = looker(&mut app);
-        app.tick();
-        let cx = EnvQueryContext::new(app.world(), agent, SPACE, 1);
-        assert_eq!(
-            test.test(&cx, &EnvQueryItem::place(ahead(3.0))),
-            None,
-            "unprepared"
-        );
+    fn without_physics_it_has_no_answer() {
+        let test = LineOfSight::seen_by(bevy_arbor_eqs::anchor::Querier);
         let mut bare = World::new();
         let agent = bare.spawn(GlobalTransform::IDENTITY).id();
-        test.prepare(&mut bare);
-        let cx = EnvQueryContext::new(&bare, agent, SPACE, 1);
         assert_eq!(
-            test.test(&cx, &EnvQueryItem::place(ahead(3.0))),
-            None,
-            "no physics"
+            tested(&mut bare, agent, &test, EnvQueryItem::place(ahead(3.0))),
+            None
         );
     }
 }

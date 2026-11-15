@@ -4,6 +4,7 @@
 
 pub mod anchor;
 pub mod generate;
+pub mod perceived;
 mod plugin;
 pub mod prelude;
 pub mod query;

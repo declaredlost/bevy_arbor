@@ -105,3 +105,17 @@ fn without_physics_it_warns_and_does_nothing() {
         "nothing blocks sight, nothing panics"
     );
 }
+
+/// `test`'s number for `item`, for `agent`, its state made afresh.
+#[cfg(feature = "eqs")]
+pub(crate) fn tested<T: bevy_arbor_eqs::test::Test>(
+    world: &mut World,
+    agent: Entity,
+    test: &T,
+    item: bevy_arbor_eqs::query::EnvQueryItem,
+) -> Option<f32> {
+    let mut state = T::State::from_world(world);
+    test.prepare(&mut state, world);
+    let cx = bevy_arbor_eqs::query::EnvQueryContext::new(world, agent, SPACE, 1);
+    test.test(&mut state, &cx, &[item])[0]
+}

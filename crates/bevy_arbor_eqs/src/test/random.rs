@@ -9,7 +9,9 @@ use crate::query::{EnvQueryContext, EnvQueryItem};
 pub struct Random;
 
 impl Test for Random {
-    fn test(&self, cx: &EnvQueryContext, _item: &EnvQueryItem) -> Option<f32> {
-        Some(cx.roll())
+    type State = ();
+
+    fn test(&self, (): &mut (), cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
+        items.iter().map(|_| Some(cx.roll())).collect()
     }
 }

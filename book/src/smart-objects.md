@@ -48,7 +48,7 @@ it's in world space.
 
 [`FreeSlots<A>`][`FreeSlots`] is a [query](queries.md) generator. It makes the
 slots offering `A` near an anchor that the agent could claim. Score them like
-any items:
+any items. The guard carries the query:
 
 ```rust
 # use bevy::prelude::*;
@@ -57,12 +57,9 @@ any items:
 /// The nearest free turret.
 struct Turret;
 
-fn setup(app: &mut App) {
-    app.add_env_query(
-        Turret,
-        EnvQuery::new(FreeSlots::<Gunner>::within(Querier, 20.0))
-            .score(Distance::to(Querier), Score::lower()),
-    );
+fn turret() -> EnvQuery<Turret> {
+    EnvQuery::new(Turret, FreeSlots::<Gunner>::within(Querier, 20.0))
+        .score(Distance::to(Querier), Score::lower())
 }
 ```
 
@@ -157,12 +154,9 @@ struct AmmoCrate;
 /// The ammo crate nearest the guard's turret.
 struct Resupply;
 
-fn setup(app: &mut App) {
-    app.add_env_query(
-        Resupply,
-        EnvQuery::new(Nearby::<AmmoCrate>::within(ClaimedSlots, 10.0))
-            .score(Distance::to(ClaimedSlots), Score::lower()),
-    );
+fn resupply() -> EnvQuery<Resupply> {
+    EnvQuery::new(Resupply, Nearby::<AmmoCrate>::within(ClaimedSlots, 10.0))
+        .score(Distance::to(ClaimedSlots), Score::lower())
 }
 ```
 

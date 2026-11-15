@@ -1,25 +1,36 @@
 # Running queries
 
 The [previous chapter](queries.md) built the guard's `Cover` and `Target`
-queries. This one adds them to the app, runs them from the guard's tree, and
-reads what they found. It ends with generators, tests and anchors of your own.
+queries. This one gives them to the guard, runs them from its tree, reads
+what they found, and asks queries that things carry. It ends with generators,
+tests and anchors of your own.
 
-## Adding and running a query
+## Carrying and running a query
 
-Add a query to the app under its key with [`add_env_query`]:
+A query is a component, and an entity carries it. The guard carries the
+queries it asks of itself, spawned alongside its tree:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # struct Cover;
-# fn cover() -> EnvQuery { EnvQuery::new(Donut::around(Querier)) }
-fn setup(app: &mut App) {
-    app.add_env_query(Cover, cover());
+# struct Target;
+# fn cover() -> EnvQuery<Cover> { EnvQuery::new(Cover, Donut::around(Querier)) }
+# fn target() -> EnvQuery<Target> { EnvQuery::new(Target, Donut::around(Querier)) }
+# fn guard() -> Behavior { behavior_tree! { task(Survey::of(Cover)) } }
+fn spawn_guard(mut commands: Commands) {
+    commands.spawn((
+        Transform::default(),
+        BehaviorTree::new(guard()),
+        cover(),
+        target(),
+    ));
 }
 ```
 
-In a tree, a query is a task: `task(Survey::of(Cover))`. It succeeds if the
-query found something, and fails if not. Out of ammo, the guard stops
+In a tree, a query is a task: `task(Survey::of(Cover))` runs the guard's own
+`EnvQuery<Cover>`. It succeeds if the query found something, and fails if
+not. Out of ammo, the guard stops
 shooting. It looks for cover, goes there, and reloads:
 
 ```rust
@@ -87,6 +98,75 @@ The [Navigation](navigation.md) chapter walks the guard there with
 finds something else. So [`found::<Cover>`][found-fn] is a typed condition: the
 guard has cover in mind.
 
+## Queries carried by things
+
+A thing can carry queries too: those agents ask of it. A turret knows where to
+stand to use it. It carries that query, measured from itself with the
+[`Carrier`] anchor:
+
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+/// Where to stand to use a turret.
+struct UseSpot;
+
+#[derive(Component)]
+struct Turret;
+
+fn use_spot() -> EnvQuery<UseSpot> {
+    // Round the turret, the nearer its front the better.
+    EnvQuery::new(UseSpot, Donut::around(Carrier).radius(1.0, 2.0))
+        .score(Dot::of(Carrier), Score::higher())
+}
+
+fn spawn_turrets(mut commands: Commands) {
+    // One query, cloned onto every turret: clones share it.
+    let use_spot = use_spot();
+    for x in [-10.0, 10.0] {
+        commands.spawn((Turret, Transform::from_xyz(x, 0.0, 0.0), use_spot.clone()));
+    }
+}
+```
+
+`Carrier` is what carries the query. In the agent's own queries, it's the
+agent, as `Querier` is. In the turret's, it's the turret, and `Querier` is
+still the agent asking.
+
+An agent asks a thing with `.on(..)`: `Survey::of(UseSpot).on(turret)` runs
+the query `turret` carries. Or it asks whatever it found with
+`.on_found::<J>()`. Here the agent finds the nearest turret, then where to
+stand to use it:
+
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+# struct UseSpot;
+# #[derive(Component)] struct Turret;
+# #[derive(Component, Clone)] struct Man;
+/// The nearest turret.
+struct Turrets;
+
+fn turrets() -> EnvQuery<Turrets> {
+    EnvQuery::new(Turrets, Nearby::<Turret>::within(Querier, 20.0))
+        .score(Distance::to(Querier), Score::lower())
+}
+
+fn man_a_turret() -> Behavior {
+    behavior_tree! {
+        Sequence => {
+            task(Survey::of(Turrets)),
+            task(Survey::of(UseSpot).on_found::<Turrets>()),
+            task(Man),
+        }
+    }
+}
+```
+
+The agent carries `turrets()`; each turret carries `use_spot()`. Which turret
+is read from `Found<Turrets>` as the survey runs, and the task fails if
+nothing is found. What it found still goes on the agent, as `Found<UseSpot>`.
+It's like Unreal's EQS reading a query template from a blackboard key.
+
 ## When queries run
 
 Queries run in [`EnvQuerySystems`], after trees tick in the same schedule. A
@@ -111,9 +191,32 @@ ticks.
 
 ## Outside a tree
 
-Insert a `Survey::of(Cover)` on an agent to run the query for it once. It's
-taken off when it has run, and `Found<Cover>` is written as usual. This suits
-a game system that wants an answer without a tree.
+A `Survey` is a task, run within the budget. A game system wanting an answer
+at once runs the query itself, with [`EnvQuery::run`]: what it picks, best
+first. `run_on(world, agent, carrier)` runs one a thing carries.
+
+```rust
+# use bevy::prelude::*;
+# use bevy_arbor::prelude::*;
+# struct Cover;
+/// Where each guard would take cover now, for a debug overlay.
+fn cover_now(world: &mut World) -> Vec<(Entity, Vec3)> {
+    let guards: Vec<(Entity, EnvQuery<Cover>)> = world
+        .query::<(Entity, &EnvQuery<Cover>)>()
+        .iter(world)
+        .map(|(guard, query)| (guard, query.clone()))
+        .collect();
+    guards
+        .into_iter()
+        .filter_map(|(guard, query)| {
+            let best = query.run(world, guard).first()?.item.position;
+            Some((guard, best))
+        })
+        .collect()
+}
+```
+
+It doesn't write `Found`: that's the survey's.
 
 ## A query of your own parts
 
@@ -122,7 +225,8 @@ be a system, which is easier ([below](#a-test-from-a-system)). Each trait is
 given a [`EnvQueryContext`]. It has:
 
 - `world()`: the world, read-only.
-- `agent()`: whose query it is.
+- `querier()`: whose query it is.
+- `carrier()`: what carries it: the agent, or the thing it was asked of.
 - `space()`: 2D or 3D, as perception works in.
 - `position(entity)` and `ahead(entity)`: where a thing is, and which way it
   looks.
@@ -150,7 +254,7 @@ struct Post;
 
 impl Locate for Post {
     fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
-        if let Some(post) = cx.world().get::<GuardPost>(cx.agent()) {
+        if let Some(post) = cx.world().get::<GuardPost>(cx.querier()) {
             out.push(Located { position: post.0, ahead: Vec3::ZERO, entity: None });
         }
     }
@@ -169,6 +273,7 @@ far each item is from the nearest lamp:
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
+# struct Cover;
 #[derive(Component)]
 struct Lamp;
 
@@ -184,8 +289,8 @@ fn darkness(batch: Batch, lamps: Query<&GlobalTransform, With<Lamp>>) -> Vec<Opt
         .collect()
 }
 
-fn dark_cover() -> EnvQuery {
-    EnvQuery::new(Donut::around(Querier).radius(2.0, 8.0).rings(3).points(16))
+fn dark_cover() -> EnvQuery<Cover> {
+    EnvQuery::new(Cover, Donut::around(Querier).radius(2.0, 8.0).rings(3).points(16))
         .score(Measure::by(darkness), Score::higher())
 }
 ```
@@ -215,17 +320,17 @@ struct Lamp;
 struct Darkness;
 
 impl Test for Darkness {
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-        self.test_all(cx, std::slice::from_ref(item)).pop().flatten()
-    }
+    // The lamps' query, kept between runs.
+    type State = QueryState<&'static GlobalTransform, With<Lamp>>;
 
-    // Find the lamps once a run, not once an item.
-    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
-        let world = cx.world();
-        let lamps: Vec<Vec3> = world
-            .try_query_filtered::<&GlobalTransform, With<Lamp>>()
-            .map(|mut lamps| lamps.iter(world).map(GlobalTransform::translation).collect())
-            .unwrap_or_default();
+    // Every item at once: the lamps are found once a run, not once an item.
+    fn test(
+        &self,
+        lamps: &mut Self::State,
+        cx: &EnvQueryContext,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>> {
+        let lamps: Vec<Vec3> = cx.query(lamps).iter().map(GlobalTransform::translation).collect();
         items
             .iter()
             .map(|item| lamps.iter().map(|lamp| lamp.distance(item.position)).reduce(f32::min))
@@ -238,32 +343,36 @@ impl Test for Darkness {
 }
 ```
 
-- `test` gives one item's number, or `None` for no answer.
-- `test_all` gives every item's at once. Override it when a test has setup to
-  do once a run, as here.
+- `test` gives every item's number at once, in order, or `None` for no
+  answer. Setup, as finding the lamps here, happens once a run.
+- `State` is what it keeps in the world between runs: `()` for nothing, a
+  `QueryState`, a `SystemState`. It's made the first time its query runs
+  there, and [`EnvQueryContext::query`] reads a `QueryState`.
 - `cost` is `Low`, `Medium` or `High`. Filters run cheapest first.
-- `prepare(&mut World)` runs before each query the test is in, for setup that
-  needs to change the world.
+- `prepare(&mut State, &mut World)` runs before each run, for what needs the
+  world to change: initializing a system, as a `Measure` does.
 
 ### A generator
 
-A generator implements [`Generate`]: `generate(&self, cx, out)` pushes
-[`EnvQueryItem`]s onto `out`. An item is a place,
+A generator implements [`Generate`]: `generate(&self, state, cx, out)` pushes
+[`EnvQueryItem`]s onto `out`, with a `State` of its own as a test has. An item is a place,
 `EnvQueryItem::place(position)`, or a thing,
 `EnvQueryItem::thing(entity, position)`. Tests read its `position`, and its
 `entity` if it's a thing.
 
 ## Pitfalls
 
-- **A key never added.** A `Survey` for a key with no `add_env_query` logs a
-  warning and fails its task.
+- **A query not carried.** A `Survey` whose carrier carries no `EnvQuery` for
+  its key logs a warning and fails its task. So does `on_found` while nothing
+  is found, quietly. A `Survey` without `EnvQueryPlugin` logs a warning and
+  never runs.
 - **Reading `Found` too soon.** A task right after the `Survey` in a
   `Sequence` is fine: the sequence waits for the survey. A system reading
   `Found` on its own may see last time's answer.
 - **Stale answers.** `Found<Cover>` stays until the next run. If the intruder
   moves, ask again.
 
-[`add_env_query`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/trait.EnvQueryApp.html
+[`Carrier`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Carrier.html
 [`Found`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/struct.Found.html
 [found-fn]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/fn.found.html
 [`EnvQuerySystems`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EnvQuerySystems.html
@@ -275,3 +384,4 @@ A generator implements [`Generate`]: `generate(&self, cx, out)` pushes
 [`Batch`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Batch.html
 [`Generate`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/trait.Generate.html
 [`EnvQueryItem`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.EnvQueryItem.html
+[`EnvQueryContext::query`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.EnvQueryContext.html#method.query

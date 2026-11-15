@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
-use super::{Generate, round};
-use crate::anchor::{Locate, Located};
+use super::Generate;
+use super::shape::round;
+use crate::anchor::{EnvQueryAnchor, Locate, Located};
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// Points in a cone ahead of an anchor, in the plane things stand on.
@@ -9,7 +8,7 @@ use crate::query::{EnvQueryContext, EnvQueryItem};
 /// Rays fanned across it, points along each.
 #[derive(Clone)]
 pub struct Fan {
-    from: Arc<dyn Locate>,
+    from: EnvQueryAnchor,
     angle: f32,
     near: f32,
     far: f32,
@@ -21,9 +20,9 @@ impl Fan {
     /// A cone ahead of `from`: 90° across, 1 to 8 out, 5 rays of 4 points.
     ///
     /// Each can be told otherwise. An anchor looking nowhere has none.
-    pub fn from(from: impl Locate) -> Self {
+    pub fn ahead_of(from: impl Locate) -> Self {
         Self {
-            from: Arc::new(from),
+            from: EnvQueryAnchor::new(from),
             angle: std::f32::consts::FRAC_PI_2,
             near: 1.0,
             far: 8.0,
@@ -39,19 +38,25 @@ impl Fan {
         self
     }
 
-    /// From `near` out to `far`.
+    /// From `near` out to `far`, as a [`Donut`](super::Donut)'s radius.
     #[must_use]
-    pub fn range(mut self, near: f32, far: f32) -> Self {
+    pub fn radius(mut self, near: f32, far: f32) -> Self {
         self.near = near.min(far).max(0.0);
         self.far = far.max(near);
         self
     }
 
-    /// `rays` rays of `steps` points.
+    /// `rays` rays, across it.
     #[must_use]
-    pub fn rays(mut self, rays: u32, steps: u32) -> Self {
+    pub fn rays(mut self, rays: u32) -> Self {
         self.rays = rays.max(1);
-        self.steps = steps.max(1);
+        self
+    }
+
+    /// `points` points on each ray, from near to far.
+    #[must_use]
+    pub fn points(mut self, points: u32) -> Self {
+        self.steps = points.max(1);
         self
     }
 }
@@ -67,7 +72,9 @@ fn along(index: u32, count: u32, a: f32, b: f32) -> f32 {
 }
 
 impl Generate for Fan {
-    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+    type State = ();
+
+    fn generate(&self, (): &mut (), cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.from);
         let space = cx.space();
         for &Located {

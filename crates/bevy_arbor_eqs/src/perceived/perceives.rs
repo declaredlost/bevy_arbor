@@ -3,27 +3,28 @@ use std::marker::PhantomData;
 use bevy_arbor_perception::perceived::Perceived;
 use bevy_arbor_perception::sense::Sense;
 
-use super::{Cost, Test};
+use super::Which;
 use crate::query::{EnvQueryContext, EnvQueryItem};
+use crate::test::{Cost, Test};
 
 /// Whether the agent perceives a thing by `S`: 1 or 0, and no answer for a
 /// place.
 ///
 /// [`active`](Self::active) asks whether it's active (in view, for sight),
-/// [`hostile`](Self::hostile) whether it's hostile too.
+/// [`hostile`](Self::hostile) whether it's hostile too, as [`Percepts`] means.
+///
+/// [`Percepts`]: super::Percepts
 pub struct Perceives<S: Sense> {
-    active: bool,
-    hostile: bool,
+    which: Which,
     sense: PhantomData<fn() -> S>,
 }
 
 impl<S: Sense> Perceives<S> {
     /// Whether it's perceived or remembered at all.
     #[must_use]
-    pub fn at_all() -> Self {
+    pub fn all() -> Self {
         Self {
-            active: false,
-            hostile: false,
+            which: Which::default(),
             sense: PhantomData,
         }
     }
@@ -31,29 +32,33 @@ impl<S: Sense> Perceives<S> {
     /// Whether it's active, too.
     #[must_use]
     pub fn active(mut self) -> Self {
-        self.active = true;
+        self.which = self.which.active();
         self
     }
 
     /// Whether it's hostile, too.
     #[must_use]
     pub fn hostile(mut self) -> Self {
-        self.hostile = true;
+        self.which = self.which.hostile();
         self
     }
 }
 
 impl<S: Sense> Test for Perceives<S> {
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-        let entity = item.entity?;
-        let perceives = cx
-            .world()
-            .get::<Perceived<S>>(cx.agent())
-            .and_then(|perceived| perceived.get(entity))
-            .is_some_and(|percept| {
-                (!self.active || percept.is_active()) && (!self.hostile || percept.is_hostile())
-            });
-        Some(f32::from(u8::from(perceives)))
+    type State = ();
+
+    fn test(&self, (): &mut (), cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
+        let perceived = cx.world().get::<Perceived<S>>(cx.querier());
+        items
+            .iter()
+            .map(|item| {
+                let entity = item.entity?;
+                let known = perceived
+                    .and_then(|perceived| perceived.get(entity))
+                    .is_some_and(|percept| self.which.keeps(percept));
+                Some(f32::from(u8::from(known)))
+            })
+            .collect()
     }
 
     fn cost(&self) -> Cost {

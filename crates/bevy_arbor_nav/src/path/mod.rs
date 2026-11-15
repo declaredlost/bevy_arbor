@@ -2,27 +2,15 @@
 //!
 //! Set it once with [`set_path_costs`](PathCostsApp::set_path_costs).
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-
+use bevy::ecs::change_detection::Tick;
 use bevy::ecs::system::ReadOnlySystem;
-use bevy::ecs::world::WorldId;
 use bevy::prelude::*;
 use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
-use bevy_arbor_eqs::test::{Batch, Cost, Measure, Test};
+use bevy_arbor_eqs::test::{Batch, Cost, Measure, Measuring, Test};
 
-/// Your pathfinder, as a test: what [`PathDistance`] runs, and which one.
-///
-/// Which one it is lets a `PathDistance` see it replaced.
+/// Your pathfinder, as a test: what [`PathDistance`] runs.
 #[derive(Resource)]
-struct PathCosts {
-    measure: Measure,
-    set: u64,
-}
-
-/// Which pathfinder each [`set_path_costs`](PathCostsApp::set_path_costs)
-/// set, counting up.
-static SET: AtomicU64 = AtomicU64::new(0);
+struct PathCosts(Measure);
 
 /// Setting the app's pathfinder: the path costs [`PathDistance`] measures by.
 pub trait PathCostsApp {
@@ -44,10 +32,7 @@ impl PathCostsApp for App {
         S: IntoSystem<Batch<'static>, Vec<Option<f32>>, M> + Clone + Send + Sync + 'static,
         S::System: ReadOnlySystem,
     {
-        self.insert_resource(PathCosts {
-            measure: Measure::by(system),
-            set: SET.fetch_add(1, Ordering::Relaxed),
-        })
+        self.insert_resource(PathCosts(Measure::by(system)))
     }
 }
 
@@ -62,63 +47,55 @@ impl PathCostsApp for App {
 /// [`Distance`](bevy_arbor_eqs::test::Distance) to the agent, so it measures
 /// fewer items.
 #[derive(Default)]
-pub struct PathDistance {
-    /// The pathfinder it measures with: for which world, which one it is.
-    costs: Mutex<Option<(WorldId, u64, Measure)>>,
-}
+pub struct PathDistance;
 
 impl PathDistance {
     /// The way from the agent to each item.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
-impl Test for PathDistance {
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-        self.test_all(cx, std::slice::from_ref(item))
-            .into_iter()
-            .next()
-            .flatten()
-    }
+/// The pathfinder a [`PathDistance`] measures with in a world.
+///
+/// As it was set then: one set since is taken up as it runs next.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct Paths(Option<(Tick, Measure, Measuring)>);
 
-    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
-        self.costs
-            .lock()
-            .ok()
-            .and_then(|costs| {
-                costs
-                    .as_ref()
-                    .filter(|(world, ..)| *world == cx.world().id())
-                    .map(|(.., measure)| measure.test_all(cx, items))
-            })
-            .unwrap_or_else(|| vec![None; items.len()])
+impl Test for PathDistance {
+    type State = Paths;
+
+    fn test(
+        &self,
+        Paths(paths): &mut Paths,
+        cx: &EnvQueryContext,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>> {
+        match paths {
+            Some((_, measure, measuring)) => measure.test(measuring, cx, items),
+            None => vec![None; items.len()],
+        }
     }
 
     fn cost(&self) -> Cost {
         Cost::High
     }
 
-    fn prepare(&self, world: &mut World) {
-        let Ok(mut costs) = self.costs.lock() else {
-            return;
-        };
-        let Some(set) = world.get_resource::<PathCosts>() else {
+    fn prepare(&self, Paths(paths): &mut Paths, world: &mut World) {
+        let Some(costs) = world.get_resource_ref::<PathCosts>() else {
             warn_once!("`PathDistance` without a pathfinder: set one with `set_path_costs`");
-            *costs = None;
+            *paths = None;
             return;
         };
-        // This world's pathfinder, as it is now: another world's, or one
-        // replaced since, measures wrong.
-        let current = costs
-            .as_ref()
-            .is_some_and(|(id, which, _)| *id == world.id() && *which == set.set);
-        if !current {
-            *costs = Some((world.id(), set.set, set.measure.clone()));
+        // The pathfinder as it is now: one replaced since measures wrong.
+        let set = costs.last_changed();
+        if paths.as_ref().is_none_or(|(at, ..)| *at != set) {
+            *paths = Some((set, costs.0.clone(), Measuring::default()));
         }
-        if let Some((.., measure)) = costs.as_ref() {
-            measure.prepare(world);
+        if let Some((_, measure, measuring)) = paths {
+            measure.prepare(measuring, world);
         }
     }
 }
@@ -131,6 +108,7 @@ mod tests {
     use bevy_arbor_eqs::test::Test;
     use bevy_arbor_perception::prelude::*;
 
+    use super::Paths;
     use crate::prelude::*;
     use crate::testing::*;
 
@@ -139,7 +117,7 @@ mod tests {
     /// The rest is as far as it is.
     fn walled(batch: Batch, places: Query<&GlobalTransform>) -> Vec<Option<f32>> {
         let from = places
-            .get(batch.agent)
+            .get(batch.querier)
             .map_or(Vec3::ZERO, GlobalTransform::translation);
         batch
             .items
@@ -148,12 +126,22 @@ mod tests {
             .collect()
     }
 
+    /// `PathDistance` run for `agent` with `paths`, what it kept from before.
+    fn run(
+        app: &mut bevy_harness::TestApp,
+        agent: Entity,
+        paths: &mut Paths,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>> {
+        let test = PathDistance::new();
+        test.prepare(paths, app.world_mut());
+        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
+        test.test(paths, &cx, items)
+    }
+
     fn measured(app: &mut bevy_harness::TestApp, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        let test = PathDistance::new();
-        test.prepare(app.world_mut());
-        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
-        test.test_all(&cx, items)
+        run(app, agent, &mut Paths::default(), items)
     }
 
     #[test]
@@ -179,16 +167,15 @@ mod tests {
         let mut app = app();
         app.app_mut().set_path_costs(walled);
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        let test = PathDistance::new();
+        let mut paths = Paths::default();
         let items = [EnvQueryItem::place(Vec3::X * 2.0)];
-        let measured = |app: &mut bevy_harness::TestApp| {
-            test.prepare(app.world_mut());
-            let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
-            test.test_all(&cx, &items)
-        };
-        assert_eq!(measured(&mut app), [Some(2.0)]);
+        assert_eq!(run(&mut app, agent, &mut paths, &items), [Some(2.0)]);
         app.app_mut().set_path_costs(doubled);
-        assert_eq!(measured(&mut app), [Some(4.0)], "the new one");
+        assert_eq!(
+            run(&mut app, agent, &mut paths, &items),
+            [Some(4.0)],
+            "the new one"
+        );
     }
 
     #[test]
@@ -200,20 +187,19 @@ mod tests {
     #[test]
     fn a_query_drops_what_it_cannot_reach() {
         let mut app = app();
-        app.app_mut().set_path_costs(walled).add_env_query(
+        app.app_mut().set_path_costs(walled);
+        let reachable = EnvQuery::new(
             Spot,
-            EnvQuery::new(
-                Grid::around(At(Vec3::new(5.0, 0.0, 0.0)))
-                    .extent(4.0)
-                    .spacing(2.0),
-            )
-            .filter(PathDistance::new(), Filter::at_most(100.0))
-            .pick(Pick::All),
-        );
-        let agent = app.spawn((GlobalTransform::IDENTITY, Survey::of(Spot)));
-        app.ticks(2);
-        let found = app.world().get::<Found<Spot>>(agent).expect("found");
-        assert!(found.iter().count() > 0);
+            Grid::around(At(Vec3::new(5.0, 0.0, 0.0)))
+                .extent(4.0)
+                .spacing(2.0),
+        )
+        .filter(PathDistance::new(), Filter::at_most(100.0))
+        .pick(Pick::All);
+        let agent = app.spawn(GlobalTransform::IDENTITY);
+        app.tick();
+        let found = reachable.run(app.world_mut(), agent);
+        assert_ne!(found.len(), 0);
         assert!(found.iter().all(|scored| scored.item.position.x < 5.0));
     }
 }

@@ -27,7 +27,7 @@ pub(crate) fn rest() -> Behavior {
     behavior_tree! { task(Rest) }
 }
 
-/// Trees, queries and smart objects, in 3D, with the seat query added.
+/// Trees, queries and smart objects, in 3D.
 pub(crate) fn app() -> TestApp {
     TestApp::builder()
         .plugins((
@@ -36,14 +36,13 @@ pub(crate) fn app() -> TestApp {
             EnvQueryPlugin::default(),
             SmartObjectPlugin,
         ))
-        .with(|app| {
-            app.add_env_query(
-                Seat,
-                EnvQuery::new(FreeSlots::<Sit>::within(Querier, 20.0))
-                    .score(Distance::to(Querier), Score::lower()),
-            );
-        })
         .build()
+}
+
+/// The nearest seat the agent could claim: what a sitter carries.
+pub(crate) fn seat() -> EnvQuery<Seat> {
+    EnvQuery::new(Seat, FreeSlots::<Sit>::within(Querier, 20.0))
+        .score(Distance::to(Querier), Score::lower())
 }
 
 /// A bench with a seat at each of `seats`, bringing [`rest`].
@@ -69,6 +68,7 @@ pub(crate) fn bench(app: &mut TestApp, seats: &[Vec3]) -> Vec<Entity> {
 pub(crate) fn sitter(app: &mut TestApp) -> Entity {
     app.spawn((
         GlobalTransform::IDENTITY,
+        seat(),
         BehaviorTree::new(behavior_tree! {
             Forever => {
                 Select => {

@@ -19,15 +19,15 @@ use bevy_arbor::avian2d::eqs::{Clearance, LineOfSight, OccluderDistance};
 /// Somewhere out of the intruder's sight.
 struct Cover;
 
-fn cover() -> EnvQuery {
+fn cover() -> EnvQuery<Cover> {
     // Where the intruder is, or was last seen.
-    let intruders = || Hostiles::<Sight>::remembered();
+    let intruders = || Percepts::<Sight>::all().hostile();
     // Points level with the guard, either side of it.
-    EnvQuery::new(Row::along(Querier).extent(8.0).spacing(0.5))
+    EnvQuery::new(Cover, Row::along(Querier).extent(8.0).spacing(0.5))
         // Keep the points the guard fits in.
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         // And that the intruder can't see.
-        .filter(LineOfSight::from(intruders()), Filter::is(false))
+        .filter(LineOfSight::seen_by(intruders()), Filter::is(false))
         // Prefer up against the wall, near the guard, far from the intruder.
         .score(OccluderDistance::new(), Score::lower())
         .score(Distance::to(Querier), Score::lower().weight(0.5))
@@ -38,12 +38,13 @@ fn cover() -> EnvQuery {
 The guard's world is seen from the side, so its cover is a `Row` along the
 ground at its height, not a `Donut`, whose points would be in the air.
 
-`remembered()` is where the intruder is while it's in view, and where it was
-last seen after. So the guard can still take cover once it's lost sight of
+`Percepts::<Sight>::all().hostile()` is where the intruder is while it's in
+view, and where it was last seen after. So the guard can still take cover once it's lost sight of
 the intruder.
 
-`Cover` is the query's *key*. It's any type of yours. The next chapter adds
-the query to the app under it and runs it.
+`Cover` is the query's *key*: what it's for, as a type. It's any type of
+yours. The query is a component, `EnvQuery<Cover>`, and the guard carries it.
+The next chapter spawns the guard with it and runs it.
 
 ## A query for a target
 
@@ -56,8 +57,8 @@ guard sees:
 /// The intruder to shoot at.
 struct Target;
 
-fn target() -> EnvQuery {
-    EnvQuery::new(Percepts::<Sight>::all().active().hostile())
+fn target() -> EnvQuery<Target> {
+    EnvQuery::new(Target, Percepts::<Sight>::all().active().hostile())
         // The nearest, and then the one most in front.
         .score(Distance::to(Querier), Score::lower())
         .score(Dot::of(Querier), Score::higher().weight(0.5))
@@ -72,7 +73,7 @@ A generator makes the items.
 |---|---|
 | [`Donut::around(a)`][`Donut`] | Points on rings round an anchor: `.radius(inner, outer)`, `.rings(n)`, `.points(n)` |
 | [`Grid::around(a)`][`Grid`] | Points on a square grid: `.extent(e)`, `.spacing(s)`, at most 50 steps each way |
-| [`Fan::from(a)`][`Fan`] | Points on rays ahead of an anchor: `.angle(a)`, `.range(near, far)`, `.rays(rays, steps)` |
+| [`Fan::ahead_of(a)`][`Fan`] | Points on rays ahead of an anchor: `.angle(a)`, `.radius(near, far)`, `.rays(n)`, `.points(n)` |
 | [`Row::along(a)`][`Row`] | Points on a line through an anchor, the way it looks: `.extent(e)`, `.spacing(s)`, at most 50 steps each way |
 | [`Percepts::<S>::all()`][`Percepts`] | What the agent perceives by sense `S`: `.active()`, `.hostile()` |
 | [`Nearby::<C>::within(a, r)`][`Nearby`] | Things with component `C` near an anchor |
@@ -91,10 +92,10 @@ An anchor is where a generator or a test measures from.
 | Anchor | Where |
 |---|---|
 | [`Querier`] | The agent running the query |
+| [`Carrier`] | The entity carrying the query: the agent, for its own queries |
 | [`At(point)`][`At`] | A fixed point |
 | [`Thing(entity)`][`Thing`] | An entity |
-| [`Hostiles::<S>::active()`][`Hostiles`] | Hostiles the agent perceives by `S` now |
-| [`Hostiles::<S>::remembered()`][`Hostiles`] | Hostiles where they were last sensed |
+| [`Percepts::<S>::all()`][`Percepts`] | What the agent perceives by `S`, where it is, or was last sensed: `.active()`, `.hostile()` |
 
 An anchor can be at several places, such as two intruders. A test then
 measures from the nearest. A generator makes items round each.
@@ -107,9 +108,9 @@ A test gives each item a number.
 |---|---|
 | [`Distance::to(a)`][`Distance`] | How far the item is from the anchor |
 | [`Dot::of(a)`][`Dot`] | 1 straight ahead of the anchor, -1 behind |
-| [`Perceives::<S>::at_all()`][`Perceives`] | 1 if the agent perceives the item by `S`, else 0 |
+| [`Perceives::<S>::all()`][`Perceives`] | 1 if the agent perceives the item by `S`, else 0 |
 | [`Random`] | A random number from 0 to 1 |
-| `LineOfSight::from(a)` | 1 if a ray from the anchor reaches the item (avian, with `eqs`) |
+| `LineOfSight::seen_by(a)` | 1 if the anchor sees the item: a ray from it gets there (avian, with `eqs`) |
 | `Clearance::of(shape)` | 1 if the shape, centered on the item, overlaps no collider: room to stand (avian, with `eqs`) |
 | `OccluderDistance::new()` | How far the item is from the nearest collider that blocks sight: `.on(layers)` for others (avian, with `eqs`) |
 
@@ -150,10 +151,10 @@ item kept 1.
 
 ## Pitfalls
 
-- **An anchor that's nowhere.** `Hostiles::<Sight>::active()` is nowhere when
-  the guard sees no one. Then a line-of-sight test from it has no answer for
-  any point, and every point fails. Use `remembered()` to hide from where the
-  intruder was last seen.
+- **An anchor that's nowhere.** `Percepts::<Sight>::all().active().hostile()`
+  is nowhere when the guard sees no one. Then a line-of-sight test from it has
+  no answer for any point, and every point fails. Leave out `.active()` to
+  hide from where the intruder was last seen.
 - **Points in walls.** Generators don't know about walls. A point inside one
   is out of sight, so it passes a line-of-sight filter. Filter on
   `Clearance` first.
@@ -173,15 +174,15 @@ item kept 1.
 [`Grid`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Grid.html
 [`Fan`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Fan.html
 [`Row`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Row.html
-[`Percepts`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Percepts.html
+[`Percepts`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/perceived/struct.Percepts.html
 [`Nearby`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Nearby.html
 [`Querier`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Querier.html
+[`Carrier`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Carrier.html
 [`At`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.At.html
 [`Thing`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Thing.html
-[`Hostiles`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Hostiles.html
 [`Distance`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Distance.html
 [`Dot`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Dot.html
-[`Perceives`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Perceives.html
+[`Perceives`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/perceived/struct.Perceives.html
 [`Random`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Random.html
 [`Filter`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.Filter.html
 [`Score`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.Score.html
