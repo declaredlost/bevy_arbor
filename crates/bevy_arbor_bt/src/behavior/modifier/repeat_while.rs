@@ -5,19 +5,21 @@ use crate::decorator::Decorator;
 pub(in crate::behavior) struct RepeatWhile {
     decorator: Decorator,
     child: Behavior,
+    /// That its decorator was told it started, as it first passed.
+    started: bool,
 }
 
 impl RepeatWhile {
     pub(in crate::behavior) fn new(decorator: Decorator, child: Behavior) -> Self {
-        Self { decorator, child }
+        Self {
+            decorator,
+            child,
+            started: false,
+        }
     }
 }
 
 impl Behave for RepeatWhile {
-    fn start(&mut self, cx: &mut Context) {
-        self.decorator.start(cx);
-    }
-
     fn tick(&mut self, cx: &mut Context) -> Status {
         if !self.decorator.passes(cx) {
             if self.child.holds() {
@@ -36,6 +38,11 @@ impl Behave for RepeatWhile {
         if cx.interrupted() && !self.child.is_running() {
             return Status::Success;
         }
+        // Told it's starting once it's let in: never if it never passed.
+        if !self.started {
+            self.started = true;
+            self.decorator.start(cx);
+        }
         match self.child.tick(cx) {
             Status::Failure => Status::Failure,
             Status::Success if cx.interrupted() => Status::Success,
@@ -50,7 +57,9 @@ impl Behave for RepeatWhile {
 
     fn end(&mut self, cx: &mut Context, outcome: Option<Outcome>) {
         self.child.cancel(cx);
-        self.decorator.end(cx, outcome);
+        if std::mem::take(&mut self.started) {
+            self.decorator.end(cx, outcome);
+        }
     }
 
     fn label(&self) -> String {
@@ -87,6 +96,40 @@ mod tests {
         app.tick();
         assert_eq!(outcome(&app, npc), Some(true));
         assert_eq!(app.count::<With<Work>>(), 0);
+    }
+
+    /// How many times `Counted` was told its branch started, less ended.
+    #[derive(Resource, Default)]
+    struct Inside(i32);
+
+    struct Counted;
+
+    impl crate::decorator::Decorate for Counted {
+        fn start(&mut self, cx: &mut crate::behavior::Context) {
+            cx.world_mut().resource_mut::<Inside>().0 += 1;
+        }
+
+        fn passes(&mut self, cx: &mut crate::behavior::Context) -> bool {
+            cx.wait_on_nothing();
+            true
+        }
+
+        fn end(&mut self, cx: &mut crate::behavior::Context, _outcome: Option<Outcome>) {
+            cx.world_mut().resource_mut::<Inside>().0 -= 1;
+        }
+    }
+
+    #[test]
+    fn its_decorator_is_told_it_started_only_once_it_passed() {
+        let mut app = app();
+        app.app_mut().init_resource::<Inside>();
+        let npc = agent(
+            &mut app,
+            behavior_tree! { RepeatWhile(high, Counted) => { task(Work) } },
+        );
+        app.tick();
+        assert_eq!(app.world().resource::<Inside>().0, 0, "never let in");
+        assert_eq!(outcome(&app, npc), Some(true));
     }
 
     #[test]

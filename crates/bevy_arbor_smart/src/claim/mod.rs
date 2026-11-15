@@ -58,7 +58,7 @@ pub struct Claim<Q: Send + Sync + 'static> {
 }
 
 /// A decorator claiming the slot the query keyed by `Q` found, for as long as
-/// its branch runs: `when(found::<Bench> && claim::<Bench>()) => ..`.
+/// its branch runs: `when(found::<Bench>, claim::<Bench>()) => ..`.
 ///
 /// It passes while that slot is free, or already the agent's, and isn't
 /// disabled; once claimed, while it's still the agent's. So a slot taken by
@@ -71,9 +71,18 @@ pub struct Claim<Q: Send + Sync + 'static> {
 /// and what the agent had plugged in before is put back. A slot the agent
 /// already held, by another branch, stays held.
 ///
-/// A branch tells every decorator in its condition it's starting, even one
-/// under `!` or on the side of `||` that wasn't asked: so under `||`, each
-/// side whose slot can be claimed claims it, and under `!` nothing is.
+/// It acts as its branch starts and ends, so goes after a comma, never under
+/// `!` or `||`: there, it might not have been asked, or passed, as its branch
+/// started, and take a slot it didn't let its branch in for.
+///
+/// ```compile_fail
+/// # use bevy::prelude::*;
+/// # use bevy_arbor_bt::prelude::*;
+/// # use bevy_arbor_smart::prelude::*;
+/// # struct Bench;
+/// # #[derive(Component, Clone)] struct Idle;
+/// let tree = behavior_tree! { Select => { when(!claim::<Bench>()) => task(Idle) } };
+/// ```
 #[must_use]
 pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
     Claim {
@@ -128,7 +137,8 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         let Some(slot) = Self::found(cx) else {
             return;
         };
-        // Started without passing, under `!` or `||`: nothing to hold.
+        // Taken since it was asked, by another branch of this tree: nothing
+        // to hold.
         if !claimable(cx.world(), slot, agent, false) {
             return;
         }
@@ -356,39 +366,6 @@ mod tests {
         for mut task in tasks.iter_mut(app.world_mut()) {
             task.succeed();
         }
-    }
-
-    #[test]
-    fn not_claiming_takes_no_one_elses_seat() {
-        let mut app = app();
-        let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
-        let owner = app.spawn(GlobalTransform::IDENTITY);
-        let other = app.spawn((
-            GlobalTransform::IDENTITY,
-            BehaviorTree::new(behavior_tree! {
-                Sequence => {
-                    task(Survey::of(Seat)),
-                    task(GoThere),
-                    Select => { when(!claim::<Seat>()) => task(Idle) },
-                }
-            }),
-        ));
-        app.ticks(2);
-        // Found free, then taken while it walks.
-        app.entity_mut(seats[0]).insert(ClaimedBy(owner));
-        arrive(&mut app);
-        app.ticks(2);
-        assert_eq!(app.count::<With<Idle>>(), 1, "taken, so `!claim` passes");
-        assert_eq!(
-            app.world().get::<ClaimedBy>(seats[0]).map(ClaimedBy::agent),
-            Some(owner),
-            "still the owner's"
-        );
-        assert_eq!(held(&app, other), None);
-        assert!(
-            app.world().get::<Plugged<Using>>(other).is_none(),
-            "nor what it brings"
-        );
     }
 
     #[test]

@@ -70,7 +70,7 @@ pub(crate) fn sitter(app: &mut TestApp) -> Entity {
         BehaviorTree::new(behavior_tree! {
             Forever => {
                 Select => {
-                    when(found::<Seat> && claim::<Seat>()) => Sequence => {
+                    when(found::<Seat>, claim::<Seat>()) => Sequence => {
                         task(GoThere),
                         Socket(Using),
                     },

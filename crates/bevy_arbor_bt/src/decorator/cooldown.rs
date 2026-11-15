@@ -9,7 +9,7 @@ use super::decorate::Decorate;
 use crate::behavior::{Context, Outcome};
 
 /// A decorator keeping its branch from running again until `length` after it
-/// last ended, however it ended: `when(has_target && cooldown(8.0))`.
+/// last ended, however it ended: `when(has_target, cooldown(8.0))`.
 ///
 /// Its tree sleeps while it cools, and is woken as it's done: a `Select` then
 /// switches back to its branch as it would to any decorator passing again. Each
@@ -178,7 +178,7 @@ mod tests {
         behavior_tree! {
             Forever => {
                 Select => {
-                    when(high && cooldown(1.0)) => task((Work, Report::Succeed)),
+                    when(high, cooldown(1.0)) => task((Work, Report::Succeed)),
                     task(Other),
                 }
             }
@@ -209,7 +209,7 @@ mod tests {
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high && cooldown(1.0)) => task((Work, Report::Fail)),
+                    when(high, cooldown(1.0)) => task((Work, Report::Fail)),
                     task(Other),
                 }
             },
@@ -222,6 +222,29 @@ mod tests {
         assert_eq!(works_started(&app), 2, "cooled");
     }
 
+    fn typed_high(flags: &Flags) -> bool {
+        flags.high
+    }
+
+    #[test]
+    fn a_tree_asleep_under_typed_conditions_wakes_as_a_failure_s_cooldown_ends() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behavior_tree! {
+                Select => {
+                    when(typed_high, cooldown(1.0)) => task((Work, Report::Fail)),
+                    task(Other),
+                }
+            },
+        );
+        set(&mut app, npc, true, false);
+        app.ticks(3);
+        assert_eq!(works_started(&app), 1, "failed, and cooling");
+        app.secs(1.1);
+        assert_eq!(works_started(&app), 2, "woken as it cooled");
+    }
+
     #[test]
     fn it_cools_after_its_branch_is_cancelled_too() {
         let mut app = app();
@@ -229,7 +252,7 @@ mod tests {
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high && cooldown(1.0)) => task(Work),
+                    when(high, cooldown(1.0)) => task(Work),
                     task(Other),
                 }
             },
@@ -285,7 +308,7 @@ mod tests {
             behavior_tree! {
                 Forever => {
                     Select => {
-                        when(high && cooldown_of::<Grenades>(1.0)) => act(count),
+                        when(high, cooldown_of::<Grenades>(1.0)) => act(count),
                         when(cooldown_of::<Grenades>(1.0)) => task((Work, Report::Succeed)),
                         task(Other),
                     }
@@ -367,7 +390,7 @@ mod tests {
         app.spawn((
             Here,
             BehaviorTree::new(behavior_tree! {
-                Select => { when(asked && cooldown(1.0)) => Wait(100.0) }
+                Select => { when(asked, cooldown(1.0)) => Wait(100.0) }
             }),
         ));
         app.ticks(10);

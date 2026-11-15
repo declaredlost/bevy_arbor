@@ -13,7 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the game repository.
   - Trees sleep between ticks, until something they wait on comes: a task's
     report, a timer, a change a typed condition would see, or a system condition that
-    has to be asked every tick.
+    has to be asked every tick. A sleeping tree isn't looked at: what trees
+    watch is indexed by component type, found changed by one pass over each
+    type's storage a tick, and taken away by an observer of each.
+  - A woken tree asks again only the decorators whose wait came, and those
+    asking every tick (Unreal's observer aborts): the rest answer as they did,
+    and keep waiting on what they did.
   - Typed conditions: functions of the agent's components (`fn(&Target) -> bool`),
     asked again only once one of them changes.
   - `State(bundle) => { .. }`: a bundle on the agent while its branch runs.
@@ -22,12 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     reads as its `label` and lists its `children`. They say what they wait
     on as they tick (`Context::wake_at`, `Context::watch`); a running node
     whose subtree said nothing is ticked every tick.
-  - Decorators: what's in `when(..)`. One at rest says so with
-    `Context::wait_on_nothing`, so its tree can sleep. Typed and system conditions
-    are decorators, combined with `!`, `&&` and `||` into a `Decorator`.
-    `Decorate` is for your own, told as its branch starts and ends;
-    `cooldown(seconds)` keeps a branch from running again for that long after
-    it ends.
+  - Decorators: what's in `when(..)`, every part of which must pass.
+    Conditions only answer: typed ones (functions or closures of the agent's
+    components), system conditions (`with(system, param)` for a parameter),
+    closures over the `Context`, or your own `Condition`, combined with `!`,
+    `&&` and `||` (outside the macro, `IntoCondition::and`, `or`, and `not`).
+    Those acting as their branch starts and ends go after a comma, never under
+    `!` or `||`, so whenever their branch runs they passed, and hear it start
+    and end: `when(has_target, cooldown(8.0))`. `cooldown(seconds)` keeps a
+    branch from running again for that long after it ends; `Decorate` is for
+    your own. One at rest says so with `Context::wait_on_nothing`, so its tree
+    can sleep.
   - System conditions and acts run from a table of their own, not Bevy's system
     registry: several times cheaper to ask.
   - `Repeat(times) => { .. }`: its child that many times, until it fails.

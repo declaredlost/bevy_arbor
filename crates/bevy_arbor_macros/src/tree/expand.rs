@@ -50,7 +50,7 @@ impl Expand {
             (Node::State, [bundle], Some(body)) => {
                 self.one(name, "state", &[quote! { #bundle }], body)
             }
-            (Node::RepeatWhile, [_] | [_, _], Some(body)) => {
+            (Node::RepeatWhile, [_, ..], Some(body)) => {
                 let decorator = decorator_args(bt, name.span(), args)?;
                 self.one(name, "repeat_while", &[decorator], body)
             }
@@ -248,13 +248,13 @@ mod tests {
                 Select => {
                     when(decorator) => Sequence => { task("Named", A), task(B), Wait(1.0), },
                     when(!a && (b || c)) => @ part(),
-                    when(within, 5.0) => Commit => { act(system) },
+                    when(with(within, 5.0), cooldown(1.0)) => Commit => { act(system) },
                     Timeout(2.0) => { act(system, 1) },
                     All => { @ part(), @[ parts ] },
                     Any => { Invert => { act(system) }, Succeed => { act(system) } },
                     Race => { act(a), act(b) },
                     RepeatWhile(decorator) => { act(a) },
-                    RepeatWhile(within, 2.0) => { act(a) },
+                    RepeatWhile(with(within, 2.0), b) => { act(a) },
                     State(Hunting) => { act(a) },
                     Socket(Weapon),
                     Fallback => { when(a) => act(b), act(c) },
@@ -293,8 +293,8 @@ mod tests {
             "expected `Timeout(length) => { .. }`"
         );
         assert_eq!(
-            error(quote! { RepeatWhile(a, b, c) => { act(d) } }),
-            "expected `RepeatWhile(decorator) => { .. }`"
+            error(quote! { RepeatWhile => { act(d) } }),
+            "expected `RepeatWhile(decorator, ..) => { .. }`"
         );
         assert_eq!(
             error(quote! { Wait(1.0) => { act(a) } }),

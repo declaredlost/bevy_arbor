@@ -25,7 +25,11 @@ impl Select {
             }
             Status::Success => Some(Status::Success),
             Status::Failure => {
-                self.branches[index].failed = true;
+                // Out until its decorator stops passing: asked again now, as
+                // ending may have changed it (a cooldown cooling), so the tree
+                // is woken when it does.
+                let branch = &mut self.branches[index];
+                branch.failed = branch.passes(cx);
                 self.active = None;
                 None
             }

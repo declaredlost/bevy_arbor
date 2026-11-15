@@ -48,8 +48,10 @@ impl Plugin for TreePlugin {
             .register_type::<Graceful>()
             .register_type::<Outcome>()
             .register_type::<Status>()
+            .init_resource::<tree::Wakes>()
             .add_systems(self.schedule, tree::tick.in_set(TreeSystems))
-            .add_observer(tree::check_ticks);
+            .add_observer(tree::check_ticks)
+            .add_observer(tree::unpaused);
     }
 
     fn finish(&self, app: &mut App) {

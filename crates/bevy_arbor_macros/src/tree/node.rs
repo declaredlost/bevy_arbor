@@ -86,7 +86,7 @@ impl Node {
         match self {
             Self::Random => Some("roll"),
             Self::Repeat => Some("times"),
-            Self::RepeatWhile => Some("decorator"),
+            Self::RepeatWhile => Some("decorator, .."),
             Self::Timeout | Self::Wait => Some("length"),
             Self::State | Self::Task => Some("bundle"),
             Self::Socket => Some("key"),
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(
             Node::unknown("Parallel"),
             "no node called `Parallel`: there's Forever, Repeat(times), Select, Fallback, Sequence, All, Any, \
-             Race, Scored, Random(roll), Invert, Succeed, Commit, RepeatWhile(decorator), \
+             Race, Scored, Random(roll), Invert, Succeed, Commit, RepeatWhile(decorator, ..), \
              Timeout(length), State(bundle), Socket(key), Wait(length), task(bundle), act(system), or @ expr"
         );
     }

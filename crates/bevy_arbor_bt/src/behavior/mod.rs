@@ -25,6 +25,7 @@ pub use self::child::Child;
 pub use self::composite::ScoredBranch;
 use self::composite::{Fallback, Mode, Parallel, Random, Scored, Select, Sequence};
 pub use self::context::Context;
+pub(crate) use self::context::Woken;
 use self::leaf::{Act, Spawn, Wait};
 use self::modifier::{
     Commit, Forever, Invert, Repeat, RepeatWhile, Socket, Succeed, Timeout, WithState,

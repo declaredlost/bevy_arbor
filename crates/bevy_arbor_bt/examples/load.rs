@@ -1,9 +1,11 @@
 //! What ticking trees costs, with a tree shaped like a monster's: a `Select` of
 //! four decorators, the last branch's task running.
 //!
-//! Three ways: system conditions, asked every tick; typed conditions with
-//! nothing changing, so trees sleep; and typed conditions with a tenth of the
-//! agents' moods changing every tick, so those wake.
+//! Four ways: system conditions, asked every tick; typed conditions with
+//! nothing changing, so trees sleep; typed conditions with a tenth of the
+//! agents' moods changing every tick, so those wake; and typed conditions with
+//! the task finishing every tick, so every tree wakes, but none of its
+//! conditions need asking again.
 //!
 //! `cargo run --release -p bevy_arbor_bt --example load`
 
@@ -76,6 +78,29 @@ fn typed() -> Behavior {
     }
 }
 
+#[derive(Component, Clone)]
+struct Blink;
+
+fn blinking() -> Behavior {
+    behavior_tree! {
+        Forever => {
+            Select => {
+                when(first_typed) => task(Roam),
+                when(second_typed) => task(Roam),
+                when(third_typed) => task(Roam),
+                when(fourth_typed) => task(Blink),
+            }
+        }
+    }
+}
+
+/// Finishes every `Blink` task the tick it starts.
+fn blink(mut tasks: Query<&mut Task, With<Blink>>) {
+    for mut task in &mut tasks {
+        task.succeed();
+    }
+}
+
 /// Touches the mood of a tenth of the agents, a different tenth each tick,
 /// leaving it as it was: a change, as far as trees can tell.
 fn churn(mut moods: Query<&mut Mood>, mut round: Local<usize>) {
@@ -88,13 +113,20 @@ fn churn(mut moods: Query<&mut Mood>, mut round: Local<usize>) {
 }
 
 fn run(label: &str, tree: fn() -> Behavior, churning: bool) {
+    run_with(label, tree, churning, false);
+}
+
+fn run_with(label: &str, tree: fn() -> Behavior, churning: bool, blinking: bool) {
     const TICKS: u32 = 2_000;
-    for agents in [100, 500, 2_000] {
+    for agents in [100, 2_000, 10_000] {
         let mut app = App::new();
         app.init_resource::<Time>()
             .add_plugins(TreePlugin::new(Update));
         if churning {
             app.add_systems(Update, churn.before(TreeSystems));
+        }
+        if blinking {
+            app.add_systems(Update, blink.after(TreeSystems));
         }
         for _ in 0..agents {
             app.world_mut()
@@ -116,4 +148,5 @@ fn main() {
     run("system conditions", systems, false);
     run("typed conditions, still", typed, false);
     run("typed conditions, 10% churn", typed, true);
+    run_with("typed, task done every tick", blinking, false, true);
 }

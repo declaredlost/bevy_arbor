@@ -68,7 +68,8 @@ fn setup(app: &mut App) {
 
 ## Claiming and using it
 
-[`claim::<Turret>()`][`claim`] is a [decorator](decorators.md). It claims the
+[`claim::<Turret>()`][`claim`] is a [decorator](decorators.md) acting as its
+branch starts and ends, so it goes after a comma. It claims the
 slot the `Turret` query found, for as long as its branch runs. The slot's
 `Plugged<Using>` is plugged into the guard, and `Socket(Using)` runs it:
 
@@ -81,7 +82,7 @@ slot the `Turret` query found, for as long as its branch runs. The slot's
 fn man_turret() -> Behavior {
     behavior_tree! {
         Select => {
-            when(sees_intruder && found::<Turret> && claim::<Turret>()) => Sequence => {
+            when(sees_intruder && found::<Turret>, claim::<Turret>()) => Sequence => {
                 task(GoToSlot),
                 Socket(Using),
             },

@@ -2,13 +2,15 @@ use bevy::utils::prelude::ShortName;
 
 use crate::behavior::{Context, Outcome};
 
-/// A kind of decorator, as a node is a kind of
-/// [`Behave`](crate::behavior::Behave): what decides whether its branch may
-/// run, told as the branch starts and ends.
+/// A decorator that acts as its branch starts and ends, as a cooldown or a
+/// claim does: what decides whether its branch may run, told as it starts and
+/// ends.
 ///
-/// The built-in ones are written against it: typed and system conditions, and
-/// [`Cooldown`](crate::decorator::Cooldown). Yours goes in `when(..)` as they
-/// do, and with them: `when(has_target && Limit::new(3))`.
+/// It goes in `when(..)` after a comma, never under `!`, `&&` or `||`:
+/// `when(has_target, Limit::new(3))`. Whenever its branch runs, then, it was
+/// asked and passed, so it's told the branch started, and later that it ended.
+/// A decorator that only answers is a [`Condition`](super::Condition), which
+/// combines with others.
 ///
 /// It runs from [`start`](Self::start), as its branch starts, through
 /// [`passes`](Self::passes), to [`end`](Self::end), as its branch ends: the

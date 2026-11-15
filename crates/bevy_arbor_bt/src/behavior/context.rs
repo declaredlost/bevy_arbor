@@ -4,7 +4,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use crate::behavior::system::Systems;
-use crate::tree::Plan;
+use crate::tree::{NODE, Owner, Plan};
 
 /// What a context made outside a tree's tick reads for whether it's gone.
 static STAYS: AtomicBool = AtomicBool::new(false);
@@ -26,12 +26,40 @@ pub struct Context<'a> {
     /// How many times anything has said what it waits on, this tick: whether
     /// a node or decorator said anything is whether this moved while it ran.
     said: u64,
+    /// Who's being asked: a decorator part, or a node.
+    owner: Owner,
+    /// What woke the tree.
+    woken: Woken<'a>,
+}
+
+/// What woke a tree: who in it its wait came for, what it waited on, and
+/// what it knows of its decorator parts.
+pub(crate) struct Woken<'a> {
+    /// Who its wait came for.
+    pub(crate) fired: &'a [Owner],
+    /// What its last tick waited on: `None` if it's new or restarted, and
+    /// asks everything.
+    pub(crate) before: Option<&'a Plan>,
+    /// How many times it's been ticked, this one included.
+    pub(crate) tick: u64,
+    /// The last id given a decorator part.
+    pub(crate) ids: Owner,
+}
+
+impl Woken<'_> {
+    /// A tree woken for everything: new, restarted, or ended outside a tick.
+    pub(crate) const ALL: Woken<'static> = Woken {
+        fired: &[],
+        before: None,
+        tick: 0,
+        ids: NODE,
+    };
 }
 
 impl<'a> Context<'a> {
     /// A context for canceling, outside a tree's tick.
     pub(crate) fn new(world: &'a mut World, agent: Entity) -> Self {
-        Self::ticking(world, agent, &STAYS, None, None)
+        Self::ticking(world, agent, &STAYS, None, None, Woken::ALL)
     }
 
     /// A context for ticking `agent`'s tree, `gone` set if it goes meanwhile:
@@ -43,6 +71,7 @@ impl<'a> Context<'a> {
         gone: &'a AtomicBool,
         clock: Option<Duration>,
         systems: Option<&'a mut Systems>,
+        woken: Woken<'a>,
     ) -> Self {
         Self {
             world,
@@ -54,12 +83,49 @@ impl<'a> Context<'a> {
             systems,
             plan: Plan::default(),
             said: 0,
+            owner: NODE,
+            woken,
         }
     }
 
-    /// What the tree waits on, as its nodes said.
-    pub(crate) fn finish(self) -> Plan {
-        self.plan
+    /// What the tree waits on, as its nodes said, and the last id given a
+    /// decorator part.
+    pub(crate) fn finish(self) -> (Plan, Owner) {
+        (self.plan, self.woken.ids)
+    }
+
+    /// An id for a decorator part, its own in its tree.
+    pub(crate) fn new_id(&mut self) -> Owner {
+        self.woken.ids += 1;
+        self.woken.ids
+    }
+
+    /// How many times the tree has been ticked, this one included.
+    pub(crate) fn tick_count(&self) -> u64 {
+        self.woken.tick
+    }
+
+    /// Whether what `owner` waited on came: or the tree is new or restarted,
+    /// and asks everything.
+    pub(crate) fn woken(&self, owner: Owner) -> bool {
+        self.woken.before.is_none() || self.woken.fired.contains(&owner)
+    }
+
+    /// Runs `ask` as `owner`: what it says it waits on is its own.
+    pub(crate) fn asking<T>(&mut self, owner: Owner, ask: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = std::mem::replace(&mut self.owner, owner);
+        let result = ask(self);
+        self.owner = outer;
+        result
+    }
+
+    /// Carries over what `owner` waited on last tick: it isn't asked again,
+    /// its answer standing, so it waits on the same.
+    pub(crate) fn keep(&mut self, owner: Owner) {
+        self.said += 1;
+        if let Some(before) = self.woken.before {
+            self.plan.keep(before, owner);
+        }
     }
 
     /// The world, and the systems decorators and acts run, if they're out of
@@ -100,7 +166,7 @@ impl<'a> Context<'a> {
     /// timer does, so the tree can sleep until then.
     pub fn wake_at(&mut self, at: Duration) {
         self.said += 1;
-        self.plan.wake_at(at);
+        self.plan.wake_at(self.owner, at);
     }
 
     /// Asks for the tree to be ticked again once `T` on `entity` changes, comes
@@ -108,7 +174,7 @@ impl<'a> Context<'a> {
     /// until then.
     pub fn watch<T: Component>(&mut self, entity: Entity) {
         self.said += 1;
-        self.plan.watch::<T>(self.world, entity);
+        self.plan.watch::<T>(self.owner, self.world, entity);
     }
 
     /// Asks for the tree to be ticked again next tick, whatever happens: what
@@ -116,7 +182,7 @@ impl<'a> Context<'a> {
     /// asked, that says nothing it waits on is asked again next tick anyway.
     pub fn poll(&mut self) {
         self.said += 1;
-        self.plan.poll();
+        self.plan.poll(self.owner);
     }
 
     /// Says nothing needs waking for it: nothing it reads changes but by its

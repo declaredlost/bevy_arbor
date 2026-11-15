@@ -161,11 +161,11 @@ fn guard() -> Behavior {
         Forever => {
             Select => {
                 // Call allies, and look for a turret.
-                when(sees_intruder && cooldown(10.0)) => Sequence => {
+                when(sees_intruder, cooldown(10.0)) => Sequence => {
                     task(Shout),
                     task(Survey::of(Turret)),
                 },
-                when(sees_intruder && found::<Turret> && claim::<Turret>()) => Sequence => {
+                when(sees_intruder && found::<Turret>, claim::<Turret>()) => Sequence => {
                     task(MoveTo::found::<Turret>()),
                     Socket(Using),
                 },
