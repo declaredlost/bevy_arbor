@@ -1,192 +1,122 @@
 //! A query: what it generates, how it filters and scores, and what it picks.
 
 mod context;
+mod filter;
 mod item;
+mod pick;
+mod run;
+mod score;
+mod state;
 
+use std::fmt;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bevy::prelude::*;
+use bevy::utils::prelude::ShortName;
 
 pub use self::context::EnvQueryContext;
-pub use self::item::{EnvQueryItem, ScoredItem};
+pub use self::filter::Filter;
+pub use self::item::{EnvQueryItem, ScoredItem, Weighed};
+pub use self::pick::Pick;
+pub(crate) use self::run::Seed;
+pub use self::score::Score;
+use self::state::{AnyGenerate, AnyTest};
 use crate::generate::Generate;
 use crate::test::Test;
 
-/// An environment query: items from its generators, those its filters keep,
-/// scored.
+/// What a query is for, as a type of your own: `Cover`, `UseSpot`, `Ammo`.
 ///
-/// It gives the one or more it [picks](Pick).
+/// It keys the query, a [`Survey`](crate::survey::Survey) of it, and what it
+/// found, a [`Found`](crate::survey::Found): any type will do.
+pub trait EnvQueryKey: Send + Sync + 'static {}
+
+impl<K: Send + Sync + 'static> EnvQueryKey for K {}
+
+/// An environment query for `K`, carried by an agent or a thing that's asked
+/// it.
+///
+/// Items from its generators, those its filters keep, scored: it gives the one
+/// or more it [picks](Pick). An agent carries the queries it
+/// asks of itself; a thing, a turret, a door, those an agent asks of it, as
+/// where to stand to use it.
 ///
 /// ```
+/// # use bevy::prelude::*;
 /// # use bevy_arbor_eqs::prelude::*;
 /// # use bevy_arbor_perception::prelude::*;
+/// /// Somewhere to take cover.
+/// struct Cover;
+///
 /// // Somewhere near me, outside where the enemy faces (or faced, when last
 /// // seen), the further from it the better.
 /// let cover = EnvQuery::new(
+///     Cover,
 ///     Donut::around(Querier).radius(3.0, 9.0).rings(3).points(16),
 /// )
 /// .filter(Distance::to(Querier), Filter::at_most(10.0))
 /// .filter(
-///     Dot::of(Hostiles::<Sight>::remembered()),
+///     Dot::of(Percepts::<Sight>::all().hostile()),
 ///     Filter::at_most(0.5),
 /// )
 /// .score(Distance::to(Querier), Score::lower())
 /// .score(
-///     Distance::to(Hostiles::<Sight>::remembered()),
+///     Distance::to(Percepts::<Sight>::all().hostile()),
 ///     Score::higher().weight(0.5),
 /// );
 /// ```
+///
+/// Cloning one is cheap: clones share what it's made of, and what its tests
+/// and generators keep in a world between runs.
+#[derive(Component)]
+pub struct EnvQuery<K: EnvQueryKey> {
+    parts: Arc<Parts>,
+    key: PhantomData<fn() -> K>,
+}
+
+impl<K: EnvQueryKey> Clone for EnvQuery<K> {
+    fn clone(&self) -> Self {
+        Self {
+            parts: Arc::clone(&self.parts),
+            key: PhantomData,
+        }
+    }
+}
+
+impl<K: EnvQueryKey> fmt::Debug for EnvQuery<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EnvQuery<{}>", ShortName::of::<K>())
+    }
+}
+
+/// What a query is made of.
 #[derive(Clone)]
-pub struct EnvQuery {
-    generators: Vec<Arc<dyn Generate>>,
-    filters: Vec<(Arc<dyn Test>, Filter)>,
-    scores: Vec<(Arc<dyn Test>, Score)>,
+pub(crate) struct Parts {
+    generators: Vec<Arc<dyn AnyGenerate>>,
+    filters: Vec<(Arc<dyn AnyTest>, Filter)>,
+    scores: Vec<(Arc<dyn AnyTest>, Score)>,
     pick: Pick,
 }
 
-/// What a filter keeps: items whose number is from `min` to `max`, each end
-/// included.
-#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Debug, PartialEq)]
-pub struct Filter {
-    min: f32,
-    max: f32,
-}
-
-impl Filter {
-    /// From `min` to `max`.
-    #[must_use]
-    pub fn range(min: f32, max: f32) -> Self {
-        Self { min, max }
-    }
-
-    /// `min` or more.
-    #[must_use]
-    pub fn at_least(min: f32) -> Self {
-        Self::range(min, f32::INFINITY)
-    }
-
-    /// `max` or less.
-    #[must_use]
-    pub fn at_most(max: f32) -> Self {
-        Self::range(f32::NEG_INFINITY, max)
-    }
-
-    /// A yes or no, `yes`.
-    #[must_use]
-    pub fn is(yes: bool) -> Self {
-        let one = f32::from(u8::from(yes));
-        Self::range(one, one)
-    }
-
-    fn keeps(self, value: f32) -> bool {
-        (self.min..=self.max).contains(&value)
-    }
-}
-
-/// How a test's numbers score: normalized over the items from 0 to 1, then
-/// weighted.
-///
-/// The lowest is 0 and the highest 1, turned round for
-/// [`lower`](Self::lower), and squared if [`squared`](Self::squared), before
-/// the weight.
-#[derive(Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Debug, PartialEq)]
-pub struct Score {
-    higher: bool,
-    squared: bool,
-    weight: f32,
-}
-
-impl Score {
-    /// The higher the better.
-    #[must_use]
-    pub fn higher() -> Self {
+impl<K: EnvQueryKey> EnvQuery<K> {
+    /// A query for `key`, of what `generator` makes, keeping everything,
+    /// picking the best.
+    pub fn new(_key: K, generator: impl Generate) -> Self {
         Self {
-            higher: true,
-            squared: false,
-            weight: 1.0,
-        }
-    }
-
-    /// The lower the better.
-    #[must_use]
-    pub fn lower() -> Self {
-        Self {
-            higher: false,
-            ..Self::higher()
-        }
-    }
-
-    /// Squared, after it's normalized: what's best stands out more.
-    #[must_use]
-    pub fn squared(mut self) -> Self {
-        self.squared = true;
-        self
-    }
-
-    /// Weighted by `weight`, against the query's other scores.
-    #[must_use]
-    pub fn weight(mut self, weight: f32) -> Self {
-        self.weight = weight;
-        self
-    }
-
-    /// What `normalized`, from 0 to 1, scores.
-    fn of(self, normalized: f32) -> f32 {
-        let turned = if self.higher {
-            normalized
-        } else {
-            1.0 - normalized
-        };
-        let shaped = if self.squared {
-            turned * turned
-        } else {
-            turned
-        };
-        shaped * self.weight
-    }
-}
-
-/// Which of what a query keeps it gives: the best, one of the best, or all.
-#[derive(Reflect, Debug, Clone, Copy, PartialEq, Default)]
-#[reflect(Debug, PartialEq, Default)]
-pub enum Pick {
-    /// The best.
-    #[default]
-    Best,
-    /// One at random among the best: this share of them, from 0 to 1, at
-    /// least one.
-    ///
-    /// `RandomOfBest(0.05)` is one of the best 5%.
-    RandomOfBest(f32),
-    /// All of them, best first.
-    All,
-}
-
-/// What a query found, and how it weighed everything.
-pub(crate) struct Run {
-    /// What it picked, best first: empty if nothing was kept.
-    pub(crate) picked: Vec<ScoredItem>,
-    /// Every item, and its score, or `None` if a filter dropped it.
-    pub(crate) weighed: Vec<(EnvQueryItem, Option<f32>)>,
-}
-
-impl EnvQuery {
-    /// A query of what `generator` makes, keeping everything, picking the best.
-    pub fn new(generator: impl Generate) -> Self {
-        Self {
-            generators: vec![Arc::new(generator)],
-            filters: Vec::new(),
-            scores: Vec::new(),
-            pick: Pick::default(),
+            parts: Arc::new(Parts {
+                generators: vec![Arc::new(generator)],
+                filters: Vec::new(),
+                scores: Vec::new(),
+                pick: Pick::default(),
+            }),
+            key: PhantomData,
         }
     }
 
     /// What `generator` makes, too.
     #[must_use]
     pub fn generate(mut self, generator: impl Generate) -> Self {
-        self.generators.push(Arc::new(generator));
+        self.parts_mut().generators.push(Arc::new(generator));
         self
     }
 
@@ -196,140 +126,50 @@ impl EnvQuery {
     /// They run cheapest first, whatever order they're given in.
     #[must_use]
     pub fn filter(mut self, test: impl Test, filter: Filter) -> Self {
-        self.filters.push((Arc::new(test), filter));
+        self.parts_mut().filters.push((Arc::new(test), filter));
         self
     }
 
     /// Scores items by `test`, as `score` says. Several add up.
     #[must_use]
     pub fn score(mut self, test: impl Test, score: Score) -> Self {
-        self.scores.push((Arc::new(test), score));
+        self.parts_mut().scores.push((Arc::new(test), score));
         self
     }
 
     /// Gives what `pick` says: the best, unless told otherwise.
     #[must_use]
     pub fn pick(mut self, pick: Pick) -> Self {
-        self.pick = pick;
+        self.parts_mut().pick = pick;
         self
     }
 
-    /// Gets its tests ready to run in `world`.
-    pub(crate) fn prepare(&self, world: &mut World) {
-        for (test, _) in &self.filters {
-            test.prepare(world);
-        }
-        for (test, _) in &self.scores {
-            test.prepare(world);
-        }
+    /// What it's made of, to add to: its own, if it's shared.
+    fn parts_mut(&mut self) -> &mut Parts {
+        Arc::make_mut(&mut self.parts)
     }
 
-    /// Runs it for the agent of `cx`.
-    pub(crate) fn run(&self, cx: &EnvQueryContext) -> Run {
-        let mut items = Vec::new();
-        for generator in &self.generators {
-            generator.generate(cx, &mut items);
-        }
-        // Cheapest first, each asked only about what the ones before kept, so
-        // the costly see fewer items.
-        let mut filters: Vec<&(Arc<dyn Test>, Filter)> = self.filters.iter().collect();
-        filters.sort_by_key(|(test, _)| test.cost());
-        let mut kept: Vec<bool> = vec![true; items.len()];
-        for (test, filter) in filters {
-            let indices: Vec<usize> = (0..items.len()).filter(|&index| kept[index]).collect();
-            let asked: Vec<EnvQueryItem> = indices.iter().map(|&index| items[index]).collect();
-            for (index, value) in indices.into_iter().zip(test.test_all(cx, &asked)) {
-                kept[index] = value.is_some_and(|value| filter.keeps(value));
-            }
-        }
-        let survivors: Vec<EnvQueryItem> = items
-            .iter()
-            .zip(&kept)
-            .filter_map(|(item, kept)| kept.then_some(*item))
-            .collect();
-        let scores = self.scores_of(cx, &survivors);
-        let mut ranked: Vec<ScoredItem> = survivors
-            .iter()
-            .zip(&scores)
-            .map(|(&item, &score)| ScoredItem { item, score })
-            .collect();
-        ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
-        let mut each = scores.into_iter();
-        let weighed = items
-            .into_iter()
-            .zip(kept)
-            .map(|(item, kept)| (item, if kept { each.next() } else { None }))
-            .collect();
-        Run {
-            picked: self.picked(cx, ranked),
-            weighed,
-        }
-    }
-
-    /// Each of `items`' score: its scores, normalized and weighted, added up.
+    /// Runs it now for `querier`, as if it carried it: what it picks, best
+    /// first.
     ///
-    /// With no scores, 1 each.
-    fn scores_of(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<f32> {
-        if self.scores.is_empty() {
-            return vec![1.0; items.len()];
-        }
-        let mut totals = vec![0.0; items.len()];
-        for (test, score) in &self.scores {
-            // NaN is no answer: it would otherwise rank above everything.
-            let values: Vec<Option<f32>> = test
-                .test_all(cx, items)
-                .into_iter()
-                .map(|value| value.filter(|value| !value.is_nan()))
-                .collect();
-            let (low, high) = values
-                .iter()
-                .flatten()
-                .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), &value| {
-                    (low.min(value), high.max(value))
-                });
-            for (total, value) in totals.iter_mut().zip(&values) {
-                let Some(value) = value else {
-                    continue;
-                };
-                // All alike, they're all the best.
-                let normalized = if high > low {
-                    (value - low) / (high - low)
-                } else {
-                    1.0
-                };
-                *total += score.of(normalized);
-            }
-        }
-        totals
+    /// For a system or a test that wants an answer at once. A tree asks with
+    /// a [`Survey`](crate::survey::Survey) instead, run within the budget, its
+    /// answer kept on the agent as [`Found`](crate::survey::Found).
+    pub fn run(&self, world: &mut World, querier: Entity) -> Vec<ScoredItem> {
+        self.run_on(world, querier, querier)
     }
 
-    /// What it gives of `ranked`, best first.
-    fn picked(&self, cx: &EnvQueryContext, mut ranked: Vec<ScoredItem>) -> Vec<ScoredItem> {
-        match self.pick {
-            Pick::All => ranked,
-            _ if ranked.is_empty() => ranked,
-            Pick::Best => {
-                ranked.truncate(1);
-                ranked
-            }
-            Pick::RandomOfBest(share) => {
-                #[expect(
-                    clippy::cast_precision_loss,
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "a share of a count of items, rounded up, at least one"
-                )]
-                let best = ((ranked.len() as f32 * share.clamp(0.0, 1.0)).ceil() as usize).max(1);
-                #[expect(
-                    clippy::cast_precision_loss,
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "a roll scaled to a count of items, floored"
-                )]
-                let index = ((cx.roll() * best as f32) as usize).min(best - 1);
-                vec![ranked.swap_remove(index)]
-            }
-        }
+    /// Runs it now for `querier`, as `carrier` carries it: what it picks.
+    ///
+    /// Its [`Carrier`](crate::anchor::Carrier) anchor is `carrier`, as for a
+    /// survey asked [`on`](crate::survey::Survey::on) it.
+    pub fn run_on(&self, world: &mut World, querier: Entity, carrier: Entity) -> Vec<ScoredItem> {
+        Parts::run_in(&self.parts, world, querier, carrier).picked
+    }
+
+    /// What it's made of, without its key.
+    pub(crate) fn parts(&self) -> &Arc<Parts> {
+        &self.parts
     }
 }
 
@@ -338,8 +178,9 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use bevy_arbor_perception::prelude::*;
+    use bevy_arbor_perception::Space;
 
+    use super::run::Run;
     use super::*;
     use crate::anchor::{At, Querier};
     use crate::test::{Cost, Distance};
@@ -349,16 +190,20 @@ mod tests {
     struct Line;
 
     impl Generate for Line {
-        fn generate(&self, _cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+        type State = ();
+
+        fn generate(&self, (): &mut (), _cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
             out.extend((1..=5u8).map(|x| EnvQueryItem::place(Vec3::new(f32::from(x), 0.0, 0.0))));
         }
     }
 
-    fn ran(query: &EnvQuery) -> Run {
+    struct Points;
+
+    fn ran(query: &EnvQuery<Points>) -> Run {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         app.tick();
-        query.run(&EnvQueryContext::new(app.world(), agent, Space::Volume, 3))
+        Parts::run_in(query.parts(), app.world_mut(), agent, agent)
     }
 
     fn xs(scored: &[ScoredItem]) -> Vec<f32> {
@@ -367,7 +212,7 @@ mod tests {
 
     #[test]
     fn filters_keep_what_is_in_range() {
-        let query = EnvQuery::new(Line)
+        let query = EnvQuery::new(Points, Line)
             .filter(Distance::to(Querier), Filter::range(2.0, 4.0))
             .pick(Pick::All);
         let run = ran(&query);
@@ -377,7 +222,7 @@ mod tests {
         assert_eq!(
             run.weighed
                 .iter()
-                .filter(|(_, score)| score.is_none())
+                .filter(|weighed| weighed.score.is_none())
                 .count(),
             2
         );
@@ -385,17 +230,17 @@ mod tests {
 
     #[test]
     fn scores_rank_the_best_first_and_add_up_by_weight() {
-        let lower = EnvQuery::new(Line)
+        let lower = EnvQuery::new(Points, Line)
             .score(Distance::to(Querier), Score::lower())
             .pick(Pick::All);
         assert_eq!(xs(&ran(&lower).picked), [1.0, 2.0, 3.0, 4.0, 5.0]);
-        let higher = EnvQuery::new(Line)
+        let higher = EnvQuery::new(Points, Line)
             .score(Distance::to(Querier), Score::higher())
             .pick(Pick::All);
         assert_eq!(ran(&higher).picked[0].score, 1.0);
         assert_eq!(xs(&ran(&higher).picked)[0], 5.0);
         // Near 4 matters twice as much as away from the agent.
-        let weighed = EnvQuery::new(Line)
+        let weighed = EnvQuery::new(Points, Line)
             .score(
                 Distance::to(At(Vec3::new(4.0, 0.0, 0.0))),
                 Score::lower().weight(2.0),
@@ -412,7 +257,7 @@ mod tests {
 
     #[test]
     fn a_query_that_only_filters_scores_everything_one() {
-        let query = EnvQuery::new(Line).pick(Pick::All);
+        let query = EnvQuery::new(Points, Line).pick(Pick::All);
         assert!(
             ran(&query)
                 .picked
@@ -423,9 +268,9 @@ mod tests {
 
     #[test]
     fn best_gives_one_and_random_of_best_one_of_the_best() {
-        let best = EnvQuery::new(Line).score(Distance::to(Querier), Score::higher());
+        let best = EnvQuery::new(Points, Line).score(Distance::to(Querier), Score::higher());
         assert_eq!(xs(&ran(&best).picked), [5.0]);
-        let random = EnvQuery::new(Line)
+        let random = EnvQuery::new(Points, Line)
             .score(Distance::to(Querier), Score::higher())
             .pick(Pick::RandomOfBest(0.4));
         let picked = xs(&ran(&random).picked);
@@ -435,7 +280,8 @@ mod tests {
 
     #[test]
     fn nothing_kept_picks_nothing() {
-        let query = EnvQuery::new(Line).filter(Distance::to(Querier), Filter::at_least(100.0));
+        let query =
+            EnvQuery::new(Points, Line).filter(Distance::to(Querier), Filter::at_least(100.0));
         assert_eq!(ran(&query).picked.len(), 0);
     }
 
@@ -443,9 +289,21 @@ mod tests {
     struct Counted(Arc<AtomicUsize>, Cost, f32);
 
     impl Test for Counted {
-        fn test(&self, _cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Some(f32::from(u8::from(item.position.x < self.2)))
+        type State = ();
+
+        fn test(
+            &self,
+            (): &mut (),
+            _cx: &EnvQueryContext,
+            items: &[EnvQueryItem],
+        ) -> Vec<Option<f32>> {
+            items
+                .iter()
+                .map(|item| {
+                    self.0.fetch_add(1, Ordering::Relaxed);
+                    Some(f32::from(u8::from(item.position.x < self.2)))
+                })
+                .collect()
         }
 
         fn cost(&self) -> Cost {
@@ -457,7 +315,7 @@ mod tests {
     fn cheap_filters_run_first_so_costly_ones_see_less() {
         let costly = Arc::new(AtomicUsize::new(0));
         let cheap = Arc::new(AtomicUsize::new(0));
-        let query = EnvQuery::new(Line)
+        let query = EnvQuery::new(Points, Line)
             .filter(Counted(costly.clone(), Cost::High, 10.0), Filter::is(true))
             .filter(Counted(cheap.clone(), Cost::Low, 2.5), Filter::is(true));
         ran(&query);
@@ -473,19 +331,31 @@ mod tests {
     struct Broken;
 
     impl Test for Broken {
-        fn test(&self, _cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
-            let x = item.position.x;
-            Some(if (x - 3.0).abs() < f32::EPSILON {
-                f32::NAN
-            } else {
-                x
-            })
+        type State = ();
+
+        fn test(
+            &self,
+            (): &mut (),
+            _cx: &EnvQueryContext,
+            items: &[EnvQueryItem],
+        ) -> Vec<Option<f32>> {
+            items
+                .iter()
+                .map(|item| {
+                    let x = item.position.x;
+                    Some(if (x - 3.0).abs() < f32::EPSILON {
+                        f32::NAN
+                    } else {
+                        x
+                    })
+                })
+                .collect()
         }
     }
 
     #[test]
     fn a_nan_is_no_answer_rather_than_the_best() {
-        let query = EnvQuery::new(Line).score(Broken, Score::lower());
+        let query = EnvQuery::new(Points, Line).score(Broken, Score::lower());
         assert_eq!(xs(&ran(&query).picked), [1.0], "not the broken one");
     }
 }

@@ -91,9 +91,6 @@ fn main() {
             PhysicsPlugins::default(),
             ArborPlugins.with_space(Space::Planar),
         ))
-        .add_env_query(Cover, cover())
-        .add_env_query(Target, target())
-        .add_env_query(Turret, turret())
         .add_systems(Startup, spawn)
         .add_systems(
             FixedUpdate,
@@ -123,6 +120,10 @@ fn spawn(mut commands: Commands) {
         Ammo(6),
         Transform::from_xyz(0.0, 0.0, 0.0),
         BehaviorTree::new(guard()),
+        // The queries it asks of itself.
+        cover(),
+        target(),
+        turret(),
     ));
     // The intruder: sight finds it through its collider.
     commands.spawn((
@@ -210,24 +211,24 @@ fn fire_turret() -> Behavior {
 
 // The queries.
 
-fn cover() -> EnvQuery {
-    let intruders = || Hostiles::<Sight>::remembered();
-    EnvQuery::new(Row::along(Querier).extent(8.0).spacing(0.5))
+fn cover() -> EnvQuery<Cover> {
+    let intruders = || Percepts::<Sight>::all().hostile();
+    EnvQuery::new(Cover, Row::along(Querier).extent(8.0).spacing(0.5))
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
-        .filter(LineOfSight::from(intruders()), Filter::is(false))
+        .filter(LineOfSight::seen_by(intruders()), Filter::is(false))
         .score(OccluderDistance::new(), Score::lower())
         .score(Distance::to(Querier), Score::lower().weight(0.5))
         .score(Distance::to(intruders()), Score::higher().weight(0.5))
 }
 
-fn target() -> EnvQuery {
-    EnvQuery::new(Percepts::<Sight>::all().active().hostile())
+fn target() -> EnvQuery<Target> {
+    EnvQuery::new(Target, Percepts::<Sight>::all().active().hostile())
         .score(Distance::to(Querier), Score::lower())
         .score(Dot::of(Querier), Score::higher().weight(0.5))
 }
 
-fn turret() -> EnvQuery {
-    EnvQuery::new(FreeSlots::<Gunner>::within(Querier, 20.0))
+fn turret() -> EnvQuery<Turret> {
+    EnvQuery::new(Turret, FreeSlots::<Gunner>::within(Querier, 20.0))
         .score(Distance::to(Querier), Score::lower())
 }
 

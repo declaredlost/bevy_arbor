@@ -3,6 +3,7 @@
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use bevy_arbor_bt::task::{TaskCommands, TaskOf, TaskQuery};
+use bevy_arbor_eqs::query::EnvQueryKey;
 
 use crate::travel::{Destination, Goal, Route, Travel};
 
@@ -48,15 +49,15 @@ impl MoveTo {
         Self::to(To::Goal(Goal::Entity(entity)))
     }
 
-    /// To what the environment query keyed by `Q` found for the agent.
+    /// To what the environment query keyed by `K` found for the agent.
     ///
     /// The thing, or the place. It fails if the query found nothing.
     #[cfg(feature = "eqs")]
     #[cfg_attr(docsrs, doc(cfg(feature = "eqs")))]
     #[must_use]
-    pub fn found<Q: Send + Sync + 'static>() -> Self {
+    pub fn found<K: EnvQueryKey>() -> Self {
         Self::to(To::Found(|agent| {
-            let found = agent.get::<bevy_arbor_eqs::survey::Found<Q>>()?;
+            let found = agent.get::<bevy_arbor_eqs::survey::Found<K>>()?;
             found
                 .entity()
                 .map(Goal::Entity)
@@ -291,6 +292,7 @@ mod tests {
         let mut app = self::app();
         let agent = app.spawn((
             GlobalTransform::IDENTITY,
+            spot(),
             BehaviorTree::new(behavior_tree! {
                 Sequence => { task(Survey::of(Spot)), task(MoveTo::found::<Spot>()) }
             }),

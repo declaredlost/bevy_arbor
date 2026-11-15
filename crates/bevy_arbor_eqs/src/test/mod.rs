@@ -1,21 +1,19 @@
 //! Tests: what a query filters and scores items by, built in or your own.
 //!
 //! [`Distance`] to an anchor, [`Dot`] from one, whether the agent
-//! [`Perceives`] a thing, [`Random`], a system of yours as a [`Measure`], or a
-//! [`Test`] of your own.
+//! [`Perceives`](crate::perceived::Perceives) a thing, [`Random`], a system of
+//! yours as a [`Measure`], or a [`Test`] of your own.
 
 mod distance;
 mod dot;
 mod measure;
-mod perceives;
 mod random;
 
 use bevy::prelude::*;
 
 pub use self::distance::Distance;
 pub use self::dot::Dot;
-pub use self::measure::{Batch, Measure};
-pub use self::perceives::Perceives;
+pub use self::measure::{Batch, Measure, Measuring};
 pub use self::random::Random;
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
@@ -38,29 +36,33 @@ pub enum Cost {
 ///
 /// A yes or no is 1 or 0. `None` is no answer: the item fails a filter on it,
 /// and scores nothing by it.
+///
+/// It's asked about every item at once, so what's costly to set up, a ray
+/// query or a path search, is set up once a run. What it keeps between runs in
+/// a world, a `SystemState`, a `QueryState`, is its [`State`](Self::State):
+/// made there the first time its query runs, as Bevy makes a system's.
 pub trait Test: Send + Sync + 'static {
-    /// Its number for `item`, for the agent of `cx`.
-    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32>;
+    /// What it keeps in a world between runs: `()` if nothing.
+    type State: FromWorld + Send + Sync + 'static;
 
-    /// Its number for each of `items`, in order: [`test`](Self::test) for
-    /// each, unless it says otherwise.
-    ///
-    /// A test with setup per run, a lock or a cached system state, does that
-    /// once here.
-    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
-        items.iter().map(|item| self.test(cx, item)).collect()
-    }
+    /// Its number for each of `items`, in order, for the agent of `cx`.
+    fn test(
+        &self,
+        state: &mut Self::State,
+        cx: &EnvQueryContext,
+        items: &[EnvQueryItem],
+    ) -> Vec<Option<f32>>;
 
     /// How costly it is.
     fn cost(&self) -> Cost {
         Cost::Low
     }
 
-    /// Gets ready to run in `world`, with the world to change, before each
-    /// query it's in.
+    /// Gets its state ready before each run, with the world to change.
     ///
-    /// For what can only be set up that way, as a cached system state.
-    fn prepare(&self, _world: &mut World) {}
+    /// For what can only be done that way: initializing a system, or seeing
+    /// what it reads replaced.
+    fn prepare(&self, _state: &mut Self::State, _world: &mut World) {}
 }
 
 #[cfg(test)]
@@ -69,14 +71,17 @@ mod tests {
     use bevy_harness::TestApp;
 
     use super::*;
-    use crate::anchor::{At, Hostiles, Querier};
+    use crate::anchor::{At, Querier};
+    use crate::perceived::Percepts;
     use crate::testing::*;
 
-    fn tested(app: &TestApp, agent: Entity, test: &dyn Test, item: EnvQueryItem) -> Option<f32> {
-        test.test(
-            &EnvQueryContext::new(app.world(), agent, Space::Volume, 1),
-            &item,
-        )
+    fn tested_one(
+        app: &mut TestApp,
+        agent: Entity,
+        test: &impl Test,
+        item: EnvQueryItem,
+    ) -> Option<f32> {
+        tested(app.world_mut(), agent, test, &[item])[0]
     }
 
     #[test]
@@ -87,22 +92,25 @@ mod tests {
         enemy(&mut app, Vec3::new(0.0, 0.0, -4.0));
         app.tick();
         let item = EnvQueryItem::place(Vec3::new(0.0, 0.0, -1.0));
-        assert_eq!(tested(&app, agent, &Distance::to(Querier), item), Some(1.0));
         assert_eq!(
-            tested(
-                &app,
+            tested_one(&mut app, agent, &Distance::to(Querier), item),
+            Some(1.0)
+        );
+        assert_eq!(
+            tested_one(
+                &mut app,
                 agent,
-                &Distance::to(Hostiles::<Sight>::active()),
+                &Distance::to(Percepts::<Sight>::all().active().hostile()),
                 item
             ),
             Some(3.0),
             "the nearer enemy"
         );
         assert_eq!(
-            tested(
-                &app,
+            tested_one(
+                &mut app,
                 agent,
-                &Distance::to(Hostiles::<Hearing>::active()),
+                &Distance::to(Percepts::<Hearing>::all().active().hostile()),
                 item
             ),
             None,
@@ -115,20 +123,20 @@ mod tests {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let facing = Dot::of(Querier);
-        let ahead = tested(
-            &app,
+        let ahead = tested_one(
+            &mut app,
             agent,
             &facing,
             EnvQueryItem::place(Vec3::new(0.0, 0.0, -3.0)),
         );
-        let behind = tested(
-            &app,
+        let behind = tested_one(
+            &mut app,
             agent,
             &facing,
             EnvQueryItem::place(Vec3::new(0.0, 0.0, 3.0)),
         );
-        let side = tested(
-            &app,
+        let side = tested_one(
+            &mut app,
             agent,
             &facing,
             EnvQueryItem::place(Vec3::new(3.0, 0.0, 0.0)),
@@ -137,8 +145,8 @@ mod tests {
         assert!((behind.unwrap() + 1.0).abs() < 1e-5);
         assert!(side.unwrap().abs() < 1e-5);
         assert_eq!(
-            tested(
-                &app,
+            tested_one(
+                &mut app,
                 agent,
                 &Dot::of(At(Vec3::ZERO)),
                 EnvQueryItem::place(Vec3::X)
@@ -149,28 +157,14 @@ mod tests {
     }
 
     #[test]
-    fn perceives_is_yes_or_no_for_things_only() {
-        let mut app = app(Space::Volume);
-        let agent = looker(&mut app);
-        let seen = enemy(&mut app, Vec3::new(0.0, 0.0, -5.0));
-        let unseen = enemy(&mut app, Vec3::new(0.0, 0.0, 5.0));
-        app.tick();
-        let test = Perceives::<Sight>::at_all().active().hostile();
-        let thing = |entity| EnvQueryItem::thing(entity, Vec3::ZERO);
-        assert_eq!(tested(&app, agent, &test, thing(seen)), Some(1.0));
-        assert_eq!(tested(&app, agent, &test, thing(unseen)), Some(0.0));
-        assert_eq!(
-            tested(&app, agent, &test, EnvQueryItem::place(Vec3::ZERO)),
-            None
-        );
-    }
-
-    #[test]
     fn random_is_from_zero_up_to_one_and_varies() {
         let app = app(Space::Volume);
         let cx = EnvQueryContext::new(app.world(), Entity::PLACEHOLDER, Space::Volume, 7);
-        let rolls: Vec<f32> = (0..100)
-            .map(|_| Random.test(&cx, &EnvQueryItem::place(Vec3::ZERO)).unwrap())
+        let items = [EnvQueryItem::place(Vec3::ZERO); 100];
+        let rolls: Vec<f32> = Random
+            .test(&mut (), &cx, &items)
+            .into_iter()
+            .flatten()
             .collect();
         assert!(rolls.iter().all(|roll| (0.0..1.0).contains(roll)));
         assert!(
@@ -184,8 +178,8 @@ mod tests {
     fn dot_follows_facing_where_the_transform_does_not_turn() {
         let mut app = app(Space::Volume);
         let agent = app.spawn((GlobalTransform::IDENTITY, Facing(Dir3::X)));
-        let side = tested(
-            &app,
+        let side = tested_one(
+            &mut app,
             agent,
             &Dot::of(Querier),
             EnvQueryItem::place(Vec3::new(3.0, 0.0, 0.0)),
@@ -202,9 +196,9 @@ mod tests {
         app.entity_mut(enemy)
             .insert(GlobalTransform::from_xyz(0.0, 0.0, 50.0));
         app.tick();
-        let facing = Dot::of(Hostiles::<Sight>::remembered());
+        let facing = Dot::of(Percepts::<Sight>::all().hostile());
         assert_eq!(
-            tested(&app, agent, &facing, EnvQueryItem::place(Vec3::ZERO)),
+            tested_one(&mut app, agent, &facing, EnvQueryItem::place(Vec3::ZERO)),
             None,
             "where it was is known, which way it faces now isn't"
         );
@@ -226,14 +220,13 @@ mod tests {
 
     #[test]
     fn an_anchor_is_located_once_a_run_however_many_items() {
-        let app = app(Space::Volume);
+        let mut app = app(Space::Volume);
         let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let test = Distance::to(Counted(count.clone()));
-        let cx = EnvQueryContext::new(app.world(), Entity::PLACEHOLDER, Space::Volume, 1);
         let items: Vec<EnvQueryItem> = (0..5u8)
             .map(|x| EnvQueryItem::place(Vec3::new(f32::from(x), 0.0, 0.0)))
             .collect();
-        test.test_all(&cx, &items);
+        tested(app.world_mut(), Entity::PLACEHOLDER, &test, &items);
         assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 }

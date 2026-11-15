@@ -64,8 +64,9 @@ What keeps queries cheap:
   points. Keep generators coarse.
 - **Cheap filters first.** Filters run cheapest first by each test's `Cost`.
   A `LineOfSight` filter then casts rays only for what's left.
-- **`test_all` for setup.** A test of your own that looks something up once a
-  run, not once an item, should do it in `test_all`.
+- **Setup once a run.** A test of your own is asked about every item at once:
+  look things up once there, not once an item, and keep a `QueryState` or
+  `SystemState` as its `State`, not built anew each run.
 - **Ask when needed.** Run a query when the guard needs an answer, not every
   tick.
 

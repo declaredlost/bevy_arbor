@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
-use super::{Generate, angles, round};
-use crate::anchor::{Locate, Located};
+use super::Generate;
+use super::shape::{angles, round};
+use crate::anchor::{EnvQueryAnchor, Locate, Located};
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// Points on rings round an anchor, in the plane things stand on.
@@ -9,7 +8,7 @@ use crate::query::{EnvQueryContext, EnvQueryItem};
 /// For cover round the agent, a spot round the target.
 #[derive(Clone)]
 pub struct Donut {
-    around: Arc<dyn Locate>,
+    around: EnvQueryAnchor,
     inner: f32,
     outer: f32,
     rings: u32,
@@ -20,7 +19,7 @@ impl Donut {
     /// Rings round `around`: one, 5 out, of 12 points, unless told otherwise.
     pub fn around(around: impl Locate) -> Self {
         Self {
-            around: Arc::new(around),
+            around: EnvQueryAnchor::new(around),
             inner: 5.0,
             outer: 5.0,
             rings: 1,
@@ -52,7 +51,9 @@ impl Donut {
 }
 
 impl Generate for Donut {
-    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+    type State = ();
+
+    fn generate(&self, (): &mut (), cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.around);
         for &Located { position, .. } in anchors.iter() {
             for ring in 0..self.rings {

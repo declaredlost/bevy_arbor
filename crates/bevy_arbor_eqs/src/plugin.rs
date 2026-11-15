@@ -5,7 +5,8 @@ use bevy::prelude::*;
 use bevy_arbor_bt::BehaviorTreeSystems;
 use bevy_arbor_perception::Space;
 
-use crate::survey::{self, EnvQueries, EnvQueryTrace, Pending, Seed};
+use crate::query::Seed;
+use crate::survey::{self, EnvQueryTrace, Pending};
 
 /// The system set queries run in: after trees tick, so a tree's query runs
 /// that tick.
@@ -30,8 +31,8 @@ impl Default for EnvQueryBudget {
 /// Runs queries asked for with [`Survey`](crate::survey::Survey), in
 /// `FixedUpdate` unless told otherwise.
 ///
-/// Add queries with
-/// [`add_env_query`](crate::survey::EnvQueryApp::add_env_query).
+/// The queries themselves are [`EnvQuery`](crate::query::EnvQuery)
+/// components, on the agents and things that carry them.
 pub struct EnvQueryPlugin {
     schedule: InternedScheduleLabel,
 }
@@ -61,7 +62,6 @@ impl Default for EnvQueryPlugin {
 impl Plugin for EnvQueryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EnvQueryBudget>()
-            .init_resource::<EnvQueries>()
             .init_resource::<Pending>()
             .init_resource::<Seed>()
             // Perception's, if it's there; 3D if not.

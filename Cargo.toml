@@ -65,6 +65,8 @@ bevy_arbor_smart = { path = "./crates/bevy_arbor_smart", version = "0.1.0" }
 
 # Game engine (headless by default)
 bevy = { version = "0.20", default-features = false, features = ["std"] }
+# Impls for tuples, as Bevy writes its own
+variadics_please = { version = "2.0", default-features = false }
 
 # Physics, for the avian integration: no features by default, so the game
 # chooses avian's own

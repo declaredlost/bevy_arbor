@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
 use bevy::prelude::*;
 use bevy_arbor_perception::Space;
 
-use super::{Generate, MOST_STEPS, steps};
-use crate::anchor::{Locate, Located};
+use super::Generate;
+use super::shape::steps;
+use crate::anchor::{EnvQueryAnchor, Locate, Located};
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// Points on a square grid round an anchor, in the plane things stand on.
@@ -12,7 +11,7 @@ use crate::query::{EnvQueryContext, EnvQueryItem};
 /// At most 101 each way, spread further apart than asked if need be.
 #[derive(Clone)]
 pub struct Grid {
-    around: Arc<dyn Locate>,
+    around: EnvQueryAnchor,
     extent: f32,
     spacing: f32,
 }
@@ -21,7 +20,7 @@ impl Grid {
     /// A grid round `around`: 5 out each way, 1 apart, unless told otherwise.
     pub fn around(around: impl Locate) -> Self {
         Self {
-            around: Arc::new(around),
+            around: EnvQueryAnchor::new(around),
             extent: 5.0,
             spacing: 1.0,
         }
@@ -43,16 +42,11 @@ impl Grid {
 }
 
 impl Generate for Grid {
-    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+    type State = ();
+
+    fn generate(&self, (): &mut (), cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.around);
-        let (steps, spacing) = steps(self.extent, self.spacing).unwrap_or_else(|spread| {
-            warn_once!(
-                "a Grid {} out, {} apart, is too many points: spread {spread} apart instead",
-                self.extent,
-                self.spacing,
-            );
-            (MOST_STEPS, spread)
-        });
+        let (steps, spacing) = steps("Grid", self.extent, self.spacing);
         for &Located { position, .. } in anchors.iter() {
             for a in -steps..=steps {
                 for b in -steps..=steps {

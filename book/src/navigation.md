@@ -161,7 +161,7 @@ with your pathfinder. Set the pathfinder once, as a read-only system:
 # struct Cover;
 /// The walk to each item along the guard's floor, if it's on that floor.
 fn walk_costs(batch: Batch, places: Query<&GlobalTransform>) -> Vec<Option<f32>> {
-    let Ok(agent) = places.get(batch.agent) else {
+    let Ok(agent) = places.get(batch.querier) else {
         return vec![None; batch.items.len()];
     };
     let from = agent.translation();
@@ -176,15 +176,16 @@ fn walk_costs(batch: Batch, places: Query<&GlobalTransform>) -> Vec<Option<f32>>
 }
 
 fn setup(app: &mut App) {
-    app.set_path_costs(walk_costs).add_env_query(
-        Cover,
-        EnvQuery::new(Donut::around(Querier).radius(2.0, 8.0).rings(3).points(16))
-            // Cheap first: no further than 10 as the crow flies.
-            .filter(Distance::to(Querier), Filter::at_most(10.0))
-            // Then only what's a walk of 12 or less.
-            .filter(PathDistance::new(), Filter::at_most(12.0))
-            .score(Distance::to(Querier), Score::lower()),
-    );
+    app.set_path_costs(walk_costs);
+}
+
+fn cover() -> EnvQuery<Cover> {
+    EnvQuery::new(Cover, Donut::around(Querier).radius(2.0, 8.0).rings(3).points(16))
+        // Cheap first: no further than 10 as the crow flies.
+        .filter(Distance::to(Querier), Filter::at_most(10.0))
+        // Then only what's a walk of 12 or less.
+        .filter(PathDistance::new(), Filter::at_most(12.0))
+        .score(Distance::to(Querier), Score::lower())
 }
 ```
 

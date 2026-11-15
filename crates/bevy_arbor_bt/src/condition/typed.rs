@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::prelude::*;
 use bevy::utils::prelude::ShortName;
+use variadics_please::all_tuples;
 
 use super::{Condition, IntoCondition};
 use crate::behavior::Context;
@@ -62,8 +63,8 @@ pub trait AgentFn<P>: Send + Sync + 'static {
 
 /// [`AgentFn`] for functions of `params` components.
 macro_rules! agent_fn {
-    ($($param:ident),+) => {
-        impl<F, $($param),+> AgentFn<($($param,)+)> for F
+    ($($param:ident),*) => {
+        impl<F, $($param),*> AgentFn<($($param,)*)> for F
         where
             F: Fn($($param),+) -> bool
                 + for<'a> Fn($($param::Item<'a>),+) -> bool
@@ -73,7 +74,6 @@ macro_rules! agent_fn {
             $($param: ConditionParam),+
         {
             fn call(&self, agent: EntityRef<'_>) -> Option<bool> {
-                #[expect(non_snake_case, reason = "named after their types")]
                 let ($(Some($param),)+) = ($($param::fetch(agent),)+) else {
                     return None;
                 };
@@ -87,10 +87,7 @@ macro_rules! agent_fn {
     };
 }
 
-agent_fn!(A);
-agent_fn!(A, B);
-agent_fn!(A, B, C);
-agent_fn!(A, B, C, D);
+all_tuples!(agent_fn, 1, 4, P);
 
 /// A function of the agent's components, as a condition: asked once they
 /// change.

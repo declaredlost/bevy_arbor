@@ -15,7 +15,7 @@ pub struct ClaimedSlots;
 
 impl Locate for ClaimedSlots {
     fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
-        let Some(claims) = cx.world().get::<Claims>(cx.agent()) else {
+        let Some(claims) = cx.world().get::<Claims>(cx.querier()) else {
             return;
         };
         for slot in claims.iter() {
@@ -71,18 +71,13 @@ mod tests {
         let seats = bench(&mut app, &[Vec3::new(10.0, 0.0, 0.0)]);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         app.entity_mut(seats[0]).insert(ClaimedBy(agent));
-        app.app_mut().add_env_query(
-            NearSeat,
-            EnvQuery::new(Donut::around(Querier).radius(2.0, 2.0).points(4))
-                .score(Distance::to(ClaimedSlots), Score::lower()),
-        );
-        app.entity_mut(agent).insert(Survey::of(NearSeat));
         app.tick();
-        let spot = app
-            .world()
-            .get::<Found<NearSeat>>(agent)
-            .unwrap()
-            .position();
+        let near = EnvQuery::new(NearSeat, Donut::around(Querier).radius(2.0, 2.0).points(4))
+            .score(Distance::to(ClaimedSlots), Score::lower());
+        let spot = near
+            .run(app.world_mut(), agent)
+            .first()
+            .map(|scored| scored.item.position);
         let spot = spot.unwrap();
         assert!(
             (spot - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-4,

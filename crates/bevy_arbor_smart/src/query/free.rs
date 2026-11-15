@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::marker::PhantomData;
 
 use bevy::prelude::*;
-use bevy_arbor_eqs::anchor::{Locate, Located};
-use bevy_arbor_eqs::generate::{CachedQuery, Generate};
+use bevy_arbor_eqs::anchor::{EnvQueryAnchor, Locate};
+use bevy_arbor_eqs::generate::Generate;
 use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
 
 use crate::claim::ClaimedBy;
@@ -23,50 +23,51 @@ use crate::slot::{SlotDisabled, SlotOf};
 /// # use bevy_arbor_smart::prelude::*;
 /// # #[derive(Component)] struct Sit;
 /// // The nearest free seat.
-/// let seat = EnvQuery::new(FreeSlots::<Sit>::within(Querier, 15.0))
+/// # struct Seat;
+/// let seat = EnvQuery::new(Seat, FreeSlots::<Sit>::within(Querier, 15.0))
 ///     .score(Distance::to(Querier), Score::lower());
 /// ```
 pub struct FreeSlots<A: Component> {
-    around: Arc<dyn Locate>,
+    around: EnvQueryAnchor,
     range: f32,
-    slots: CachedQuery<
-        (Entity, &'static GlobalTransform, Option<&'static ClaimedBy>),
-        (With<SlotOf>, With<A>, Without<SlotDisabled>),
-    >,
+    offering: PhantomData<fn() -> A>,
 }
+
+/// The slots offering `A`: what a [`FreeSlots<A>`] looks through.
+type Offering<A> = QueryState<
+    (Entity, &'static GlobalTransform, Option<&'static ClaimedBy>),
+    (With<SlotOf>, With<A>, Without<SlotDisabled>),
+>;
 
 impl<A: Component> FreeSlots<A> {
     /// Slots offering `A` within `range` of `around`.
     pub fn within(around: impl Locate, range: f32) -> Self {
         Self {
-            around: Arc::new(around),
+            around: EnvQueryAnchor::new(around),
             range,
-            slots: CachedQuery::default(),
+            offering: PhantomData,
         }
     }
 }
 
 impl<A: Component> Generate for FreeSlots<A> {
-    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+    type State = Offering<A>;
+
+    fn generate(&self, slots: &mut Offering<A>, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.around);
         if anchors.is_empty() {
             return;
         }
-        let agent = cx.agent();
-        self.slots.with(cx.world(), |slots| {
-            for (slot, transform, claimed) in &slots {
-                if claimed.is_some_and(|claimed| claimed.agent() != agent) {
-                    continue;
-                }
-                let position = cx.space().flatten(transform.translation());
-                let near = anchors
-                    .iter()
-                    .any(|Located { position: at, .. }| at.distance(position) <= self.range);
-                if near {
-                    out.push(EnvQueryItem::thing(slot, position));
-                }
+        let agent = cx.querier();
+        for (slot, transform, claimed) in cx.query(slots) {
+            if claimed.is_some_and(|claimed| claimed.agent() != agent) {
+                continue;
             }
-        });
+            let position = cx.space().flatten(transform.translation());
+            if anchors.iter().any(|at| at.reaches(position, self.range)) {
+                out.push(EnvQueryItem::thing(slot, position));
+            }
+        }
     }
 }
 
@@ -102,9 +103,11 @@ mod tests {
         app.entity_mut(seats[3]).insert(SlotDisabled);
         let bench = app.world().get::<SlotOf>(seats[0]).unwrap().object();
         app.spawn((SlotOf(bench), GlobalTransform::from_xyz(1.0, 0.0, 0.0)));
+        let generator = FreeSlots::<Sit>::within(Querier, 10.0);
+        let mut slots = FromWorld::from_world(app.world_mut());
         let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
         let mut items = Vec::new();
-        FreeSlots::<Sit>::within(Querier, 10.0).generate(&cx, &mut items);
+        generator.generate(&mut slots, &cx, &mut items);
         let mut found: Vec<Entity> = items.iter().filter_map(|item| item.entity).collect();
         found.sort();
         let mut expected = vec![seats[0], seats[2]];

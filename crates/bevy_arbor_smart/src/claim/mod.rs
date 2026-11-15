@@ -7,6 +7,7 @@ use bevy::utils::prelude::ShortName;
 use bevy_arbor_bt::behavior::{Context, Outcome, Plugged};
 use bevy_arbor_bt::decorator::Decorate;
 use bevy_arbor_bt::inspect::{Inspect, Inspection};
+use bevy_arbor_eqs::query::EnvQueryKey;
 use bevy_arbor_eqs::survey::Found;
 
 use crate::slot::{SlotDisabled, SlotOf, Using};
@@ -45,10 +46,10 @@ impl Claims {
     }
 }
 
-/// A decorator claiming the slot the query keyed by `Q` found, while it runs.
+/// A decorator claiming the slot the query keyed by `K` found, while it runs.
 ///
 /// It holds it for as long as its branch runs. Made by [`claim`].
-pub struct Claim<Q: Send + Sync + 'static> {
+pub struct Claim<K: EnvQueryKey> {
     /// The slot it holds, while its branch runs.
     held: Option<Entity>,
     /// Whether it claimed the slot itself, so gives it up as its branch ends.
@@ -60,10 +61,10 @@ pub struct Claim<Q: Send + Sync + 'static> {
     ///
     /// What it had is set aside to put back as the branch ends.
     swapped: Option<(Plugged<Using>, Option<Plugged<Using>>)>,
-    key: PhantomData<fn() -> Q>,
+    key: PhantomData<fn() -> K>,
 }
 
-/// Claims the slot the query keyed by `Q` found for the agent, as a decorator.
+/// Claims the slot the query keyed by `K` found for the agent, as a decorator.
 ///
 /// `when(found::<Bench>, claim::<Bench>()) => ..` holds it for as long as its
 /// branch runs.
@@ -92,7 +93,7 @@ pub struct Claim<Q: Send + Sync + 'static> {
 /// let tree = behavior_tree! { Select => { when(!claim::<Bench>()) => task(Idle) } };
 /// ```
 #[must_use]
-pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
+pub fn claim<K: EnvQueryKey>() -> Claim<K> {
     Claim {
         held: None,
         claimed: false,
@@ -101,11 +102,11 @@ pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
     }
 }
 
-impl<Q: Send + Sync + 'static> Claim<Q> {
+impl<K: EnvQueryKey> Claim<K> {
     /// The slot the query found, if it found one.
     fn found(cx: &Context) -> Option<Entity> {
         cx.world()
-            .get::<Found<Q>>(cx.agent())
+            .get::<Found<K>>(cx.agent())
             .and_then(Found::entity)
     }
 }
@@ -127,11 +128,11 @@ fn claimable(world: &World, slot: Entity, agent: Entity, held: bool) -> bool {
     slot.contains::<SlotOf>() && !slot.contains::<SlotDisabled>() && free
 }
 
-impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
+impl<K: EnvQueryKey> Decorate for Claim<K> {
     fn passes(&mut self, cx: &mut Context) -> bool {
         let agent = cx.agent();
         // What the query finds next changes which slot it is.
-        cx.watch::<Found<Q>>(agent);
+        cx.watch::<Found<K>>(agent);
         // While it holds one, that one; else what was found.
         let Some(slot) = self.held.or_else(|| Self::found(cx)) else {
             return false;
@@ -210,9 +211,9 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
     }
 }
 
-impl<Q: Send + Sync + 'static> Inspect for Claim<Q> {
+impl<K: EnvQueryKey> Inspect for Claim<K> {
     fn inspect(&self, inspection: &mut Inspection<'_>) {
-        inspection.name(format_args!("claim::<{}>", ShortName::of::<Q>()));
+        inspection.name(format_args!("claim::<{}>", ShortName::of::<K>()));
     }
 }
 
@@ -401,13 +402,11 @@ mod tests {
     #[test]
     fn a_seat_claimed_twice_stays_held_until_the_first_claim_ends() {
         let mut app = app();
-        app.app_mut().add_env_query(
-            AnySeat,
-            EnvQuery::new(FreeSlots::<Sit>::within(Querier, 20.0)),
-        );
         let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
         let agent = app.spawn((
             GlobalTransform::IDENTITY,
+            seat(),
+            EnvQuery::new(AnySeat, FreeSlots::<Sit>::within(Querier, 20.0)),
             BehaviorTree::new(behavior_tree! {
                 Sequence => {
                     task(Survey::of(Seat)),

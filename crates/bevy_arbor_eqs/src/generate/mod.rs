@@ -1,82 +1,68 @@
 //! Generators: what a query weighs, places around an anchor or things.
 //!
 //! Places in a [`Donut`], [`Grid`] or [`Fan`] around an anchor, or in a [`Row`]
-//! through it; things the agent perceives ([`Percepts`]), or things with a
-//! component near an anchor ([`Nearby`]); or a [`Generate`] of your own,
-//! keeping its Bevy query in a [`CachedQuery`].
+//! through it; things with a component near an anchor ([`Nearby`]), or the
+//! agent perceives ([`Percepts`](crate::perceived::Percepts)); or a
+//! [`Generate`] of your own.
 
-mod cached;
 mod donut;
 mod fan;
 mod grid;
+mod nearby;
 mod row;
-mod things;
-
-use std::f32::consts::TAU;
+mod shape;
 
 use bevy::prelude::*;
-use bevy_arbor_perception::Space;
 
-pub use self::cached::CachedQuery;
 pub use self::donut::Donut;
 pub use self::fan::Fan;
 pub use self::grid::Grid;
+pub use self::nearby::Nearby;
 pub use self::row::Row;
-pub use self::things::{Nearby, Percepts};
 use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// A kind of generator: what makes the items a query weighs.
+///
+/// What it keeps between runs in a world, a `QueryState` of the things it
+/// finds, is its [`State`](Self::State), made there the first time its query
+/// runs.
+///
+/// ```
+/// # use bevy::prelude::*;
+/// # use bevy_arbor_eqs::generate::Generate;
+/// # use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
+/// #[derive(Component)]
+/// struct Crate;
+///
+/// /// Every crate, wherever it is.
+/// struct Crates;
+///
+/// impl Generate for Crates {
+///     type State =
+///         QueryState<(Entity, &'static GlobalTransform), With<Crate>>;
+///
+///     fn generate(
+///         &self,
+///         crates: &mut Self::State,
+///         cx: &EnvQueryContext,
+///         out: &mut Vec<EnvQueryItem>,
+///     ) {
+///         for (entity, transform) in cx.query(crates) {
+///             let position = cx.space().flatten(transform.translation());
+///             out.push(EnvQueryItem::thing(entity, position));
+///         }
+///     }
+/// }
+/// ```
 pub trait Generate: Send + Sync + 'static {
+    /// What it keeps in a world between runs: `()` if nothing.
+    type State: FromWorld + Send + Sync + 'static;
+
     /// The items, for the agent of `cx`: pushed onto `out`.
-    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>);
-}
+    fn generate(&self, state: &mut Self::State, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>);
 
-/// The point `radius` from `center` at `angle` round it, in the plane things
-/// stand on.
-///
-/// XY in 2D, XZ in 3D, where 0 is +X.
-pub(crate) fn round(space: Space, center: Vec3, angle: f32, radius: f32) -> Vec3 {
-    let (sin, cos) = angle.sin_cos();
-    match space {
-        Space::Planar => center + Vec3::new(cos, sin, 0.0) * radius,
-        Space::Volume => center + Vec3::new(cos, 0.0, -sin) * radius,
-    }
-}
-
-/// How many points a grid or row has each way of its anchor, at most.
-///
-/// One asking for more is spread further apart, so a tiny spacing can't hang
-/// the game.
-pub(crate) const MOST_STEPS: i32 = 50;
-
-/// How many points each way, and how far apart, out to `extent`, `spacing`
-/// apart.
-///
-/// If that's more than [`MOST_STEPS`], the error is how far apart they're
-/// spread instead.
-pub(crate) fn steps(extent: f32, spacing: f32) -> Result<(i32, f32), f32> {
-    let wanted = (extent / spacing).floor();
-    #[expect(clippy::cast_precision_loss, reason = "a small step count")]
-    let most = MOST_STEPS as f32;
-    if wanted > most {
-        return Err(extent / most);
-    }
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "at most MOST_STEPS, and never negative"
-    )]
-    Ok((wanted as i32, spacing))
-}
-
-/// `count` angles evenly round a circle.
-pub(crate) fn angles(count: u32) -> impl Iterator<Item = f32> {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "a count of points, far below where f32 loses whole numbers"
-    )]
-    let step = TAU / count.max(1) as f32;
-    #[expect(clippy::cast_precision_loss, reason = "as above")]
-    (0..count).map(move |index| index as f32 * step)
+    /// Gets its state ready before each run, with the world to change.
+    fn prepare(&self, _state: &mut Self::State, _world: &mut World) {}
 }
 
 #[cfg(test)]
@@ -88,16 +74,12 @@ mod tests {
     use crate::anchor::{At, Querier};
     use crate::testing::*;
 
-    fn generated(
-        app: &TestApp,
+    fn generated_in(
+        app: &mut TestApp,
         agent: Entity,
-        space: Space,
-        generator: &dyn Generate,
+        generator: &impl Generate,
     ) -> Vec<EnvQueryItem> {
-        let cx = EnvQueryContext::new(app.world(), agent, space, 1);
-        let mut out = Vec::new();
-        generator.generate(&cx, &mut out);
-        out
+        generated(app.world_mut(), agent, generator)
     }
 
     fn points(items: &[EnvQueryItem]) -> Vec<Vec3> {
@@ -113,7 +95,7 @@ mod tests {
                 .radius(2.0, 4.0)
                 .rings(2)
                 .points(8);
-            let points = points(&generated(&app, agent, space, &ring));
+            let points = points(&generated_in(&mut app, agent, &ring));
             assert_eq!(points.len(), 16, "{space:?}");
             let center = space.flatten(Vec3::new(1.0, 2.0, 0.0));
             for point in &points {
@@ -135,7 +117,7 @@ mod tests {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let grid = Grid::around(Querier).extent(2.0).spacing(1.0);
-        let points = points(&generated(&app, agent, Space::Volume, &grid));
+        let points = points(&generated_in(&mut app, agent, &grid));
         assert_eq!(points.len(), 25);
         assert!(points.contains(&Vec3::new(-2.0, 0.0, 2.0)));
         assert!(points.iter().all(|point| point.y == 0.0));
@@ -146,8 +128,12 @@ mod tests {
         for space in [Space::Planar, Space::Volume] {
             let mut app = app(space);
             let agent = app.spawn(GlobalTransform::IDENTITY);
-            let cone = Fan::from(Querier).angle(0.5).range(1.0, 4.0).rays(3, 4);
-            let points = points(&generated(&app, agent, space, &cone));
+            let cone = Fan::ahead_of(Querier)
+                .angle(0.5)
+                .radius(1.0, 4.0)
+                .rays(3)
+                .points(4);
+            let points = points(&generated_in(&mut app, agent, &cone));
             assert_eq!(points.len(), 12, "{space:?}");
             let ahead = match space {
                 Space::Planar => Vec3::X,
@@ -169,7 +155,7 @@ mod tests {
             let mut app = app(space);
             let agent = app.spawn(GlobalTransform::from_xyz(1.0, 2.0, 0.0));
             let row = Row::along(Querier).extent(2.0).spacing(1.0);
-            let points = points(&generated(&app, agent, space, &row));
+            let points = points(&generated_in(&mut app, agent, &row));
             let ahead = match space {
                 Space::Planar => Vec3::X,
                 Space::Volume => Vec3::NEG_Z,
@@ -188,7 +174,7 @@ mod tests {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let row = Row::along(At(Vec3::ZERO));
-        assert_eq!(generated(&app, agent, Space::Volume, &row).len(), 0);
+        assert_eq!(generated_in(&mut app, agent, &row).len(), 0);
     }
 
     #[test]
@@ -196,44 +182,15 @@ mod tests {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let row = Row::along(Querier).extent(5.0).spacing(0.0);
-        assert_eq!(generated(&app, agent, Space::Volume, &row).len(), 101);
+        assert_eq!(generated_in(&mut app, agent, &row).len(), 101);
     }
 
     #[test]
     fn a_fan_from_what_looks_nowhere_has_nothing() {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        let cone = Fan::from(At(Vec3::ZERO));
-        assert_eq!(generated(&app, agent, Space::Volume, &cone).len(), 0);
-    }
-
-    #[test]
-    fn percepts_are_what_the_agent_perceives() {
-        let mut app = app(Space::Volume);
-        let agent = looker(&mut app);
-        let enemy = enemy(&mut app, Vec3::new(0.0, 0.0, -5.0));
-        let friend = app.spawn((
-            Perceivable,
-            Allegiance(1),
-            GlobalTransform::from_xyz(1.0, 0.0, -5.0),
-        ));
-        app.tick();
-        let all = generated(&app, agent, Space::Volume, &Percepts::<Sight>::all());
-        let all: Vec<_> = all.iter().filter_map(|item| item.entity).collect();
-        assert!(all.contains(&enemy) && all.contains(&friend));
-        let hostile = generated(
-            &app,
-            agent,
-            Space::Volume,
-            &Percepts::<Sight>::all().hostile(),
-        );
-        assert_eq!(
-            hostile
-                .iter()
-                .filter_map(|item| item.entity)
-                .collect::<Vec<_>>(),
-            [enemy]
-        );
+        let cone = Fan::ahead_of(At(Vec3::ZERO));
+        assert_eq!(generated_in(&mut app, agent, &cone).len(), 0);
     }
 
     #[derive(Component)]
@@ -247,7 +204,7 @@ mod tests {
         app.spawn((Medkit, GlobalTransform::from_xyz(30.0, 0.0, 0.0)));
         app.spawn(GlobalTransform::from_xyz(1.0, 0.0, 0.0));
         let nearby = Nearby::<Medkit>::within(Querier, 5.0);
-        let found: Vec<_> = generated(&app, agent, Space::Volume, &nearby)
+        let found: Vec<_> = generated_in(&mut app, agent, &nearby)
             .iter()
             .filter_map(|item| item.entity)
             .collect();
@@ -263,32 +220,11 @@ mod tests {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let grid = Grid::around(Querier).extent(5.0).spacing(0.0);
-        let points = points(&generated(&app, agent, Space::Volume, &grid));
+        let points = points(&generated_in(&mut app, agent, &grid));
         assert_eq!(points.len(), 101 * 101, "at most 50 each way");
         assert!(
             points.contains(&Vec3::new(5.0, 0.0, 5.0)),
             "out to its extent"
-        );
-    }
-
-    #[test]
-    fn a_percept_only_remembered_is_where_it_was_last_seen() {
-        let mut app = app(Space::Volume);
-        let agent = looker(&mut app);
-        let enemy = enemy(&mut app, Vec3::new(0.0, 0.0, -5.0));
-        app.tick();
-        // Lost behind the agent, then gone on elsewhere unseen.
-        app.entity_mut(enemy)
-            .insert(GlobalTransform::from_xyz(0.0, 0.0, 5.0));
-        app.tick();
-        app.entity_mut(enemy)
-            .insert(GlobalTransform::from_xyz(0.0, 0.0, 50.0));
-        app.tick();
-        let items = generated(&app, agent, Space::Volume, &Percepts::<Sight>::all());
-        assert_eq!(
-            points(&items),
-            [Vec3::new(0.0, 0.0, 5.0)],
-            "where it was lost, not where it really is now"
         );
     }
 }

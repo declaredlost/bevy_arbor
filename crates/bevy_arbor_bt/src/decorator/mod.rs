@@ -45,6 +45,8 @@
 mod cooldown;
 mod decorate;
 
+use variadics_please::all_tuples;
+
 pub use self::cooldown::{Cooldown, Cooling, SharedCooldown, cooldown, shared_cooldown};
 pub use self::decorate::Decorate;
 use crate::behavior::{Context, Outcome};
@@ -265,29 +267,21 @@ pub struct Many<M>(std::marker::PhantomData<M>);
 
 /// [`IntoDecorator`] for a tuple of `parts`.
 macro_rules! many {
-    ($($part:ident $marker:ident),+) => {
-        impl<$($part: IntoDecorator<$marker>, $marker),+> IntoDecorator<Many<($($marker,)+)>>
-            for ($($part,)+)
+    ($(($part:ident, $marker:ident)),*) => {
+        impl<$($part: IntoDecorator<$marker>, $marker),*> IntoDecorator<Many<($($marker,)*)>>
+            for ($($part,)*)
         {
             fn into_decorator(self) -> Decorator {
-                #[expect(non_snake_case, reason = "named after their types")]
-                let ($($part,)+) = self;
+                let ($($part,)*) = self;
                 let mut parts = Vec::new();
-                $(parts.extend($part.into_decorator().parts);)+
+                $(parts.extend($part.into_decorator().parts);)*
                 Decorator { parts }
             }
         }
     };
 }
 
-many!(A MA);
-many!(A MA, B MB);
-many!(A MA, B MB, C MC);
-many!(A MA, B MB, C MC, D MD);
-many!(A MA, B MB, C MC, D MD, E ME);
-many!(A MA, B MB, C MC, D MD, E ME, F MF);
-many!(A MA, B MB, C MC, D MD, E ME, F MF, G MG);
-many!(A MA, B MB, C MC, D MD, E ME, F MF, G MG, H MH);
+all_tuples!(many, 1, 8, P, M);
 
 #[cfg(test)]
 mod tests {

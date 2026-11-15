@@ -95,12 +95,9 @@ fn spawn(mut commands: Commands) {
         ));
 }
 
-fn setup(app: &mut App) {
-    app.add_env_query(
-        Seat,
-        EnvQuery::new(FreeSlots::<Sit>::within(Querier, 15.0))
-            .score(Distance::to(Querier), Score::lower()),
-    );
+fn seat() -> EnvQuery<Seat> {
+    EnvQuery::new(Seat, FreeSlots::<Sit>::within(Querier, 15.0))
+        .score(Distance::to(Querier), Score::lower())
 }
 
 fn tree() -> Behavior {
@@ -113,6 +110,11 @@ fn tree() -> Behavior {
             when(tired) => task(Survey::of(Seat)),
         }
     }
+}
+
+fn spawn_agent(mut commands: Commands) {
+    // The agent carries its query.
+    commands.spawn((Tired, Transform::default(), BehaviorTree::new(tree()), seat()));
 }
 ```
 
