@@ -26,6 +26,10 @@ struct Watch {
     seen: Option<Tick>,
     /// When it last changed now: `None` if it isn't there.
     changed: fn(&World, Entity) -> Option<Tick>,
+    /// That its entity wasn't there as it was looked at: one the tree's own
+    /// commands are spawning, most likely, so it's looked at again once
+    /// they're applied.
+    unborn: bool,
 }
 
 impl Plan {
@@ -57,7 +61,28 @@ impl Plan {
             kind,
             seen: changed::<T>(world, entity),
             changed: changed::<T>,
+            unborn: world.get_entity(entity).is_err(),
         });
+    }
+
+    /// Whether anything it watches is on an entity that wasn't there yet.
+    pub(crate) fn unborn(&self) -> bool {
+        self.watches.iter().any(|watch| watch.unborn)
+    }
+
+    /// Looks again at what was watched on entities that weren't there yet, now
+    /// that the tree's commands are applied, from the change tick `before`
+    /// they were: what they spawned, it's seen, but not what anything else did
+    /// to it since, as an observer of it coming.
+    ///
+    /// One still not there is left as it was: it wakes the tree as it comes.
+    pub(crate) fn settle(&mut self, world: &World, before: Tick) {
+        for watch in self.watches.iter_mut().filter(|watch| watch.unborn) {
+            if world.get_entity(watch.entity).is_ok() {
+                watch.seen = Some(before);
+                watch.unborn = false;
+            }
+        }
     }
 
     /// Whether any of it has come, as of the change tick `now`, or the clock
@@ -241,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn a_change_made_after_a_decorator_looked_wakes_the_tree_next_tick() {
+    fn a_change_an_act_made_after_a_decorator_looked_is_seen_in_the_same_run() {
         let mut app = app();
         agent(
             &mut app,
@@ -257,17 +282,12 @@ mod tests {
         );
         app.tick();
         assert_eq!(
-            app.count::<With<Work>>(),
-            1,
-            "the decorator said no, then the act ran"
-        );
-        app.tick();
-        assert_eq!(
             app.count::<With<Other>>(),
             1,
-            "woken by what the act changed"
+            "the decorator said no, the act ran, and the tree, ticked again to \
+             hear it, saw what it changed"
         );
-        assert_eq!(app.count::<With<Work>>(), 0);
+        assert_eq!(app.count::<With<Work>>(), 0, "never started");
     }
 
     #[test]

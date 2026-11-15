@@ -7,16 +7,20 @@ use bevy::utils::prelude::ShortName;
 use crate::behavior::{Behave, Context, Outcome, Status};
 use crate::task::{Graceful, Task, TaskOf};
 
-type Insert = Box<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
+type Insert = Box<dyn Fn(&mut EntityCommands) + Send + Sync>;
 
 /// Spawns a task entity, and waits for it to report.
 pub(in crate::behavior) struct Spawn {
     name: Name,
     insert: Insert,
-    /// The task running.
-    entity: Option<Entity>,
-    /// Whether what's running has [`Graceful`] in its bundle.
+    /// Whether its bundle has [`Graceful`] in it, in a world.
+    in_bundle: fn(&World) -> bool,
+    /// Whether what's running has [`Graceful`]: as its bundle says, then as
+    /// the task does, once it's there.
     graceful: bool,
+    /// The task running, and whether it's yet to be ticked: it's spawned with
+    /// the tree's commands, so it isn't there on its first tick.
+    entity: Option<(Entity, bool)>,
 }
 
 impl Spawn {
@@ -26,8 +30,13 @@ impl Spawn {
             insert: Box::new(move |entity| {
                 entity.insert(bundle.clone());
             }),
-            entity: None,
+            in_bundle: |world| {
+                world.component_id::<Graceful>().is_some_and(|graceful| {
+                    B::get_component_ids(world.components()).any(|id| id == Some(graceful))
+                })
+            },
             graceful: false,
+            entity: None,
         }
     }
 }
@@ -35,28 +44,39 @@ impl Spawn {
 impl Behave for Spawn {
     fn start(&mut self, cx: &mut Context) {
         let (agent, now) = (cx.agent(), cx.now());
-        let mut spawned =
-            cx.world_mut()
-                .spawn((Task::starting(now), TaskOf::new(agent), self.name.clone()));
+        let name = self.name.clone();
+        let mut commands = cx.commands();
+        let mut spawned = commands.spawn((Task::starting(now), TaskOf::new(agent), name));
         (self.insert)(&mut spawned);
-        self.graceful = spawned.contains::<Graceful>();
-        self.entity = Some(spawned.id());
+        self.entity = Some((spawned.id(), true));
+        self.graceful = (self.in_bundle)(cx.world());
     }
 
     fn tick(&mut self, cx: &mut Context) -> Status {
-        let Some(task) = self.entity else {
+        let Some((task, first)) = &mut self.entity else {
             return Status::Failure;
         };
-        let interrupted = self.graceful && cx.interrupted();
-        let outcome = match cx.world_mut().get_mut::<Task>(task) {
-            Some(mut task) => {
+        let (task, first) = (*task, std::mem::take(first));
+        let outcome = match cx.world().get::<Task>(task) {
+            Some(state) => {
+                // Required by a component of its bundle counts too.
+                self.graceful |= cx.world().get::<Graceful>(task).is_some();
                 // Asked again each tick: what wanted it stopped may have
                 // stopped.
-                if task.interrupted() != interrupted {
-                    task.set_interrupted(interrupted);
+                let interrupted = self.graceful && cx.interrupted();
+                if state.interrupted() != interrupted {
+                    cx.commands()
+                        .entity(task)
+                        .queue_silenced(move |mut task: EntityWorldMut| {
+                            if let Some(mut task) = task.get_mut::<Task>() {
+                                task.set_interrupted(interrupted);
+                            }
+                        });
                 }
-                task.outcome()
+                state.outcome()
             }
+            // Spawned as it started, with the commands not applied yet.
+            None if first => None,
             // One that's been despawned behind the tree's back failed.
             None => Some(Outcome::Failure),
         };
@@ -74,8 +94,8 @@ impl Behave for Spawn {
     /// Takes the task away, if it's still there: its `Task` is still on it
     /// for `On<Remove<..>>` observers, with what it reported, if it has.
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
-        if let Some(task) = self.entity.take() {
-            let _ = cx.world_mut().try_despawn(task);
+        if let Some((task, _)) = self.entity.take() {
+            cx.commands().entity(task).try_despawn();
         }
     }
 
@@ -150,6 +170,21 @@ mod tests {
         app.ticks(2);
         assert_eq!(outcome(&app, npc), Some(true));
         assert_eq!(app.count::<With<Work>>(), 0);
+    }
+
+    #[derive(Component, Clone)]
+    struct Refused;
+
+    #[test]
+    fn a_task_reported_by_an_observer_as_it_comes_is_heard() {
+        let mut app = app();
+        app.app_mut()
+            .add_observer(|added: On<Add<Refused>>, mut commands: Commands| {
+                commands.entity(added.entity).fail_task();
+            });
+        let npc = agent(&mut app, behavior_tree! { task(Refused) });
+        app.ticks(2);
+        assert_eq!(outcome(&app, npc), Some(false));
     }
 
     #[test]

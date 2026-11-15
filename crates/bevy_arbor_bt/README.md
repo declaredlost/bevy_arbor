@@ -26,10 +26,12 @@ on changes, with tasks as entities.
   yours on it. Your systems tick it through [`Tasks`] and report how it went;
   the tree despawns it once it's done or no longer wanted.
 - Decorators decide which branches may run: conditions that are plain
-  functions of components, system conditions, cooldowns, or your own
-  [`Decorate`].
-- Between ticks a tree sleeps. It wakes when a component its decorators read
-  changes, a timer it set runs out, or its task reports.
+  functions of components, or your own [`Condition`], put together with `!`,
+  `&&` and `||`; and after a comma, those acting as their branch starts and
+  ends: cooldowns, or your own [`Decorate`].
+- Trees tick side by side, reading the world; what they change, they queue as
+  commands. Between ticks a tree sleeps. It wakes when a component its
+  decorators read changes, a timer it set runs out, or its task reports.
 
 ## Installation
 
@@ -130,3 +132,4 @@ or [MIT license](https://github.com/declaredlost/bevy_arbor/blob/main/LICENSE-MI
 [`Behavior`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Behavior.html
 [`Tasks`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Tasks.html
 [`Decorate`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Decorate.html
+[`Condition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Condition.html

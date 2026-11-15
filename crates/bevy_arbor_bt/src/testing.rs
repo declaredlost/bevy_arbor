@@ -32,12 +32,12 @@ pub(crate) struct Acts(pub(crate) u32);
 #[derive(Resource, Default)]
 pub(crate) struct WorkStarted(pub(crate) u32);
 
-pub(crate) fn high(In(agent): In<Entity>, flags: Query<&Flags>) -> bool {
-    flags.get(agent).is_ok_and(|flags| flags.high)
+pub(crate) fn high(flags: &Flags) -> bool {
+    flags.high
 }
 
-pub(crate) fn low(In(agent): In<Entity>, flags: Query<&Flags>) -> bool {
-    flags.get(agent).is_ok_and(|flags| flags.low)
+pub(crate) fn low(flags: &Flags) -> bool {
+    flags.low
 }
 
 pub(crate) fn count(In(_): In<Entity>, mut acts: ResMut<Acts>) -> bool {

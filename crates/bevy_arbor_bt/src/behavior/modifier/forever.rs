@@ -3,19 +3,28 @@ use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
 /// Its child again each time it ends.
 pub(in crate::behavior) struct Forever {
     child: Behavior,
+    /// The run it last ticked in, and how many times its child ended in it.
+    ended: (u64, u8),
 }
 
 impl Forever {
     pub(in crate::behavior) fn new(child: Behavior) -> Self {
-        Self { child }
+        Self {
+            child,
+            ended: (0, 0),
+        }
     }
 }
 
 impl Behave for Forever {
     fn tick(&mut self, cx: &mut Context) -> Status {
-        // Twice at most: what ends is followed at once, but a tree ending
-        // every time can't hang.
-        for _ in 0..2 {
+        if self.ended.0 != cx.run() {
+            self.ended = (cx.run(), 0);
+        }
+        // Twice a run at most, however many passes it takes to hear from its
+        // acts: what ends is followed at once, but a tree ending every time
+        // can't hang.
+        while self.ended.1 < 2 {
             // Asked to stop, it doesn't start its child again.
             if cx.interrupted() && !self.child.is_running() {
                 break;
@@ -23,6 +32,7 @@ impl Behave for Forever {
             if self.child.tick(cx) == Status::Running {
                 break;
             }
+            self.ended.1 += 1;
         }
         // Its child ended twice: it starts it again next tick.
         if !self.child.is_running() {

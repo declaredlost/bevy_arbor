@@ -29,6 +29,8 @@ bevy_arbor_macros = { workspace = true, features = [] }
 bevy = { workspace = true, features = ["std", "bevy_log"] }
 
 [dev-dependencies]
+# Trees tick side by side on Bevy's compute pool: the load example measures it.
+bevy = { workspace = true, features = ["multi_threaded"] }
 bevy_harness = { workspace = true }
 
 # What decorators cost: `cargo run --release -p bevy_arbor_bt --example load`.

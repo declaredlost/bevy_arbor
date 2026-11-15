@@ -39,19 +39,22 @@ tree doesn't tick.
 | A component changing, coming or going | A typed condition that reads it |
 | A task's report | A running task |
 | A time | A `Wait`, a `Timeout` or a cooldown |
-| Every tick | A system condition that could matter |
-| Every tick | A custom node or decorator that says nothing |
+| Every tick | A custom node, condition or decorator that says nothing |
 
 A sleeping tree costs a check of the change ticks it watches. That's about 20
-nanoseconds an agent, against about 150 for one asking four system conditions
-every tick. See [Performance](performance.md).
+nanoseconds an agent, against about 90 for one asking four conditions every
+tick. See [Performance](performance.md).
 
 ## What "changed" means
 
 The tree remembers each component's change tick when it reads it. It wakes
-once the tick moves past that, or the component comes or goes. So the tree
-doesn't wake for its own writes made before the read. A change after the read
-does wake it, even one made later in the same tick.
+once the tick moves past that, or the component comes or goes. A change after
+the read does wake it, even one made later in the same tick, by its own
+commands too.
+
+A task it spawns isn't there yet as it ticks: its commands spawn it. The
+tree looks again once they're applied, so the task coming doesn't wake it,
+but an observer reporting it as it comes does.
 
 ## Keeping trees asleep
 
@@ -82,11 +85,9 @@ component wakes for changes to any part of it.
 
 ## The polling rule
 
-A system condition can read anything, so the tree can't know when its answer
-changes. While one could matter, its tree ticks every frame.
-
-The same goes for custom nodes and decorators. Each says what it waits on as
-it runs, with `cx.watch`, `cx.wake_at` or `cx.poll`. A running node that
+A condition of your own can read anything, so the tree can't know when its
+answer changes unless it says. The same goes for custom nodes and decorators.
+Each says what it waits on as it runs, with `cx.watch`, `cx.wake_at` or `cx.poll`. A running node that
 says nothing is ticked again next frame. That way a mistake costs time, not a
 stuck tree.
 
@@ -96,8 +97,8 @@ so with `cx.wait_on_nothing()`. An idle cooldown does this. See
 
 ## Pitfalls
 
-- One system condition near the top of the tree keeps it awake all the time.
-  Prefer typed conditions. Keep what a system condition would compute on the
+- One condition that says nothing, near the top of the tree, keeps it awake
+  all the time. Prefer typed conditions. Keep what it would compute on the
   agent, with a system of your own that writes it with `set_if_neq`.
 - A system writing `Transform` every frame wakes any typed condition reading
   `Transform`. Read a derived component instead.

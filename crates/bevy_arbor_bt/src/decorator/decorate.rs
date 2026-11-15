@@ -2,20 +2,24 @@ use bevy::utils::prelude::ShortName;
 
 use crate::behavior::{Context, Outcome};
 
-/// A kind of decorator, as a node is a kind of
-/// [`Behave`](crate::behavior::Behave): what decides whether its branch may
-/// run, told as the branch starts and ends.
+/// A decorator that acts as its branch starts and ends, as a cooldown or a
+/// claim does: what decides whether its branch may run, told as it starts and
+/// ends.
 ///
-/// The built-in ones are written against it: typed and system conditions, and
-/// [`Cooldown`](crate::decorator::Cooldown). Yours goes in `when(..)` as they
-/// do, and with them: `when(has_target && Limit::new(3))`.
+/// It goes in `when(..)` after a comma, never under `!`, `&&` or `||`:
+/// `when(has_target, cooldown(8.0))`. Whenever its branch runs, then, it was
+/// asked and passed, so it's told the branch started, and later that it ended.
+/// A decorator that only answers is a [`Condition`](super::Condition), which
+/// combines with others.
 ///
 /// It runs from [`start`](Self::start), as its branch starts, through
 /// [`passes`](Self::passes), to [`end`](Self::end), as its branch ends: the
-/// tree calls them, so it only says what it does at each. Say what you wait on
-/// as you're asked, with [`Context::wake_at`] or [`Context::watch`], or
-/// [`Context::wait_on_nothing`] when only your branch changes you: one that
-/// says nothing is asked again every tick.
+/// tree calls them, so it only says what it does at each. It reads the world,
+/// and changes it with [`Context::commands`]: they're applied once its tree's
+/// tick is done. Say what you wait on as you're asked, with
+/// [`Context::wake_at`] or [`Context::watch`], or [`Context::wait_on_nothing`]
+/// when only your branch changes you: one that says nothing is asked again
+/// every tick.
 ///
 /// ```
 /// use bevy::prelude::*;
@@ -35,10 +39,10 @@ use crate::behavior::{Context, Outcome};
 ///
 /// impl Decorate for Limit {
 ///     fn start(&mut self, cx: &mut Context) {
-///         if let Some(mut slots) = cx.world_mut().get_mut::<Slots>(self.pool)
-///         {
-///             slots.0 += 1;
-///         }
+///         cx.commands()
+///             .entity(self.pool)
+///             .entry::<Slots>()
+///             .and_modify(|mut slots| slots.0 += 1);
 ///     }
 ///
 ///     fn passes(&mut self, cx: &mut Context) -> bool {
@@ -49,10 +53,10 @@ use crate::behavior::{Context, Outcome};
 ///     }
 ///
 ///     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
-///         if let Some(mut slots) = cx.world_mut().get_mut::<Slots>(self.pool)
-///         {
-///             slots.0 -= 1;
-///         }
+///         cx.commands()
+///             .entity(self.pool)
+///             .entry::<Slots>()
+///             .and_modify(|mut slots| slots.0 -= 1);
 ///     }
 /// }
 /// ```

@@ -5,19 +5,21 @@ use crate::decorator::Decorator;
 pub(in crate::behavior) struct RepeatWhile {
     decorator: Decorator,
     child: Behavior,
+    /// That its decorator was told it started, as it first passed.
+    started: bool,
 }
 
 impl RepeatWhile {
     pub(in crate::behavior) fn new(decorator: Decorator, child: Behavior) -> Self {
-        Self { decorator, child }
+        Self {
+            decorator,
+            child,
+            started: false,
+        }
     }
 }
 
 impl Behave for RepeatWhile {
-    fn start(&mut self, cx: &mut Context) {
-        self.decorator.start(cx);
-    }
-
     fn tick(&mut self, cx: &mut Context) -> Status {
         if !self.decorator.passes(cx) {
             if self.child.holds() {
@@ -36,6 +38,11 @@ impl Behave for RepeatWhile {
         if cx.interrupted() && !self.child.is_running() {
             return Status::Success;
         }
+        // Told it's starting once it's let in: never if it never passed.
+        if !self.started {
+            self.started = true;
+            self.decorator.start(cx);
+        }
         match self.child.tick(cx) {
             Status::Failure => Status::Failure,
             Status::Success if cx.interrupted() => Status::Success,
@@ -50,7 +57,9 @@ impl Behave for RepeatWhile {
 
     fn end(&mut self, cx: &mut Context, outcome: Option<Outcome>) {
         self.child.cancel(cx);
-        self.decorator.end(cx, outcome);
+        if std::mem::take(&mut self.started) {
+            self.decorator.end(cx, outcome);
+        }
     }
 
     fn label(&self) -> String {

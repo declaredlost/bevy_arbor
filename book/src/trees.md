@@ -63,8 +63,8 @@ Composites have several children:
 |---|---|
 | `Select => { .. }` | Runs the first branch whose decorator passes, and switches when that changes |
 | `Fallback => { .. }` | Like `Select`, but never interrupts what it started |
-| `Scored => { .. }` | Tries branches from the highest `score(system)` down, until one succeeds |
-| `Random(roll) => { .. }` | Tries children in a random order, until one succeeds |
+| `Scored => { .. }` | Tries branches from the highest `score(..)` down, until one succeeds |
+| `Random => { .. }` | Tries children in a random order, until one succeeds. `Random(seed)` for a seed of its own |
 | `Sequence => { .. }` | Runs children in turn, until one fails |
 | `All => { .. }` | Runs children together. Fails at the first failure, succeeds once all succeed |
 | `Any => { .. }` | Runs children together. Succeeds at the first success, fails once all fail |
@@ -89,7 +89,7 @@ Leaves do the work:
 | Node | What it does |
 |---|---|
 | `task(bundle)` | Spawns a task entity and waits for it to report. See [Tasks](tasks.md) |
-| `act(system)` | Runs a system once. Its `bool` is the result |
+| `act(system)` | Runs a system once, with the tree's commands. Its `bool` is the result |
 | `Wait(length)` | Succeeds after `length` |
 | `@ expr` | Puts in a subtree built elsewhere. See [Large trees](large-trees.md) |
 
@@ -136,33 +136,33 @@ When a parallel node settles, it cancels the children still running.
 ## Scored and Random
 
 `Scored` asks a score for each branch as it starts, and tries them from the
-highest down. A score is a system that takes the agent and returns an `f32`.
-`Random` shuffles its children with rolls from a system of yours, so you
-choose the randomness:
+highest down. A typed score is a function of the agent's components, as a
+typed condition is, returning an `f32`. `Random` shuffles its children:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
 # #[derive(Component, Clone)] struct Search;
-fn suspicion(In(_guard): In<Entity>) -> f32 {
-    0.3
+#[derive(Component)]
+struct Mood {
+    suspicion: f32,
+    boredom: f32,
 }
 
-fn boredom(In(_guard): In<Entity>) -> f32 {
-    0.6
+fn suspicion(mood: &Mood) -> f32 {
+    mood.suspicion
 }
 
-fn roll(In(_guard): In<Entity>) -> f32 {
-    // A number from 0 up to 1, from your random source.
-    0.5
+fn boredom(mood: &Mood) -> f32 {
+    mood.boredom
 }
 
 # fn tree() -> Behavior {
 behavior_tree! {
     Scored => {
         score(suspicion) => task(Search),
-        score(boredom) => Random(roll) => {
+        score(boredom) => Random => {
             task(Patrol { from: -10.0, to: 0.0 }),
             task(Patrol { from: 0.0, to: 10.0 }),
         },
@@ -171,9 +171,29 @@ behavior_tree! {
 # }
 ```
 
-- A score or roll can return `Result<f32>`, so you can use `?`. An error goes
+- A branch whose score can't be read, or is NaN, goes last.
+- A score of your own, reading beyond the agent, implements [`Score`].
+- `Random` shuffles with a generator of its own, seeded from the agent, so
+  the same tree on the same agent shuffles the same, run after run: a replay
+  replays. `Random(seed)` seeds it with a number of yours.
+
+## Acts
+
+`act(system)` runs a system once on the agent, and its `bool` is the result.
+Trees tick side by side, reading the world, so an act doesn't run as the tree
+ticks: it runs with the tree's commands, as a cached Bevy system
+(`World::run_system_cached_with`), once the tick is done. The tree is then
+ticked again, in the same run, to go on from what it said: a `Sequence` of
+acts still runs in one frame, and what each changes, the next sees.
+
+- It can take `Commands`, `ResMut`, or a `&mut` query: it runs alone.
+- It can return `Result<bool>`, so you can use `?`. An error fails, and goes
   to Bevy's error handler.
-- A branch whose score is an error or NaN goes last.
+- It's one instance, shared by every tree and agent, so its `Local`s are
+  shared too, and it can't capture anything. `act(system, param)` passes a
+  parameter in `In` with the agent.
+- What a task does over time is a task, run by your own system over every
+  task at once: see [Tasks](tasks.md). An act is for a quick change.
 
 ## Without the macro
 
@@ -219,3 +239,4 @@ fn guard() -> Behavior {
 [`Behavior`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Behavior.html
 [`TreeFinished`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeFinished.html
 [`TreePaused`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreePaused.html
+[`Score`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/trait.Score.html

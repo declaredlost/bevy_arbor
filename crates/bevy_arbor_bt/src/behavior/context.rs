@@ -1,71 +1,83 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 
-use crate::behavior::system::Systems;
 use crate::tree::Plan;
 
-/// What a context made outside a tree's tick reads for whether it's gone.
-static STAYS: AtomicBool = AtomicBool::new(false);
-
-/// What a node runs with: the world, and whose tree it's in.
+/// What a node runs with: the world to read, whose tree it's in, and commands
+/// for what it changes.
+///
+/// Trees tick side by side, so the world is only read while they do. What a
+/// node changes it queues as [`commands`](Self::commands), applied in the
+/// order they were queued once its tree's tick is done.
 pub struct Context<'a> {
-    world: &'a mut World,
+    world: &'a World,
     agent: Entity,
     held: bool,
     interrupted: bool,
-    /// Set once the tree being ticked is taken away or replaced.
-    gone: &'a AtomicBool,
     /// The clock, read once for every tree ticked in a run.
     clock: Option<Duration>,
-    /// The systems decorators and acts run, out of the world while trees tick.
-    systems: Option<&'a mut Systems>,
+    /// What the tree changes, applied once its tick is done.
+    queue: &'a mut CommandQueue,
     /// What the tree waits on, as its nodes say.
     plan: Plan,
     /// How many times anything has said what it waits on, this tick: whether
     /// a node or decorator said anything is whether this moved while it ran.
     said: u64,
+    /// That something in it runs a system with the commands, as an `act`
+    /// does: the tree is ticked again once they're applied, to see what it
+    /// said.
+    acted: bool,
+    /// Which run of the trees this is: the same for each pass of one.
+    run: u64,
 }
 
 impl<'a> Context<'a> {
-    /// A context for canceling, outside a tree's tick.
-    pub(crate) fn new(world: &'a mut World, agent: Entity) -> Self {
-        Self::ticking(world, agent, &STAYS, None, None)
-    }
-
-    /// A context for ticking `agent`'s tree, `gone` set if it goes meanwhile:
-    /// at `clock`, or with none, reading it when asked, and running `systems`,
-    /// or with none, the world's.
-    pub(crate) fn ticking(
-        world: &'a mut World,
+    /// A context for `agent`'s tree, at `clock`, or with none, reading it when
+    /// asked: what it changes goes in `queue`, for whoever made it to apply.
+    pub(crate) fn new(
+        world: &'a World,
         agent: Entity,
-        gone: &'a AtomicBool,
         clock: Option<Duration>,
-        systems: Option<&'a mut Systems>,
+        queue: &'a mut CommandQueue,
     ) -> Self {
         Self {
             world,
             agent,
             held: false,
             interrupted: false,
-            gone,
             clock,
-            systems,
+            queue,
             plan: Plan::default(),
             said: 0,
+            acted: false,
+            run: 0,
         }
     }
 
-    /// What the tree waits on, as its nodes said.
-    pub(crate) fn finish(self) -> Plan {
-        self.plan
+    /// The same, in run `run` of the trees.
+    pub(crate) fn in_run(mut self, run: u64) -> Self {
+        self.run = run;
+        self
     }
 
-    /// The world, and the systems decorators and acts run, if they're out of
-    /// it.
-    pub(crate) fn world_and_systems(&mut self) -> (&mut World, Option<&mut Systems>) {
-        (self.world, self.systems.as_deref_mut())
+    /// Which run of the trees this is: each pass of one, to hear what its acts
+    /// said, is the same run.
+    pub(crate) fn run(&self) -> u64 {
+        self.run
+    }
+
+    /// What the tree waits on, as its nodes said, and whether it's to be ticked
+    /// again once its commands are applied.
+    pub(crate) fn finish(self) -> (Plan, bool) {
+        (self.plan, self.acted)
+    }
+
+    /// Asks for the tree to be ticked again once its commands are applied,
+    /// within the same run: for a node whose answer comes from them.
+    pub(crate) fn acted(&mut self) {
+        self.acted = true;
     }
 
     /// The entity whose tree this is.
@@ -76,20 +88,22 @@ impl<'a> Context<'a> {
 
     /// The world, to read.
     #[must_use]
-    pub fn world(&self) -> &World {
+    pub fn world(&self) -> &'a World {
         self.world
     }
 
-    /// The world, to change: spawn, run systems, write components.
-    pub fn world_mut(&mut self) -> &mut World {
-        self.world
+    /// Commands for what the node changes: spawning, inserting, removing.
+    /// They're applied once the tree's tick is done, in the order queued, so
+    /// what they do isn't seen until its next tick.
+    pub fn commands(&mut self) -> Commands<'_, '_> {
+        Commands::new(self.queue, self.world)
     }
 
     /// The schedule's time since it began.
-    #[must_use]
     ///
     /// Zero without Bevy's `Time`, which `TimePlugin` adds: timers then never
     /// run out, and `TreePlugin` warns about it.
+    #[must_use]
     pub fn now(&self) -> Duration {
         self.clock
             .or_else(|| self.world.get_resource::<Time>().map(Time::elapsed))
@@ -168,13 +182,6 @@ impl<'a> Context<'a> {
         let result = tick(self);
         self.interrupted = outer;
         result
-    }
-
-    /// Whether the tree being ticked has been taken away or replaced.
-    ///
-    /// By something it ran: nothing more of it runs then.
-    pub(crate) fn gone(&self) -> bool {
-        self.gone.load(Ordering::Relaxed)
     }
 
     /// Runs `tick`, and says whether it held, keeping that from what's around

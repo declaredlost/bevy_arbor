@@ -50,7 +50,7 @@ impl Expand {
             (Node::State, [bundle], Some(body)) => {
                 self.one(name, "state", &[quote! { #bundle }], body)
             }
-            (Node::RepeatWhile, [_] | [_, _], Some(body)) => {
+            (Node::RepeatWhile, [_, ..], Some(body)) => {
                 let decorator = decorator_args(bt, name.span(), args)?;
                 self.one(name, "repeat_while", &[decorator], body)
             }
@@ -58,8 +58,9 @@ impl Expand {
             (Node::All, [], Some(body)) => self.list(name, "all", &[], body),
             (Node::Any, [], Some(body)) => self.list(name, "any", &[], body),
             (Node::Race, [], Some(body)) => self.list(name, "race", &[], body),
-            (Node::Random, [roll], Some(body)) => {
-                self.list(name, "random", &[quote! { #roll }], body)
+            (Node::Random, [], Some(body)) => self.list(name, "random", &[], body),
+            (Node::Random, [seed], Some(body)) => {
+                self.list(name, "random_seeded", &[quote! { #seed }], body)
             }
             (Node::Select, [], Some(body)) => {
                 self.branches(name, "select", Branches::Decorated, body)
@@ -210,11 +211,11 @@ impl Expand {
                 let decorator = decorator_args(bt, span, args)?;
                 Ok(quote! { #bt::behavior::Branch::when(#decorator, #node) })
             }
-            (Branches::Scored, "score", [system]) => {
-                Ok(quote! { #bt::behavior::ScoredBranch::new(#system, #node) })
+            (Branches::Scored, "score", [score]) => {
+                Ok(quote! { #bt::behavior::ScoredBranch::new(#score, #node) })
             }
-            (Branches::Scored, "score", _) => Err(Error::new(span, "expected `score(system)`")),
-            (Branches::Scored, ..) => Err(Error::new(span, "a `Scored` takes `score(system)`")),
+            (Branches::Scored, "score", _) => Err(Error::new(span, "expected `score(score)`")),
+            (Branches::Scored, ..) => Err(Error::new(span, "a `Scored` takes `score(score)`")),
             (Branches::Decorated, ..) => Err(Error::new(span, "`score` goes in a `Scored`")),
         }
     }
@@ -248,18 +249,19 @@ mod tests {
                 Select => {
                     when(decorator) => Sequence => { task("Named", A), task(B), Wait(1.0), },
                     when(!a && (b || c)) => @ part(),
-                    when(within, 5.0) => Commit => { act(system) },
+                    when(within(5.0), cooldown(1.0)) => Commit => { act(system) },
                     Timeout(2.0) => { act(system, 1) },
                     All => { @ part(), @[ parts ] },
                     Any => { Invert => { act(system) }, Succeed => { act(system) } },
                     Race => { act(a), act(b) },
                     RepeatWhile(decorator) => { act(a) },
-                    RepeatWhile(within, 2.0) => { act(a) },
+                    RepeatWhile(within(2.0), b) => { act(a) },
                     State(Hunting) => { act(a) },
                     Socket(Weapon),
                     Fallback => { when(a) => act(b), act(c) },
                     Scored => { score(a) => act(b), act(c) },
-                    Random(roll) => { act(a) },
+                    Random => { act(a) },
+                    Random(7) => { act(a) },
                     Repeat(3) => { act(a) },
                     @[ branches ],
                 }
@@ -293,8 +295,12 @@ mod tests {
             "expected `Timeout(length) => { .. }`"
         );
         assert_eq!(
-            error(quote! { RepeatWhile(a, b, c) => { act(d) } }),
-            "expected `RepeatWhile(decorator) => { .. }`"
+            error(quote! { RepeatWhile => { act(d) } }),
+            "expected `RepeatWhile(decorator, ..) => { .. }`"
+        );
+        assert_eq!(
+            error(quote! { Random(a, b) => { act(c) } }),
+            "expected `Random => { .. }` or `Random(seed) => { .. }`"
         );
         assert_eq!(
             error(quote! { Wait(1.0) => { act(a) } }),
@@ -339,11 +345,11 @@ mod tests {
         );
         assert_eq!(
             error(quote! { Scored => { when(a) => act(b) } }),
-            "a `Scored` takes `score(system)`"
+            "a `Scored` takes `score(score)`"
         );
         assert_eq!(
             error(quote! { Scored => { score(a, b) => act(c) } }),
-            "expected `score(system)`"
+            "expected `score(score)`"
         );
     }
 

@@ -10,16 +10,18 @@ shape won't.
 ## Trees
 
 `examples/load` in `bevy_arbor_bt` runs many agents. Each agent's tree is a
-`Select` of four decorators over one running task.
+`Select` of four decorators over one running task. It runs with Bevy's
+`multi_threaded` feature, as a game does, so awake trees tick side by side.
 
-| Agents | System conditions | Typed conditions, nothing changing | Typed conditions, a tenth changing each tick |
+| Agents | Awake: conditions asked every tick | Typed conditions, nothing changing | Typed conditions, a tenth changing each tick |
 |---|---|---|---|
-| 100 | 17 µs | 3.7 µs | 5.5 µs |
-| 500 | 78 µs | 12 µs | 21 µs |
-| 2,000 | 305 µs | 41 µs | 78 µs |
+| 100 | 36 µs | 12 µs | 20 µs |
+| 2,000 | 211 µs | 55 µs | 111 µs |
+| 10,000 | 885 µs | 228 µs | 494 µs |
 
-Per agent, that's about 150 nanoseconds when it asks four system conditions
-every tick. Asleep, it's about 20. Run it yourself:
+Per agent, that's about 90 nanoseconds awake, asking four conditions every
+tick, and about 20 asleep. At 100 agents, most of it is the frame's own cost
+of Bevy's multi-threaded executor. Run it yourself:
 
 ```sh
 cargo run --release -p bevy_arbor_bt --example load
@@ -27,9 +29,12 @@ cargo run --release -p bevy_arbor_bt --example load
 
 What keeps trees cheap:
 
-- **Typed conditions over system conditions.** A system condition is asked
-  every tick. A typed condition is asked again only when what it reads
-  changes. See [Decorators](decorators.md).
+- **Typed conditions.** A typed condition is asked again only when what it
+  reads changes. One of your own that can't say what it waits on is asked
+  every tick. See [Decorators](decorators.md).
+- **Tasks for what takes time.** Trees tick side by side; what they change
+  is applied after, a tree at a time. Your task systems run over every task
+  at once. An `act` is for a quick change, not for work every tick.
 - **`set_if_neq`.** A component written every frame keeps every tree that
   reads it awake, even if the value is the same. Write it only when it
   changes. See [Sleeping trees](sleeping.md).

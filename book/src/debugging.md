@@ -26,7 +26,7 @@ guard on patrol:
 ```text
 > Forever
 >   Select
-      when (sees_intruder && cooldown(10s))
+      when sees_intruder, cooldown(10s)
         Shout
       when sees_intruder
         Select

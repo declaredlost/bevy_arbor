@@ -106,7 +106,7 @@ fn setup(app: &mut App) {
 fn tree() -> Behavior {
     behavior_tree! {
         Select => {
-            when(tired && found::<Seat> && claim::<Seat>()) => Sequence => {
+            when(tired && found::<Seat>, claim::<Seat>()) => Sequence => {
                 task(GoThere),
                 Socket(Using),
             },

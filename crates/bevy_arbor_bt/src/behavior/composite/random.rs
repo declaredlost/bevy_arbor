@@ -1,29 +1,50 @@
 use super::ordered::Order;
-use crate::behavior::system::Check;
 use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
 
-/// Its children in an order shuffled as it starts, by rolls from `roll`, until
-/// one succeeds.
+/// Its children in an order shuffled as it starts, until one succeeds.
+///
+/// Shuffled by a generator of its own, seeded from `seed`, or with none, from
+/// the agent: the same tree on the same agent shuffles the same, run after
+/// run.
 pub(in crate::behavior) struct Random {
-    roll: Check<f32>,
+    seed: Option<u64>,
+    /// Where its generator is, once it's started.
+    state: Option<u64>,
     children: Vec<Behavior>,
     order: Order,
 }
 
 impl Random {
-    pub(in crate::behavior) fn new(roll: Check<f32>, children: Vec<Behavior>) -> Self {
+    pub(in crate::behavior) fn new(seed: Option<u64>, children: Vec<Behavior>) -> Self {
         Self {
-            roll,
+            seed,
+            state: None,
             children,
             order: Order::default(),
         }
     }
 
+    /// A roll from 0 up to 1: `SplitMix64`, its top 24 bits.
+    fn roll(&mut self, cx: &Context) -> f32 {
+        let state = self
+            .state
+            .get_or_insert_with(|| self.seed.unwrap_or_else(|| cx.agent().to_bits()));
+        *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut mixed = *state;
+        mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        mixed ^= mixed >> 31;
+        let top = u32::try_from(mixed >> 40).unwrap_or(0);
+        #[expect(clippy::cast_precision_loss, reason = "24 bits fit an `f32` exactly")]
+        let roll = top as f32 / (1u32 << 24) as f32;
+        roll
+    }
+
     /// A shuffled order: Fisher-Yates, a roll for each place from the last.
-    fn shuffle(&mut self, cx: &mut Context) -> Vec<usize> {
+    fn shuffle(&mut self, cx: &Context) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.children.len()).collect();
         for last in (1..order.len()).rev() {
-            let rolled = self.roll.run(cx).unwrap_or(0.0);
+            let rolled = self.roll(cx);
             order.swap(last, pick(rolled, last));
         }
         order
@@ -47,7 +68,10 @@ impl Behave for Random {
     }
 
     fn label(&self) -> String {
-        format!("Random({})", self.roll.name())
+        match self.seed {
+            Some(seed) => format!("Random({seed})"),
+            None => "Random".to_owned(),
+        }
     }
 
     fn children(&self) -> Vec<Child<'_>> {
@@ -72,40 +96,41 @@ mod tests {
     use crate::prelude::*;
     use crate::testing::*;
 
-    fn first(In(_): In<Entity>) -> f32 {
-        0.0
-    }
-
     #[test]
-    fn random_goes_by_the_rolls_it_is_given() {
-        // Rolling 0 every time swaps each last with the first: 0, 1, 2
-        // becomes 1, 2, 0.
-        let mut app = app();
-        agent(
-            &mut app,
-            behavior_tree! {
-                Random(first) => {
-                    task(Work),
-                    task(Other),
-                    act(count),
-                }
-            },
-        );
-        app.tick();
-        assert_eq!(app.count::<With<Other>>(), 1);
-        assert_eq!(app.count::<With<Work>>(), 0);
-    }
-
-    #[test]
-    fn random_fails_once_all_have() {
+    fn random_tries_each_once_and_fails_once_all_have() {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behavior_tree! { Random(first) => { act(refuse), act(refuse) } },
+            behavior_tree! { Random => { act(refuse), act(refuse), act(refuse) } },
         );
         app.tick();
-        assert_eq!(acts(&app), 2);
+        assert_eq!(acts(&app), 3);
         assert_eq!(outcome(&app, npc), Some(false));
+    }
+
+    #[test]
+    fn a_seed_shuffles_the_same_every_time_and_seeds_differ() {
+        let mut app = app();
+        let tree = |seed| behavior_tree! { Random(seed) => { task(Work), task(Other) } };
+        for seed in 0..64 {
+            agent(&mut app, tree(seed));
+            agent(&mut app, tree(seed));
+        }
+        app.tick();
+        let mut works = app.world_mut().query_filtered::<&TaskOf, With<Work>>();
+        let mut firsts: Vec<_> = works.iter(app.world()).map(TaskOf::agent).collect();
+        firsts.sort();
+        assert!(
+            firsts
+                .chunks(2)
+                .all(|pair| pair.len() == 2 && pair[0].to_bits() + 1 == pair[1].to_bits()),
+            "the same seed, the same first"
+        );
+        let started = firsts.len();
+        assert!(
+            (32..=96).contains(&started),
+            "about half first: {started} of 128"
+        );
     }
 
     #[test]

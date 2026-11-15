@@ -1,23 +1,66 @@
-use bevy::prelude::*;
-
 use super::ordered::Order;
-use crate::behavior::system::Check;
 use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::decorator::{AgentFn, Typed};
 
-/// A branch of a `Scored`: a node, and the system scoring it for the agent.
+/// How much a branch of a `Scored` is worth to the agent, as it starts.
+///
+/// Most are functions of the agent's components, typed scores (see
+/// [`IntoScore`]). One of your own reads anything, through
+/// [`Context::world`].
+pub trait Score: Send + Sync + 'static {
+    /// What it's worth: `None`, or NaN, goes last.
+    fn score(&mut self, cx: &mut Context) -> Option<f32>;
+
+    /// How it reads in a trace. Built only for a trace.
+    fn label(&self) -> String;
+}
+
+/// What a [`Score`] can be made from: a score, or a function of the agent's
+/// components, taking `&T` or `Option<&T>` of up to four, and returning `f32`.
+/// One taking `&T` the agent hasn't got goes last.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` isn't a score",
+    label = "not a score",
+    note = "a score is a function of the agent's components (`fn(&Health) -> f32`), or a `Score` of your own"
+)]
+pub trait IntoScore<M> {
+    /// The score it is.
+    fn into_score(self) -> Box<dyn Score>;
+}
+
+impl<S: Score> IntoScore<()> for S {
+    fn into_score(self) -> Box<dyn Score> {
+        Box::new(self)
+    }
+}
+
+impl<F: AgentFn<P, f32>, P: 'static> IntoScore<fn(P) -> f32> for F {
+    fn into_score(self) -> Box<dyn Score> {
+        Box::new(Typed::<F, P>::new(self))
+    }
+}
+
+impl<F: AgentFn<P, f32>, P: 'static> Score for Typed<F, P> {
+    fn score(&mut self, cx: &mut Context) -> Option<f32> {
+        self.read(cx)
+    }
+
+    fn label(&self) -> String {
+        self.name()
+    }
+}
+
+/// A branch of a `Scored`: a node, and what scores it for the agent.
 pub struct ScoredBranch {
-    score: Option<Check<f32>>,
+    score: Option<Box<dyn Score>>,
     node: Behavior,
 }
 
 impl ScoredBranch {
-    /// `node`, ranked by what `system` says of the agent.
-    pub fn new<S, M>(system: S, node: Behavior) -> Self
-    where
-        S: IntoSystem<In<Entity>, f32, M> + Copy + Send + Sync + 'static,
-    {
+    /// `node`, ranked by what `score` says of the agent.
+    pub fn new<M>(score: impl IntoScore<M>, node: Behavior) -> Self {
         Self {
-            score: Some(Check::new(system)),
+            score: Some(score.into_score()),
             node,
         }
     }
@@ -54,7 +97,7 @@ impl Scored {
                 branch
                     .score
                     .as_mut()
-                    .and_then(|score| score.run(cx))
+                    .and_then(|score| score.score(cx))
                     .filter(|score| !score.is_nan())
                     .unwrap_or(f32::NEG_INFINITY)
             })
@@ -86,7 +129,7 @@ impl Behave for Scored {
         self.branches
             .iter()
             .map(|branch| match &branch.score {
-                Some(score) => Child::noted(&branch.node, format!("score {}", score.name())),
+                Some(score) => Child::noted(&branch.node, format!("score {}", score.label())),
                 None => Child::new(&branch.node),
             })
             .collect()
@@ -100,11 +143,11 @@ mod tests {
     use crate::prelude::*;
     use crate::testing::*;
 
-    fn little(In(_): In<Entity>) -> f32 {
+    fn little(_: &Flags) -> f32 {
         1.0
     }
 
-    fn lots(In(_): In<Entity>) -> f32 {
+    fn lots(_: &Flags) -> f32 {
         5.0
     }
 
@@ -142,7 +185,7 @@ mod tests {
         assert_eq!(outcome(&app, npc), Some(true));
     }
 
-    fn unscorable(In(_): In<Entity>) -> f32 {
+    fn unscorable(_: &Flags) -> f32 {
         f32::NAN
     }
 

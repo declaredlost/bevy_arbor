@@ -84,9 +84,8 @@ impl Node {
     /// What it takes in brackets, if anything: `length`.
     fn params(self) -> Option<&'static str> {
         match self {
-            Self::Random => Some("roll"),
             Self::Repeat => Some("times"),
-            Self::RepeatWhile => Some("decorator"),
+            Self::RepeatWhile => Some("decorator, .."),
             Self::Timeout | Self::Wait => Some("length"),
             Self::State | Self::Task => Some("bundle"),
             Self::Socket => Some("key"),
@@ -114,6 +113,7 @@ impl Node {
         match self {
             Self::Task => "`task(bundle)` or `task(name, bundle)`".to_owned(),
             Self::Act => "`act(system)` or `act(system, param)`".to_owned(),
+            Self::Random => "`Random => { .. }` or `Random(seed) => { .. }`".to_owned(),
             _ if self.has_children() => format!("`{} => {{ .. }}`", self.short()),
             _ => format!("`{}`", self.short()),
         }
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(
             Node::unknown("Parallel"),
             "no node called `Parallel`: there's Forever, Repeat(times), Select, Fallback, Sequence, All, Any, \
-             Race, Scored, Random(roll), Invert, Succeed, Commit, RepeatWhile(decorator), \
+             Race, Scored, Random, Invert, Succeed, Commit, RepeatWhile(decorator, ..), \
              Timeout(length), State(bundle), Socket(key), Wait(length), task(bundle), act(system), or @ expr"
         );
     }

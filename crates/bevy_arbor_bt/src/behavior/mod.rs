@@ -11,19 +11,19 @@ mod context;
 mod leaf;
 mod modifier;
 mod status;
-pub(crate) mod system;
 
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy::utils::prelude::ShortName;
 
 pub use self::behave::Behave;
 pub use self::branch::Branch;
 pub use self::child::Child;
-pub use self::composite::ScoredBranch;
 use self::composite::{Fallback, Mode, Parallel, Random, Scored, Select, Sequence};
+pub use self::composite::{IntoScore, Score, ScoredBranch};
 pub use self::context::Context;
 use self::leaf::{Act, Spawn, Wait};
 use self::modifier::{
@@ -31,7 +31,6 @@ use self::modifier::{
 };
 pub use self::modifier::{Plugged, plugged};
 pub use self::status::{Outcome, Status};
-use crate::behavior::system::Check;
 use crate::decorator::IntoDecorator;
 
 /// A part of a tree: built by the macro, these functions, or any `Behave`.
@@ -133,21 +132,29 @@ impl Behavior {
     }
 
     /// Tries `branches` from the highest score down, until one succeeds,
-    /// scoring them once as it starts. A score system takes the agent, and may
-    /// change things. A NaN score counts as no score: it goes last.
+    /// scoring them once as it starts. A NaN score counts as no score: it goes
+    /// last.
     #[must_use]
     pub fn scored(branches: Vec<ScoredBranch>) -> Self {
         Scored::new(branches).into()
     }
 
-    /// Tries `children` in a random order, until one succeeds. `roll` is where
-    /// the randomness comes from, so it's yours: a system taking the agent and
-    /// returning a number from 0 up to 1.
-    pub fn random<S, M>(roll: S, children: Vec<Behavior>) -> Self
-    where
-        S: IntoSystem<In<Entity>, f32, M> + Copy + Send + Sync + 'static,
-    {
-        Random::new(Check::new(roll), children).into()
+    /// Tries `children` in a random order, until one succeeds: `Random` in the
+    /// macro.
+    ///
+    /// Shuffled by a generator of its own, seeded from the agent, so the same
+    /// tree on the same agent shuffles the same, run after run. For another
+    /// seed, [`random_seeded`](Self::random_seeded).
+    #[must_use]
+    pub fn random(children: Vec<Behavior>) -> Self {
+        Random::new(None, children).into()
+    }
+
+    /// Tries `children` in a random order, until one succeeds, shuffled by a
+    /// generator seeded from `seed`: `Random(seed)` in the macro.
+    #[must_use]
+    pub fn random_seeded(seed: u64, children: Vec<Behavior>) -> Self {
+        Random::new(Some(seed), children).into()
     }
 
     /// `child`, its result reversed.
@@ -231,13 +238,20 @@ impl Behavior {
 
     /// Runs `system` once on the agent: what it returns is the result. It can
     /// return a `Result<bool>` to use `?`: an error fails, and goes to Bevy's
-    /// error handler. Cached like a system condition, its `Local`s are every
-    /// agent's.
+    /// error handler.
+    ///
+    /// It runs as a cached Bevy system (`World::run_system_cached_with`), with
+    /// its tree's commands, once its tree's tick is done: the tree is ticked
+    /// again then, in the same run, to go on from what it said. Being cached
+    /// by its type, its `Local`s are every agent's, and it can't capture
+    /// anything: what varies goes in as a parameter, with
+    /// [`act_with`](Self::act_with).
     pub fn act<S, M>(system: S) -> Self
     where
         S: IntoSystem<In<Entity>, bool, M> + Copy + Send + Sync + 'static,
     {
-        Act::new(Check::new(system)).into()
+        let name = ShortName::of::<S>().to_string();
+        Act::new(name, system, |agent| agent).into()
     }
 
     /// Runs `system` once on the agent and `param`: what it returns is the
@@ -247,17 +261,12 @@ impl Behavior {
         S: IntoSystem<In<(Entity, P)>, bool, M> + Copy + Send + Sync + 'static,
         P: Clone + Debug + Send + Sync + 'static,
     {
-        Act::new(Check::with(system, param)).into()
+        let name = format!("{}({param:?})", ShortName::of::<S>());
+        Act::new(name, system, move |agent| (agent, param.clone())).into()
     }
 
     /// Runs it a tick.
-    ///
-    /// Once its tree has been taken away or replaced, by something it ran, it
-    /// doesn't run, and fails.
     pub fn tick(&mut self, cx: &mut Context) -> Status {
-        if cx.gone() {
-            return Status::Failure;
-        }
         let said = cx.said();
         if !self.running {
             self.inner.start(cx);
@@ -536,12 +545,14 @@ mod tests {
     impl Behave for Recorder {
         fn start(&mut self, cx: &mut Context) {
             self.ticks = 0;
-            cx.world_mut().resource_mut::<Told>().0.push("start");
+            cx.commands()
+                .queue(|world: &mut World| world.resource_mut::<Told>().0.push("start"));
         }
 
         fn tick(&mut self, cx: &mut Context) -> Status {
             self.ticks += 1;
-            cx.world_mut().resource_mut::<Told>().0.push("tick");
+            cx.commands()
+                .queue(|world: &mut World| world.resource_mut::<Told>().0.push("tick"));
             if self.ticks == 2 {
                 Status::Success
             } else {
@@ -555,7 +566,8 @@ mod tests {
                 Some(Outcome::Failure) => "failed",
                 None => "cancelled",
             };
-            cx.world_mut().resource_mut::<Told>().0.push(told);
+            cx.commands()
+                .queue(move |world: &mut World| world.resource_mut::<Told>().0.push(told));
         }
     }
 
@@ -598,7 +610,8 @@ mod tests {
 
     impl Behave for Silent {
         fn tick(&mut self, cx: &mut Context) -> Status {
-            cx.world_mut().resource_mut::<Acts>().0 += 1;
+            cx.commands()
+                .queue(|world: &mut World| world.resource_mut::<Acts>().0 += 1);
             Status::Running
         }
 

@@ -1,15 +1,15 @@
-use bevy::prelude::{Bundle, EntityWorldMut};
+use bevy::prelude::{Bundle, EntityCommands};
 use bevy::utils::prelude::ShortName;
 
 use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
 
-type Insert = Box<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
+type Insert = Box<dyn Fn(&mut EntityCommands) + Send + Sync>;
 
 /// Its child, with a bundle on the agent while it runs.
 pub(in crate::behavior) struct WithState {
     name: String,
     insert: Insert,
-    remove: fn(&mut EntityWorldMut),
+    remove: fn(&mut EntityCommands),
     child: Behavior,
 }
 
@@ -18,10 +18,10 @@ impl WithState {
         Self {
             name: ShortName::of::<B>().to_string(),
             insert: Box::new(move |agent| {
-                agent.insert(bundle.clone());
+                agent.try_insert(bundle.clone());
             }),
             remove: |agent| {
-                agent.remove::<B>();
+                agent.try_remove::<B>();
             },
             child,
         }
@@ -31,9 +31,7 @@ impl WithState {
 impl Behave for WithState {
     fn start(&mut self, cx: &mut Context) {
         let agent = cx.agent();
-        if let Ok(mut agent) = cx.world_mut().get_entity_mut(agent) {
-            (self.insert)(&mut agent);
-        }
+        (self.insert)(&mut cx.commands().entity(agent));
     }
 
     fn tick(&mut self, cx: &mut Context) -> Status {
@@ -43,9 +41,7 @@ impl Behave for WithState {
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.child.cancel(cx);
         let agent = cx.agent();
-        if let Ok(mut agent) = cx.world_mut().get_entity_mut(agent) {
-            (self.remove)(&mut agent);
-        }
+        (self.remove)(&mut cx.commands().entity(agent));
     }
 
     fn label(&self) -> String {

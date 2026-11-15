@@ -1,15 +1,17 @@
 //! What ticking trees costs, with a tree shaped like a monster's: a `Select` of
 //! four decorators, the last branch's task running.
 //!
-//! Three ways: system conditions, asked every tick; typed conditions with
-//! nothing changing, so trees sleep; and typed conditions with a tenth of the
-//! agents' moods changing every tick, so those wake.
+//! Three ways: conditions asked every tick, so every tree is awake; typed
+//! conditions with nothing changing, so trees sleep; and typed conditions with
+//! a tenth of the agents' moods changing every tick, so those wake.
 //!
 //! `cargo run --release -p bevy_arbor_bt --example load`
 
 use std::time::Instant;
 
 use bevy::prelude::*;
+use bevy_arbor_bt::behavior::Context;
+use bevy_arbor_bt::decorator::Condition;
 use bevy_arbor_bt::prelude::*;
 
 #[derive(Component)]
@@ -18,30 +20,26 @@ struct Mood(bool);
 #[derive(Component, Clone)]
 struct Roam;
 
-fn first(In(agent): In<Entity>, moods: Query<&Mood>) -> bool {
-    moods.get(agent).is_ok_and(|mood| mood.0)
+/// The agent's mood, or its opposite, asked every tick: it says nothing it
+/// waits on.
+struct Asked(bool);
+
+impl Condition for Asked {
+    fn passes(&mut self, cx: &mut Context) -> bool {
+        cx.world()
+            .get::<Mood>(cx.agent())
+            .is_some_and(|mood| mood.0 == self.0)
+    }
 }
 
-fn second(In(agent): In<Entity>, moods: Query<&Mood>) -> bool {
-    moods.get(agent).is_ok_and(|mood| mood.0)
-}
-
-fn third(In(agent): In<Entity>, moods: Query<&Mood>) -> bool {
-    moods.get(agent).is_ok_and(|mood| mood.0)
-}
-
-fn fourth(In(agent): In<Entity>, moods: Query<&Mood>) -> bool {
-    moods.get(agent).is_ok_and(|mood| !mood.0)
-}
-
-fn systems() -> Behavior {
+fn awake() -> Behavior {
     behavior_tree! {
         Forever => {
             Select => {
-                when(first) => task(Roam),
-                when(second) => task(Roam),
-                when(third) => task(Roam),
-                when(fourth) => task(Roam),
+                when(Asked(true)) => task(Roam),
+                when(Asked(true)) => task(Roam),
+                when(Asked(true)) => task(Roam),
+                when(Asked(false)) => task(Roam),
             }
         }
     }
@@ -89,7 +87,7 @@ fn churn(mut moods: Query<&mut Mood>, mut round: Local<usize>) {
 
 fn run(label: &str, tree: fn() -> Behavior, churning: bool) {
     const TICKS: u32 = 2_000;
-    for agents in [100, 500, 2_000] {
+    for agents in [100, 2_000, 10_000] {
         let mut app = App::new();
         app.init_resource::<Time>()
             .add_plugins(TreePlugin::new(Update));
@@ -108,12 +106,12 @@ fn run(label: &str, tree: fn() -> Behavior, churning: bool) {
         }
         let tick = start.elapsed() / TICKS;
         let agent = tick / agents;
-        println!("{label:<24} {agents:>5} agents: {tick:>10.2?} a tick, {agent:>8.2?} an agent");
+        println!("{label:<28} {agents:>6} agents: {tick:>10.2?} a tick, {agent:>8.2?} an agent");
     }
 }
 
 fn main() {
-    run("system conditions", systems, false);
+    run("awake, asked every tick", awake, false);
     run("typed conditions, still", typed, false);
     run("typed conditions, 10% churn", typed, true);
 }

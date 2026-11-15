@@ -58,9 +58,18 @@ components. The tree watches those components, so it doesn't need to ask
 again until they change.
 
 A fact about another entity, such as how far away the intruder is, needs
-more. Either keep it on the agent with a system of yours, or use a system
-condition. System conditions are asked every tick. [Decorators](decorators.md)
-covers both.
+more. Either keep it on the agent with a system of yours, or write a
+condition of your own reading the world. One that can't say what it waits on
+is asked every tick. [Decorators](decorators.md) covers both.
+
+## Trees read, commands change
+
+Trees tick side by side, on Bevy's compute threads, reading the world. What
+a node changes, spawning a task, putting `State` on the agent, taking a slot,
+it queues as commands, applied once every tree has ticked, a tree at a time.
+What takes time is a task: an entity your own systems run, all at once, after
+the trees. An `act` runs a system with the commands, and its tree is ticked
+again to hear what it said.
 
 ## Trees sleep
 

@@ -50,6 +50,9 @@ impl Plugin for TreePlugin {
             .register_type::<Status>()
             .add_systems(self.schedule, tree::tick.in_set(TreeSystems))
             .add_observer(tree::check_ticks);
+        // Known before any task has it, for a tree to see it in a task's
+        // bundle as it spawns it.
+        app.world_mut().register_component::<Graceful>();
     }
 
     fn finish(&self, app: &mut App) {

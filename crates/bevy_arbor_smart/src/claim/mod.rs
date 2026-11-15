@@ -1,6 +1,7 @@
 //! Claims: an agent holding a slot, so no one else takes it.
 
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use bevy::prelude::*;
 use bevy::utils::prelude::ShortName;
@@ -48,17 +49,30 @@ impl Claims {
 pub struct Claim<Q: Send + Sync + 'static> {
     /// The slot it holds, while its branch runs.
     held: Option<Entity>,
+    /// What it took as its branch started, once its commands are applied.
+    taken: Arc<Mutex<Taken>>,
+    key: PhantomData<fn() -> Q>,
+}
+
+/// What a claim took as its branch started, decided as its commands were
+/// applied: with what it read, not what it might yet have seen.
+#[derive(Default)]
+struct Taken {
     /// Whether it claimed the slot itself, so gives it up as its branch ends:
     /// not if the agent held it already, by another branch.
     claimed: bool,
     /// What the slot plugged into the agent, and what the agent had plugged
     /// in before, set aside to put back as the branch ends.
     swapped: Option<(Plugged<Using>, Option<Plugged<Using>>)>,
-    key: PhantomData<fn() -> Q>,
+}
+
+/// `taken`, locked: a claim's own, so never poisoned but by a panic in it.
+fn lock(taken: &Mutex<Taken>) -> std::sync::MutexGuard<'_, Taken> {
+    taken.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// A decorator claiming the slot the query keyed by `Q` found, for as long as
-/// its branch runs: `when(found::<Bench> && claim::<Bench>()) => ..`.
+/// its branch runs: `when(found::<Bench>, claim::<Bench>()) => ..`.
 ///
 /// It passes while that slot is free, or already the agent's, and isn't
 /// disabled; once claimed, while it's still the agent's. So a slot taken by
@@ -71,15 +85,26 @@ pub struct Claim<Q: Send + Sync + 'static> {
 /// and what the agent had plugged in before is put back. A slot the agent
 /// already held, by another branch, stays held.
 ///
-/// A branch tells every decorator in its condition it's starting, even one
-/// under `!` or on the side of `||` that wasn't asked: so under `||`, each
-/// side whose slot can be claimed claims it, and under `!` nothing is.
+/// It acts as its branch starts and ends, so goes after a comma, never under
+/// `!` or `||`: there, it might not have been asked, or passed, as its branch
+/// started, and taken a slot it didn't let its branch in for.
+///
+/// ```compile_fail
+/// # use bevy::prelude::*;
+/// # use bevy_arbor_bt::prelude::*;
+/// # use bevy_arbor_smart::prelude::*;
+/// # struct Bench;
+/// # #[derive(Component, Clone)] struct Idle;
+/// let tree = behavior_tree! { Select => { when(!claim::<Bench>()) => task(Idle) } };
+/// ```
+/// It's claimed with its tree's commands: of two agents ticked
+/// side by side, finding the same free slot, the first whose commands are
+/// applied gets it, and the other's branch is cancelled as it sees that.
 #[must_use]
 pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
     Claim {
         held: None,
-        claimed: false,
-        swapped: None,
+        taken: Arc::default(),
         key: PhantomData,
     }
 }
@@ -128,30 +153,36 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         let Some(slot) = Self::found(cx) else {
             return;
         };
-        // Started without passing, under `!` or `||`: nothing to hold.
-        if !claimable(cx.world(), slot, agent, false) {
-            return;
-        }
-        let world = cx.world_mut();
-        let Ok(mut entity) = world.get_entity_mut(slot) else {
-            return;
-        };
-        self.claimed = entity.get::<ClaimedBy>().is_none();
-        if self.claimed {
-            entity.insert(ClaimedBy(agent));
-        }
-        let brought = entity.get::<Plugged<Using>>().cloned();
-        if let Some(brought) = brought
-            && let Ok(mut agent) = world.get_entity_mut(agent)
-        {
-            // The agent's own, set aside while the slot's runs; unless the
-            // slot's is plugged in already.
-            let own = agent.get::<Plugged<Using>>().cloned();
-            if !own.as_ref().is_some_and(|own| own.same(&brought)) {
-                agent.insert(brought.clone());
-                self.swapped = Some((brought, own));
+        let taken = Arc::new(Mutex::new(Taken::default()));
+        self.taken = taken.clone();
+        cx.commands().queue(move |world: &mut World| {
+            // Claimed by another agent ticked beside it, whose commands went
+            // first: nothing taken, and its branch is cancelled as it sees it.
+            if !claimable(world, slot, agent, false) {
+                return;
             }
-        }
+            let mut taken = lock(&taken);
+            let Ok(mut entity) = world.get_entity_mut(slot) else {
+                return;
+            };
+            // The agent's already, by another branch: that one gives it up.
+            taken.claimed = !entity.contains::<ClaimedBy>();
+            if taken.claimed {
+                entity.insert(ClaimedBy(agent));
+            }
+            let brought = entity.get::<Plugged<Using>>().cloned();
+            if let Some(brought) = brought
+                && let Ok(mut agent) = world.get_entity_mut(agent)
+            {
+                // The agent's own, set aside while the slot's runs; unless the
+                // slot's is plugged in already.
+                let own = agent.get::<Plugged<Using>>().cloned();
+                if !own.as_ref().is_some_and(|own| own.same(&brought)) {
+                    agent.insert(brought.clone());
+                    taken.swapped = Some((brought, own));
+                }
+            }
+        });
         self.held = Some(slot);
     }
 
@@ -159,34 +190,38 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         let Some(slot) = self.held.take() else {
             return;
         };
-        let claimed = std::mem::take(&mut self.claimed);
+        let taken = std::mem::take(&mut self.taken);
         let agent = cx.agent();
-        let world = cx.world_mut();
-        if claimed
-            && let Ok(mut entity) = world.get_entity_mut(slot)
-            && entity
-                .get::<ClaimedBy>()
-                .is_some_and(|claimed| claimed.agent() == agent)
-        {
-            entity.remove::<ClaimedBy>();
-        }
-        let Some((brought, own)) = self.swapped.take() else {
-            return;
-        };
-        let Ok(mut agent) = world.get_entity_mut(agent) else {
-            return;
-        };
-        // Only what the slot plugged in, if it's still there: one plugged in
-        // since stays.
-        if agent
-            .get::<Plugged<Using>>()
-            .is_some_and(|plugged| plugged.same(&brought))
-        {
-            match own {
-                Some(own) => agent.insert(own),
-                None => agent.remove::<Plugged<Using>>(),
+        cx.commands().queue(move |world: &mut World| {
+            let Taken { claimed, swapped } = std::mem::take(&mut *lock(&taken));
+            // Only if it's still the agent's: taken from it, it isn't its to
+            // give up.
+            if claimed
+                && let Ok(mut entity) = world.get_entity_mut(slot)
+                && entity
+                    .get::<ClaimedBy>()
+                    .is_some_and(|claimed| claimed.agent() == agent)
+            {
+                entity.remove::<ClaimedBy>();
+            }
+            let Some((brought, own)) = swapped else {
+                return;
             };
-        }
+            let Ok(mut agent) = world.get_entity_mut(agent) else {
+                return;
+            };
+            // Only what the slot plugged in, if it's still there: one plugged
+            // in since stays.
+            if agent
+                .get::<Plugged<Using>>()
+                .is_some_and(|plugged| plugged.same(&brought))
+            {
+                match own {
+                    Some(own) => agent.insert(own),
+                    None => agent.remove::<Plugged<Using>>(),
+                };
+            }
+        });
     }
 
     fn label(&self) -> String {
@@ -359,35 +394,28 @@ mod tests {
     }
 
     #[test]
-    fn not_claiming_takes_no_one_elses_seat() {
+    fn of_two_agents_ticked_side_by_side_for_one_free_seat_one_gets_it() {
         let mut app = app();
         let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
-        let owner = app.spawn(GlobalTransform::IDENTITY);
-        let other = app.spawn((
-            GlobalTransform::IDENTITY,
-            BehaviorTree::new(behavior_tree! {
-                Sequence => {
-                    task(Survey::of(Seat)),
-                    task(GoThere),
-                    Select => { when(!claim::<Seat>()) => task(Idle) },
-                }
-            }),
-        ));
-        app.ticks(2);
-        // Found free, then taken while it walks.
-        app.entity_mut(seats[0]).insert(ClaimedBy(owner));
-        arrive(&mut app);
-        app.ticks(2);
-        assert_eq!(app.count::<With<Idle>>(), 1, "taken, so `!claim` passes");
+        let first = sitter(&mut app);
+        let second = sitter(&mut app);
+        app.ticks(4);
+        let holder = app
+            .world()
+            .get::<ClaimedBy>(seats[0])
+            .map(ClaimedBy::agent)
+            .expect("claimed");
+        assert!(holder == first || holder == second);
+        let (held_first, held_second) = (held(&app, first), held(&app, second));
         assert_eq!(
-            app.world().get::<ClaimedBy>(seats[0]).map(ClaimedBy::agent),
-            Some(owner),
-            "still the owner's"
+            [held_first, held_second].iter().flatten().count(),
+            1,
+            "only one holds it"
         );
-        assert_eq!(held(&app, other), None);
+        let loser = if holder == first { second } else { first };
         assert!(
-            app.world().get::<Plugged<Using>>(other).is_none(),
-            "nor what it brings"
+            app.world().get::<Plugged<Using>>(loser).is_none(),
+            "nor brings what it would have"
         );
     }
 

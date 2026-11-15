@@ -77,8 +77,11 @@ Children are `Behavior`s:
 `end` must cancel the node's children. If it doesn't, their tasks keep
 running after the node is gone.
 
-`cx` is the [`Context`]: `cx.agent()` is the agent, `cx.world()` and
-`cx.world_mut()` the world, `cx.now()` the tree's clock.
+`cx` is the [`Context`]: `cx.agent()` is the agent, `cx.world()` the world
+to read, `cx.commands()` what changes it, and `cx.now()` the tree's clock.
+Trees tick side by side, so a node only reads as it ticks. Its commands are
+applied once every tree has ticked, so what they do isn't seen until its
+tree's next tick.
 
 ## In a trace
 

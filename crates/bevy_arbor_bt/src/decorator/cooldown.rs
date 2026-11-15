@@ -9,7 +9,7 @@ use super::decorate::Decorate;
 use crate::behavior::{Context, Outcome};
 
 /// A decorator keeping its branch from running again until `length` after it
-/// last ended, however it ended: `when(has_target && cooldown(8.0))`.
+/// last ended, however it ended: `when(has_target, cooldown(8.0))`.
 ///
 /// Its tree sleeps while it cools, and is woken as it's done: a `Select` then
 /// switches back to its branch as it would to any decorator passing again. Each
@@ -143,16 +143,17 @@ impl<K: Send + Sync + 'static> Decorate for SharedCooldown<K> {
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         let agent = cx.agent();
         let until = cx.now().saturating_add(self.length);
-        let Ok(mut entity) = cx.world_mut().get_entity_mut(agent) else {
-            return;
-        };
-        // Never shortened: one cooling longer stays.
-        if entity
-            .get::<Cooling<K>>()
-            .is_none_or(|cooling| cooling.until < until)
-        {
-            entity.insert(Cooling::<K>::until(until));
-        }
+        cx.commands()
+            .entity(agent)
+            .queue_silenced(move |mut agent: EntityWorldMut| {
+                // Never shortened: one cooling longer stays.
+                if agent
+                    .get::<Cooling<K>>()
+                    .is_none_or(|cooling| cooling.until < until)
+                {
+                    agent.insert(Cooling::<K>::until(until));
+                }
+            });
     }
 
     fn label(&self) -> String {
@@ -178,7 +179,7 @@ mod tests {
         behavior_tree! {
             Forever => {
                 Select => {
-                    when(high && cooldown(1.0)) => task((Work, Report::Succeed)),
+                    when(high, cooldown(1.0)) => task((Work, Report::Succeed)),
                     task(Other),
                 }
             }
@@ -209,7 +210,7 @@ mod tests {
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high && cooldown(1.0)) => task((Work, Report::Fail)),
+                    when(high, cooldown(1.0)) => task((Work, Report::Fail)),
                     task(Other),
                 }
             },
@@ -229,7 +230,7 @@ mod tests {
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high && cooldown(1.0)) => task(Work),
+                    when(high, cooldown(1.0)) => task(Work),
                     task(Other),
                 }
             },
@@ -285,7 +286,7 @@ mod tests {
             behavior_tree! {
                 Forever => {
                     Select => {
-                        when(high && cooldown_of::<Grenades>(1.0)) => act(count),
+                        when(high, cooldown_of::<Grenades>(1.0)) => act(count),
                         when(cooldown_of::<Grenades>(1.0)) => task((Work, Report::Succeed)),
                         task(Other),
                     }
@@ -367,7 +368,7 @@ mod tests {
         app.spawn((
             Here,
             BehaviorTree::new(behavior_tree! {
-                Select => { when(asked && cooldown(1.0)) => Wait(100.0) }
+                Select => { when(asked, cooldown(1.0)) => Wait(100.0) }
             }),
         ));
         app.ticks(10);

@@ -43,11 +43,6 @@ impl Branch {
     /// Ticks its node, asked to stop if `interrupted`: its decorator is told as
     /// the node starts and ends.
     pub(in crate::behavior) fn tick(&mut self, cx: &mut Context, interrupted: bool) -> Status {
-        // Its tree gone, nothing more of it runs, and nothing's told: the
-        // tree's cancel ends what was running, once.
-        if cx.gone() {
-            return Status::Failure;
-        }
         if !self.node.is_running()
             && let Some(decorator) = &mut self.decorator
         {

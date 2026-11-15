@@ -68,8 +68,9 @@ fn setup(app: &mut App) {
 
 ## Claiming and using it
 
-[`claim::<Turret>()`][`claim`] is a [decorator](decorators.md). It claims the
-slot the `Turret` query found, for as long as its branch runs. The slot's
+[`claim::<Turret>()`][`claim`] is a [decorator](decorators.md) acting as its
+branch starts and ends, so it goes after a comma. It claims the slot the
+`Turret` query found, for as long as its branch runs. The slot's
 `Plugged<Using>` is plugged into the guard, and `Socket(Using)` runs it:
 
 ```rust
@@ -81,7 +82,7 @@ slot the `Turret` query found, for as long as its branch runs. The slot's
 fn man_turret() -> Behavior {
     behavior_tree! {
         Select => {
-            when(sees_intruder && found::<Turret> && claim::<Turret>()) => Sequence => {
+            when(sees_intruder && found::<Turret>, claim::<Turret>()) => Sequence => {
                 task(GoToSlot),
                 Socket(Using),
             },
@@ -129,6 +130,8 @@ of its own, it's set aside while the slot's runs, and put back after.
 
 - **One claim, one agent.** `claim` passes while the slot is free or already
   the guard's. If two guards go for one turret, the first to claim it wins.
+  Trees tick side by side, so two guards may both see it free in one tick:
+  the slot is taken with each tree's commands, and the first applied gets it.
   The other's `claim` stops passing, and its `Select` moves on.
 - **Lost slots.** A slot taken by someone else, given [`SlotDisabled`], or
   despawned cancels the branch.

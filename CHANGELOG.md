@@ -11,25 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `bevy_arbor_bt`: reactive behavior trees, with tasks as entities. Moved
   from the game repository.
+  - Trees tick side by side, on Bevy's compute threads, reading the world:
+    what a node changes, it queues as commands (`Context::commands`),
+    applied once every tree has ticked, a tree at a time, in order.
   - Trees sleep between ticks, until something they wait on comes: a task's
-    report, a timer, a change a typed condition would see, or a system condition that
-    has to be asked every tick.
-  - Typed conditions: functions of the agent's components (`fn(&Target) -> bool`),
-    asked again only once one of them changes.
+    report, a timer, a change a typed condition would see, or a condition
+    that says nothing it waits on, asked every tick.
+  - Typed conditions: functions or closures of the agent's components
+    (`fn(&Target) -> bool`), asked again only once one of them changes.
   - `State(bundle) => { .. }`: a bundle on the agent while its branch runs.
   - Nodes run from `Behave::start`, through `tick`, to `end` (with how they
     went, or `None` if cancelled), called by the tree. In a trace, a node
     reads as its `label` and lists its `children`. They say what they wait
     on as they tick (`Context::wake_at`, `Context::watch`); a running node
     whose subtree said nothing is ticked every tick.
-  - Decorators: what's in `when(..)`. One at rest says so with
-    `Context::wait_on_nothing`, so its tree can sleep. Typed and system conditions
-    are decorators, combined with `!`, `&&` and `||` into a `Decorator`.
-    `Decorate` is for your own, told as its branch starts and ends;
-    `cooldown(seconds)` keeps a branch from running again for that long after
-    it ends.
-  - System conditions and acts run from a table of their own, not Bevy's system
-    registry: several times cheaper to ask.
+  - Decorators: what's in `when(..)`, every part of which must pass.
+    Conditions only answer: typed ones, or your own `Condition`, reading the
+    world, combined with `!`, `&&` and `||` (outside the macro,
+    `IntoCondition::and`, `or`, and `not`). Those acting as their branch
+    starts and ends go after a comma, never under `!` or `||`, so whenever
+    their branch runs they passed, and hear it start and end:
+    `when(has_target, cooldown(8.0))`. `cooldown(seconds)` keeps a branch
+    from running again for that long after it ends; `Decorate` is for your
+    own. One at rest says so with `Context::wait_on_nothing`, so its tree can
+    sleep.
+  - `act(system)`: a system run once on the agent, as a cached Bevy system
+    with its tree's commands; its tree is ticked again, in the same run, to
+    go on from what it said.
+  - `Scored => { score(..) => .. }` ranks branches by typed scores, or your
+    own `Score`. `Random => { .. }` shuffles its children with a generator of
+    its own, seeded from the agent, or `Random(seed)`.
   - `Repeat(times) => { .. }`: its child that many times, until it fails.
     `cooldown_of::<K>(seconds)`: a cooldown shared by every branch keyed by
     `K`, kept on the agent as `Cooling<K>`.

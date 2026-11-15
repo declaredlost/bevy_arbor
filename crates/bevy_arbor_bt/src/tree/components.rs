@@ -1,20 +1,17 @@
 use std::fmt;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use bevy::ecs::change_detection::Tick;
 use bevy::ecs::lifecycle::HookContext;
-use bevy::ecs::world::DeferredWorld;
+use bevy::ecs::world::{CommandQueue, DeferredWorld};
 use bevy::prelude::*;
 
-use super::systems::Ticking;
 use super::wake::Plan;
 use crate::behavior::{Behavior, Context, Outcome};
 
 /// An agent's behavior tree: what it runs, and how it ended, once it has.
 ///
-/// Taking it away, however that happens, cancels whatever it's running. If
-/// something it runs takes it away or replaces it, nothing more of it runs.
+/// Taking it away, however that happens, cancels whatever it's running.
 ///
 /// Between ticks it sleeps, until what its last tick waited on comes: a
 /// decorator that has to be asked every tick, a timer, or a change to a
@@ -84,23 +81,20 @@ impl fmt::Display for BehaviorTree {
 pub struct TreePaused;
 
 /// Cancels what a tree that's going is running.
-///
-/// One going as it ticks is canceled once its tick stops, which this tells
-/// it to.
 fn discard(mut world: DeferredWorld, context: HookContext) {
     let agent = context.entity;
     let Some(mut tree) = world.get_mut::<BehaviorTree>(agent) else {
         return;
     };
+    // Its root is out only while trees tick, and nothing takes a tree away
+    // then: they only read the world.
     let Some(mut root) = tree.root.take() else {
-        // Its root is only out while it ticks.
-        if let Some(ticking) = world.get_resource::<Ticking>() {
-            ticking.0.store(true, Ordering::Relaxed);
-        }
         return;
     };
     world.commands().queue(move |world: &mut World| {
-        root.cancel(&mut Context::new(world, agent));
+        let mut queue = CommandQueue::default();
+        root.cancel(&mut Context::new(world, agent, None, &mut queue));
+        queue.apply(world);
     });
 }
 
@@ -239,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tree_paused_by_one_ticked_before_it_is_not_ticked() {
+    fn a_tree_paused_by_another_s_act_goes_no_further() {
         let mut app = app();
         let tree = || behavior_tree! { Sequence => { act(pause_other), act(count) } };
         let first = agent(&mut app, tree());
@@ -247,7 +241,11 @@ mod tests {
         app.entity_mut(first).insert(Pauses(second));
         app.entity_mut(second).insert(Pauses(first));
         app.tick();
-        assert_eq!(acts(&app), 1, "whichever went first paused the other");
+        assert_eq!(
+            acts(&app),
+            0,
+            "both ticked side by side, and each paused the other before going on"
+        );
     }
 
     #[test]
