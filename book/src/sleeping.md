@@ -40,12 +40,12 @@ tree doesn't tick.
 | A task's report | A running task |
 | A time | A `Wait`, a `Timeout` or a cooldown |
 | Every tick | A system condition that could matter |
-| Every tick | A custom node or decorator that says nothing |
+| Every tick | A custom node, decorator or condition that says nothing |
 
 A sleeping tree isn't looked at. What trees watch is kept in an index, by
-component type: each tick, one pass over each watched type's storage finds
-what changed, and only the trees watching that are looked at. Removals are
-heard by an observer, timers kept in order. See [Performance](performance.md).
+component type: each tick, it finds what changed of each type watched, and
+only the trees watching that are looked at. Removals are heard by an
+observer, timers kept in order. See [Performance](performance.md).
 
 ## What a woken tree asks again
 

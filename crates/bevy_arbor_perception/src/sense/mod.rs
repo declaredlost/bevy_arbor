@@ -1,5 +1,4 @@
-//! The senses: what agents sense with, what they sense from, and how a sense
-//! of your own joins them.
+//! The senses: what agents sense with and from, and how a sense of yours joins.
 //!
 //! A sense is a component, its own configuration: [`Sight`], [`Hearing`],
 //! [`Touch`], [`Shared`], or yours. On an agent, the agent senses; on a sensor
@@ -31,7 +30,7 @@ pub(crate) use self::sight::{GridIndex, build_grid, look};
 pub(crate) use self::touch::feel;
 pub use self::touch::{Touch, Touched};
 use crate::PerceptionSystems;
-use crate::perceived::{self, Candidates, Perceived, Traces};
+use crate::perceived::{self, Candidates, Perceived, Stimuli};
 
 /// A way of sensing: a component, and its own configuration.
 ///
@@ -55,21 +54,26 @@ use crate::perceived::{self, Candidates, Perceived, Traces};
 /// }
 /// ```
 pub trait Sense: Component + Reflect + TypePath {
-    /// Whether it holds while it lasts, as sight does (in view, then lost),
-    /// rather than being a moment, as a noise is.
+    /// Whether it holds while it lasts, as sight does, rather than being a
+    /// moment.
+    ///
+    /// Sight is in view, then lost; a noise is a moment.
     ///
     /// A sustained sense's sensors say when they've looked
     /// ([`Candidates::look_from`]): what an agent's sensors sensed at their
     /// last look is active, and what none of them did any more is lost.
     const SUSTAINED: bool = false;
 
-    /// How long an agent remembers what it sensed this way, unless its
-    /// [`Perceived<S>`](Perceived) says otherwise.
+    /// How long an agent remembers what it sensed this way, by default.
+    ///
+    /// Its [`Perceived<S>`](Perceived) can say otherwise.
     const MEMORY: Duration;
 }
 
-/// Registers the sense `S`: its [`Perceived<S>`](Perceived), the systems that
-/// write and forget it, sharing it, and its events. [`PerceptionPlugin`]
+/// Registers the sense `S`: its [`Perceived<S>`](Perceived), systems and
+/// events.
+///
+/// The systems write and forget it, and share it. [`PerceptionPlugin`]
 /// registers the built-in senses; add one for a sense of your own, after it.
 ///
 /// [`PerceptionPlugin`]: crate::PerceptionPlugin
@@ -82,15 +86,19 @@ impl<S> Default for SensePlugin<S> {
 }
 
 /// Set: sight finds what's near through an index other than perception's
-/// grid, which then isn't built.
+/// grid.
+///
+/// That grid then isn't built.
 #[derive(Resource)]
 pub(crate) struct OwnSightIndex;
 
-/// Setting how sight finds what's near a sensor.
+/// Setting how sight finds what's near a sensor: an `App` method for a
+/// [`SightIndex`].
 pub trait SightIndexApp {
-    /// Sight finds what's near through `I` instead of perception's grid,
-    /// which is no longer built. Add `PerceptionPlugin` first; set one index
-    /// only.
+    /// Sight finds what's near through `I` instead of perception's grid.
+    ///
+    /// That grid is no longer built. Add `PerceptionPlugin` first; set one
+    /// index only.
     fn set_sight_index<I: SightIndex>(&mut self) -> &mut Self
     where
         for<'w, 's> SystemParamItem<'w, 's, I::Param>: Sync;
@@ -122,7 +130,7 @@ pub(crate) struct PerceptionSchedule(pub(crate) InternedScheduleLabel);
 impl<S: Sense> Plugin for SensePlugin<S> {
     fn build(&self, app: &mut App) {
         app.register_type::<Perceived<S>>()
-            .register_type::<Traces<S>>()
+            .register_type::<Stimuli<S>>()
             .add_observer(perceived_removed::<S>)
             .add_observer(sense_added::<S>)
             .add_observer(sense_removed::<S>)
@@ -159,13 +167,14 @@ impl<S: Sense> Plugin for SensePlugin<S> {
     }
 }
 
-/// `Perceived<S>` taken off an entity: its traces go with it.
+/// `Perceived<S>` taken off an entity: its stimuli go with it.
 fn perceived_removed<S: Sense>(removed: On<Remove<Perceived<S>>>, mut commands: Commands) {
-    commands.entity(removed.entity).try_remove::<Traces<S>>();
+    commands.entity(removed.entity).try_remove::<Stimuli<S>>();
 }
 
-/// A sense on an entity: it gathers into `Candidates<S>`, and its agent keeps
-/// a `Perceived<S>`, unless they're there already.
+/// A sense on an entity: it gathers into `Candidates<S>`, for its agent.
+///
+/// Its agent keeps a `Perceived<S>`. Neither is added if it's there already.
 fn sense_added<S: Sense>(added: On<Add<S>>, sensors: Query<&SensorOf>, mut commands: Commands) {
     let sensor = added.entity;
     commands
@@ -178,7 +187,9 @@ fn sense_added<S: Sense>(added: On<Add<S>>, sensors: Query<&SensorOf>, mut comma
 }
 
 /// A sense taken off an entity: it gathers no more, and its agent looks
-/// again at what it sensed.
+/// again.
+///
+/// The agent looks again at what it sensed.
 fn sense_removed<S: Sense>(
     removed: On<Remove<S>>,
     sensors: Query<&SensorOf>,
@@ -193,8 +204,9 @@ fn sense_removed<S: Sense>(
     }
 }
 
-/// A sensor with `S` attached to an agent: the agent keeps a `Perceived<S>`,
-/// and the sensor, no longer an agent of its own, doesn't.
+/// A sensor with `S` attached to an agent: the agent keeps a `Perceived<S>`.
+///
+/// The sensor, no longer an agent of its own, doesn't.
 fn sensor_attached<S: Sense>(
     attached: On<Insert<SensorOf>>,
     sensors: Query<&SensorOf, With<S>>,
@@ -210,9 +222,10 @@ fn sensor_attached<S: Sense>(
     }
 }
 
-/// A sensor with `S` detached, despawned or attached elsewhere: its old
-/// agent looks again at what it saw, and the sensor, an agent of its own
-/// again unless it's attached elsewhere, keeps its own `Perceived<S>`.
+/// A sensor with `S` detached, despawned or attached elsewhere.
+///
+/// Its old agent looks again at what it saw, and the sensor, an agent of its
+/// own again unless it's attached elsewhere, keeps its own `Perceived<S>`.
 fn sensor_detached<S: Sense>(
     detached: On<Discard<SensorOf>>,
     sensors: Query<&SensorOf, With<S>>,
@@ -273,8 +286,10 @@ mod tests {
         }
     }
 
-    /// A sustained sense of the game's own: it senses what's `Scented` while
-    /// it's within range, and loses it once it isn't.
+    /// A sustained sense of the game's own: it senses what's `Scented` in
+    /// range.
+    ///
+    /// It loses what it senses once it's out of range.
     #[derive(Component, Reflect)]
     struct Radar {
         range: f32,
@@ -322,15 +337,19 @@ mod tests {
     fn a_sense_of_your_own_is_perceived_classified_and_forgotten() {
         for space in SPACES {
             let mut app = with_senses(space);
-            let agent = app.spawn((Smell { range: 5.0 }, Team(1), GlobalTransform::IDENTITY));
+            let agent = app.spawn((
+                Smell { range: 5.0 },
+                Allegiance(1),
+                GlobalTransform::IDENTITY,
+            ));
             let prey = app.spawn((
                 Scented,
-                Team(2),
+                Allegiance(2),
                 GlobalTransform::from_translation(ahead(space, 3.0)),
             ));
             app.tick();
             let smelt = perceived::<Smell>(&app, agent).get(prey).unwrap();
-            assert!(smelt.is_hostile(), "{space:?}: by the team fallback");
+            assert!(smelt.is_hostile(), "{space:?}: by the allegiance fallback");
             assert!(!smelt.is_active(), "{space:?}: a moment");
             app.entity_mut(prey)
                 .insert(GlobalTransform::from_translation(ahead(space, 50.0)));
@@ -365,23 +384,23 @@ mod tests {
             let lost = perceived::<Radar>(&app, agent).get(blip).unwrap();
             assert!(!lost.is_active(), "{space:?}: lost");
             assert!(
-                traces::<Radar>(&app, agent).get(blip).is_some(),
+                stimuli::<Radar>(&app, agent).get(blip).is_some(),
                 "{space:?}: remembered"
             );
         }
     }
 
     #[test]
-    fn traces_go_with_perceived() {
+    fn stimuli_go_with_perceived() {
         for space in SPACES {
             let mut app = app(space);
             let agent = looker(&mut app, Sight::new(10.0));
             thing(&mut app, ahead(space, 5.0));
             app.tick();
-            assert!(!traces::<Sight>(&app, agent).is_empty(), "{space:?}");
+            assert!(!stimuli::<Sight>(&app, agent).is_empty(), "{space:?}");
             app.entity_mut(agent).remove::<Perceived<Sight>>();
             assert!(
-                app.world().get::<Traces<Sight>>(agent).is_none(),
+                app.world().get::<Stimuli<Sight>>(agent).is_none(),
                 "{space:?}: taken off with it"
             );
         }

@@ -3,13 +3,14 @@ use bevy::prelude::*;
 use crate::claim::{ClaimedBy, Claims};
 use crate::slot::{SlotDisabled, SlotOf, Slots};
 
-/// Smart objects: registers their components, for finding slots, inspectors
-/// and scenes. Claiming is a decorator and finding a query generator, so it
-/// has no systems of its own.
+/// Smart objects: registers their components, for queries, inspectors, scenes.
+///
+/// Claiming is a decorator and finding a query generator, so it has no
+/// systems of its own.
 #[derive(Default)]
-pub struct SmartPlugin;
+pub struct SmartObjectPlugin;
 
-impl Plugin for SmartPlugin {
+impl Plugin for SmartObjectPlugin {
     fn build(&self, app: &mut App) {
         // Known to the world from the start, so finding slots can query them
         // before any is claimed or disabled.

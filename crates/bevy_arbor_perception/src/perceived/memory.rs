@@ -2,29 +2,31 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use super::{Candidates, Forgotten, Perceived, Traces};
+use super::{Candidates, Forgotten, Perceived, Stimuli};
 use crate::sense::Sense;
 
-/// Each agent whose memory of something by `S` is due to fade forgets it:
-/// what's no longer active, sensed longer ago than it remembers. Triggers
-/// [`Forgotten`].
+/// Each agent whose memory of something by `S` is due to fade forgets it.
+///
+/// Due to fade: what's no longer active, sensed longer ago than it remembers.
+/// Triggers [`Forgotten`].
 pub(crate) fn forget<S: Sense>(
     time: Res<Time>,
     commands: ParallelCommands,
-    mut agents: Query<(Entity, &mut Perceived<S>, &mut Traces<S>)>,
+    mut agents: Query<(Entity, &mut Perceived<S>, &mut Stimuli<S>)>,
 ) {
     let now = time.elapsed();
     agents
         .par_iter_mut()
-        .for_each(|(agent, mut perceived, mut traces)| {
+        .for_each(|(agent, mut perceived, mut stimuli)| {
             if perceived.next_fade.is_some_and(|next| now < next) {
                 return;
             }
             let percepts = perceived.bypass_change_detection();
-            let known = traces.bypass_change_detection();
+            let known = stimuli.bypass_change_detection();
             let memory = percepts.memory();
-            // What's active never fades; what has no trace is gone already.
-            let fades_at = |entity: Entity| known.get(entity).map(|trace| trace.fades_at(memory));
+            // What's active never fades; what has no stimulus is gone already.
+            let fades_at =
+                |entity: Entity| known.get(entity).map(|stimulus| stimulus.fades_at(memory));
             let mut forgotten = Vec::new();
             percepts.retain(|percept| {
                 let kept =
@@ -46,7 +48,7 @@ pub(crate) fn forget<S: Sense>(
             }
             known.retain(|entity| !forgotten.contains(&entity));
             perceived.set_changed();
-            traces.set_changed();
+            stimuli.set_changed();
             commands.command_scope(|mut commands| {
                 for what in forgotten {
                     commands.trigger(Forgotten::<S>::new(agent, what));
@@ -100,8 +102,8 @@ mod tests {
                 "{space:?}: forgotten"
             );
             assert!(
-                traces::<Sight>(&app, agent).is_empty(),
-                "{space:?}: its trace with it"
+                stimuli::<Sight>(&app, agent).is_empty(),
+                "{space:?}: its stimulus with it"
             );
             assert_eq!(
                 app.world().resource::<Changes>().0,
@@ -130,7 +132,7 @@ mod tests {
             }
             assert!(sees(&app, agent, target), "{space:?}");
             assert!(
-                traces::<Sight>(&app, agent).get(target).is_some(),
+                stimuli::<Sight>(&app, agent).get(target).is_some(),
                 "{space:?}: when it came into view, kept"
             );
         }

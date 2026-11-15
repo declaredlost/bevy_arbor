@@ -32,7 +32,7 @@ fn a_tree_acts_on_what_perception_noticed_the_same_tick() {
         Sight::new(10.0)
             .with_half_angle(PI)
             .with_interval(Duration::ZERO),
-        Team(1),
+        Allegiance(1),
         GlobalTransform::IDENTITY,
         BehaviorTree::new(behavior_tree! {
             Select => { when(sees_enemy) => act(attack) }
@@ -40,7 +40,7 @@ fn a_tree_acts_on_what_perception_noticed_the_same_tick() {
     ));
     app.spawn((
         Perceivable,
-        Team(2),
+        Allegiance(2),
         GlobalTransform::from_xyz(0.0, 0.0, -3.0),
     ));
     app.tick();

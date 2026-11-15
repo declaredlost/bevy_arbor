@@ -1,6 +1,6 @@
-//! Path costs in environment queries: your pathfinder, set once with
-//! [`set_path_costs`](PathCostsApp::set_path_costs), measured by
-//! [`PathDistance`].
+//! Path costs in environment queries: your pathfinder, as [`PathDistance`].
+//!
+//! Set it once with [`set_path_costs`](PathCostsApp::set_path_costs).
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,11 +8,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use bevy::ecs::system::ReadOnlySystem;
 use bevy::ecs::world::WorldId;
 use bevy::prelude::*;
-use bevy_arbor_eqs::query::{Item, QueryContext};
+use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
 use bevy_arbor_eqs::test::{Batch, Cost, Measure, Test};
 
-/// Your pathfinder, as a test: what [`PathDistance`] runs, and which one it
-/// is, so a `PathDistance` sees it replaced.
+/// Your pathfinder, as a test: what [`PathDistance`] runs, and which one.
+///
+/// Which one it is lets a `PathDistance` see it replaced.
 #[derive(Resource)]
 struct PathCosts {
     measure: Measure,
@@ -23,13 +24,14 @@ struct PathCosts {
 /// set, counting up.
 static SET: AtomicU64 = AtomicU64::new(0);
 
-/// Setting the app's pathfinder for [`PathDistance`].
+/// Setting the app's pathfinder: the path costs [`PathDistance`] measures by.
 pub trait PathCostsApp {
-    /// Measures path costs with `system`: given the agent and the items, the
-    /// cost of the way from the agent to each, or `None` where there's none.
-    /// Read-only, and asked for a whole batch at once, so a graph search
-    /// from the agent answers every item. Any pathfinding: a navmesh, a
-    /// grid, a platformer's jump graph.
+    /// Measures path costs with `system`, a pathfinder of any kind.
+    ///
+    /// Given the agent and the items, it gives the cost of the way from the
+    /// agent to each, or `None` where there's none. Read-only, and asked for a
+    /// whole batch at once, so a graph search from the agent answers every
+    /// item. Any pathfinding: a navmesh, a grid, a platformer's jump graph.
     fn set_path_costs<S, M>(&mut self, system: S) -> &mut Self
     where
         S: IntoSystem<Batch<'static>, Vec<Option<f32>>, M> + Clone + Send + Sync + 'static,
@@ -49,9 +51,10 @@ impl PathCostsApp for App {
     }
 }
 
-/// How far the way from the agent to an item is, as the app's pathfinder
-/// says: no answer where there's no way, so an unreachable item fails a
-/// filter on it. Set the pathfinder with
+/// How far the way from the agent to an item is, as the app's pathfinder says.
+///
+/// No answer where there's no way, so an unreachable item fails a filter on
+/// it. Set the pathfinder with
 /// [`set_path_costs`](PathCostsApp::set_path_costs); without one, it warns
 /// and has no answers.
 ///
@@ -73,14 +76,14 @@ impl PathDistance {
 }
 
 impl Test for PathDistance {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
         self.test_all(cx, std::slice::from_ref(item))
             .into_iter()
             .next()
             .flatten()
     }
 
-    fn test_all(&self, cx: &QueryContext, items: &[Item]) -> Vec<Option<f32>> {
+    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         self.costs
             .lock()
             .ok()
@@ -124,15 +127,16 @@ impl Test for PathDistance {
 mod tests {
     use bevy::prelude::*;
     use bevy_arbor_eqs::prelude::*;
-    use bevy_arbor_eqs::query::{Item, QueryContext};
+    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
     use bevy_arbor_eqs::test::Test;
     use bevy_arbor_perception::prelude::*;
 
     use crate::prelude::*;
     use crate::testing::*;
 
-    /// A pathfinder over a wall at x = 5: what's past it is unreachable, the
-    /// rest as far as it is.
+    /// A pathfinder over a wall at x = 5: what's past it is unreachable.
+    ///
+    /// The rest is as far as it is.
     fn walled(batch: Batch, places: Query<&GlobalTransform>) -> Vec<Option<f32>> {
         let from = places
             .get(batch.agent)
@@ -140,15 +144,15 @@ mod tests {
         batch
             .items
             .iter()
-            .map(|item| (item.position().x < 5.0).then(|| from.distance(item.position())))
+            .map(|item| (item.position.x < 5.0).then(|| from.distance(item.position)))
             .collect()
     }
 
-    fn measured(app: &mut bevy_harness::TestApp, items: &[Item]) -> Vec<Option<f32>> {
+    fn measured(app: &mut bevy_harness::TestApp, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let test = PathDistance::new();
         test.prepare(app.world_mut());
-        let cx = QueryContext::new(app.world(), agent, Space::Volume, 1);
+        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
         test.test_all(&cx, items)
     }
 
@@ -156,7 +160,10 @@ mod tests {
     fn it_is_the_app_pathfinders_cost_and_none_where_there_is_no_way() {
         let mut app = app();
         app.app_mut().set_path_costs(walled);
-        let items = [Item::Point(Vec3::X * 2.0), Item::Point(Vec3::X * 8.0)];
+        let items = [
+            EnvQueryItem::place(Vec3::X * 2.0),
+            EnvQueryItem::place(Vec3::X * 8.0),
+        ];
         assert_eq!(measured(&mut app, &items), [Some(2.0), None]);
     }
 
@@ -166,17 +173,17 @@ mod tests {
             batch
                 .items
                 .iter()
-                .map(|item| Some(item.position().x * 2.0))
+                .map(|item| Some(item.position.x * 2.0))
                 .collect()
         }
         let mut app = app();
         app.app_mut().set_path_costs(walled);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         let test = PathDistance::new();
-        let items = [Item::Point(Vec3::X * 2.0)];
+        let items = [EnvQueryItem::place(Vec3::X * 2.0)];
         let measured = |app: &mut bevy_harness::TestApp| {
             test.prepare(app.world_mut());
-            let cx = QueryContext::new(app.world(), agent, Space::Volume, 1);
+            let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
             test.test_all(&cx, &items)
         };
         assert_eq!(measured(&mut app), [Some(2.0)]);
@@ -187,7 +194,7 @@ mod tests {
     #[test]
     fn without_a_pathfinder_it_has_no_answers() {
         let mut app = app();
-        assert_eq!(measured(&mut app, &[Item::Point(Vec3::X)]), [None]);
+        assert_eq!(measured(&mut app, &[EnvQueryItem::place(Vec3::X)]), [None]);
     }
 
     #[test]
@@ -207,6 +214,6 @@ mod tests {
         app.ticks(2);
         let found = app.world().get::<Found<Spot>>(agent).expect("found");
         assert!(found.iter().count() > 0);
-        assert!(found.iter().all(|scored| scored.item.position().x < 5.0));
+        assert!(found.iter().all(|scored| scored.item.position.x < 5.0));
     }
 }

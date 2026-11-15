@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_arbor_eqs::query::{Item, QueryContext};
+use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
 use bevy_arbor_eqs::test::{Cost, Test};
 
 use super::Reads;
@@ -18,7 +18,9 @@ type Nearest = (
 );
 
 /// How far an item is from the nearest collider that blocks sight: 0 inside
-/// one. No answer where there's none at all.
+/// one.
+///
+/// No answer where there's none at all.
 ///
 /// What blocks sight is what's on [`Occluders`]' layers, unless set
 /// [`on`](Self::on) others. The agent's own colliders don't count, nor a
@@ -56,14 +58,14 @@ impl Default for OccluderDistance {
 }
 
 impl Test for OccluderDistance {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
         self.test_all(cx, std::slice::from_ref(item))
             .into_iter()
             .next()
             .flatten()
     }
 
-    fn test_all(&self, cx: &QueryContext, items: &[Item]) -> Vec<Option<f32>> {
+    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         let agent = cx.agent();
         self.nearest
             .with(
@@ -76,14 +78,14 @@ impl Test for OccluderDistance {
                     items
                         .iter()
                         .map(|item| {
-                            let at = dim::point(item.position());
+                            let at = dim::point(item.position);
                             // Neither the agent's own, nor a thing item's own,
                             // nor trigger volumes.
                             let counts = |entity: Entity| {
                                 !triggers.contains(entity)
                                     && !under(&colliders, &parents, entity, agent)
                                     && !item
-                                        .entity()
+                                        .entity
                                         .is_some_and(|own| owns(&colliders, &parents, entity, own))
                             };
                             // Solid: a point inside a collider is on it, 0
@@ -110,7 +112,7 @@ impl Test for OccluderDistance {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::{Item, QueryContext};
+    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
     use bevy_arbor_eqs::test::Test;
 
     use crate::avian::prelude::*;
@@ -124,8 +126,8 @@ mod tests {
         at: Vec3,
     ) -> Option<f32> {
         test.prepare(app.world_mut());
-        let cx = QueryContext::new(app.world(), agent, SPACE, 1);
-        test.test(&cx, &Item::Point(at))
+        let cx = EnvQueryContext::new(app.world(), agent, SPACE, 1);
+        test.test(&cx, &EnvQueryItem::place(at))
     }
 
     #[test]

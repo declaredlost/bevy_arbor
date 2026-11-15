@@ -7,11 +7,13 @@ use bevy_arbor_perception::sense::{Touch, Touched};
 use crate::avian::prelude::*;
 use crate::plugin::{check_space, schedule};
 
-/// What touches an agent with [`Touch`] is felt: avian's `CollisionStart`,
-/// written as [`Touched`], before perception gathers. An agent with `Touch`
-/// gets avian's `CollisionEventsEnabled`, so its own collider reports, and
-/// loses it with `Touch`, unless it had one of its own; a collider on a child
-/// of it needs one too.
+/// What touches an agent with [`Touch`] is felt: avian's `CollisionStart`, as
+/// [`Touched`].
+///
+/// It's written before perception gathers. An agent with `Touch` gets avian's
+/// `CollisionEventsEnabled`, so its own collider reports, and loses it with
+/// `Touch`, unless it had one of its own; a collider on a child of it needs one
+/// too.
 ///
 /// Only colliders on `layers` touch, every layer unless set: a monster feels
 /// a sword's hitbox, not the grass. Needs avian's `PhysicsPlugins`; without
@@ -87,8 +89,9 @@ fn unreport(removed: On<Remove<Touch>>, reports: Query<(), With<Reports>>, mut c
     }
 }
 
-/// Each contact an agent with `Touch` is in: felt, if what touched it is on
-/// the layers felt.
+/// Each contact an agent with `Touch` is in: felt, if what touched it counts.
+///
+/// It counts if it's on the layers felt.
 fn feel(
     felt: Res<Felt>,
     mut starts: MessageReader<CollisionStart>,

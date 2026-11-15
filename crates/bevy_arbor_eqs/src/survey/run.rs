@@ -4,13 +4,13 @@ use bevy_arbor_bt::task::{Task, TaskOf};
 use bevy_arbor_perception::Space;
 
 use super::registry::{EnvQueries, Pending, Registered, Request, Seed};
-use super::trace::{SurveyTrace, Weighed};
-use crate::EqsBudget;
-use crate::query::QueryContext;
+use super::trace::{EnvQueryTrace, Weighed};
+use crate::EnvQueryBudget;
+use crate::query::EnvQueryContext;
 
 /// Runs the requests waiting, oldest first, within the budget.
 pub(crate) fn run(world: &mut World) {
-    let budget = world.resource::<EqsBudget>().0;
+    let budget = world.resource::<EnvQueryBudget>().0;
     let queries = world.resource::<EnvQueries>().clone();
     let mut pending = std::mem::take(&mut world.resource_mut::<Pending>().0);
     let start = Instant::now();
@@ -58,9 +58,9 @@ fn survey(world: &mut World, request: &Request, registered: &Registered) {
     registered.query.prepare(world);
     let ran = registered
         .query
-        .run(&QueryContext::new(world, agent, space, seed));
+        .run(&EnvQueryContext::new(world, agent, space, seed));
     let found = !ran.picked.is_empty();
-    if let Some(mut trace) = world.get_mut::<SurveyTrace>(agent) {
+    if let Some(mut trace) = world.get_mut::<EnvQueryTrace>(agent) {
         let picked: Vec<_> = ran.picked.iter().map(|scored| scored.item).collect();
         let items = ran
             .weighed
@@ -71,7 +71,7 @@ fn survey(world: &mut World, request: &Request, registered: &Registered) {
                 picked: picked.contains(&item),
             })
             .collect();
-        trace.set_if_neq(SurveyTrace {
+        trace.set_if_neq(EnvQueryTrace {
             query: (request.name)(),
             items,
         });
@@ -106,9 +106,9 @@ mod tests {
 
     /// The point 3 out along +X, or nothing.
     fn spot(reach: f32) -> EnvQuery {
-        EnvQuery::new(Donut::around(Agent).radius(3.0, 3.0).points(4))
-            .filter(Distance::to(Agent), Filter::at_most(reach))
-            .score(Dot::of(Agent), Score::lower())
+        EnvQuery::new(Donut::around(Querier).radius(3.0, 3.0).points(4))
+            .filter(Distance::to(Querier), Filter::at_most(reach))
+            .score(Dot::of(Querier), Score::lower())
     }
 
     #[test]
@@ -121,7 +121,7 @@ mod tests {
             app.world().get::<Survey<Spot>>(agent).is_none(),
             "taken off"
         );
-        let behind = found[0].item.position();
+        let behind = found[0].item.position;
         assert!(
             (behind - Vec3::new(0.0, 0.0, 3.0)).length() < 1e-4,
             "{behind}"
@@ -192,7 +192,7 @@ mod tests {
         let mut app = app(Space::Volume);
         app.app_mut()
             .add_env_query(Spot, spot(5.0))
-            .insert_resource(EqsBudget(Duration::ZERO));
+            .insert_resource(EnvQueryBudget(Duration::ZERO));
         let agents: Vec<Entity> = (0..3)
             .map(|_| app.spawn((GlobalTransform::IDENTITY, Survey::of(Spot))))
             .collect();
@@ -230,9 +230,9 @@ mod tests {
     #[test]
     fn a_trace_keeps_how_every_item_was_weighed() {
         let mut app = app(Space::Volume);
-        let agent = app.spawn((GlobalTransform::IDENTITY, SurveyTrace::default()));
+        let agent = app.spawn((GlobalTransform::IDENTITY, EnvQueryTrace::default()));
         survey(&mut app, agent, Spot, spot(5.0));
-        let trace = app.world().get::<SurveyTrace>(agent).unwrap();
+        let trace = app.world().get::<EnvQueryTrace>(agent).unwrap();
         assert_eq!(trace.items.len(), 4);
         assert_eq!(
             trace.items.iter().filter(|weighed| weighed.picked).count(),

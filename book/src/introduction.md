@@ -23,7 +23,7 @@ fn spawn_guard(mut commands: Commands) {
     commands.spawn((
         Guard,
         Sight::new(12.0).with_lose_range(15.0),
-        Team(1),
+        Allegiance(1),
         Facing(Dir3::X),
         Transform::from_xyz(0.0, 0.0, 0.0),
         BehaviorTree::new(behavior_tree! {

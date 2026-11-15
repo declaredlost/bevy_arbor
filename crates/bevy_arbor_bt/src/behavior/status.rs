@@ -24,7 +24,7 @@ impl Status {
     }
 }
 
-/// How something ended: a node, a tree, or a task.
+/// How something ended, a node, a tree, or a task: succeeded or failed.
 #[derive(Reflect, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[reflect(Debug, PartialEq, Hash)]
 pub enum Outcome {

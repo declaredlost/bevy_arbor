@@ -4,7 +4,8 @@
 pub use crate::Space;
 #[doc(no_inline)]
 pub use crate::perceived::{
-    Attitude, Candidates, Forgotten, Lost, Noticed, Perceived, Percept, Team, Trace, Traces,
+    Allegiance, Attitude, Candidates, Forgotten, Lost, Noticed, Perceived, Percept, Stimuli,
+    Stimulus,
 };
 #[doc(no_inline)]
 pub use crate::sense::{

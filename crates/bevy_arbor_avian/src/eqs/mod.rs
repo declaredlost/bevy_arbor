@@ -1,6 +1,7 @@
-//! Environment query tests that ask avian, with the `eqs` feature: whether an
-//! anchor can see each item ([`LineOfSight`]), whether there's room to stand
-//! at it ([`Clearance`]), and how far it is from what blocks sight
+//! Environment query tests that ask avian, with the `eqs` feature.
+//!
+//! Whether an anchor can see each item ([`LineOfSight`]), whether there's room
+//! to stand at it ([`Clearance`]), and how far it is from what blocks sight
 //! ([`OccluderDistance`]).
 
 mod clearance;
@@ -18,8 +19,10 @@ pub use self::clearance::Clearance;
 pub use self::distance::OccluderDistance;
 pub use self::sight::LineOfSight;
 
-/// What a test reads from the world, as a system would, kept for the world
-/// it's built for: a test runs in any world its query is added to.
+/// What a test reads from the world, as a system would, for the world it's
+/// built for.
+///
+/// A test runs in any world its query is added to.
 struct Reads<P: SystemParam + 'static> {
     /// The test's name, for what it warns of.
     test: &'static str,
@@ -37,8 +40,9 @@ impl<P: ReadOnlySystemParam + 'static> Reads<P> {
         }
     }
 
-    /// Builds it for `world`, unless it's built for it already: one built
-    /// for another would fail it.
+    /// Builds it for `world`, unless it's built for it already.
+    ///
+    /// One built for another would fail it.
     fn prepare(&self, world: &mut World) {
         let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
         if kept.as_ref().is_none_or(|(id, _)| *id != world.id()) {
@@ -46,8 +50,9 @@ impl<P: ReadOnlySystemParam + 'static> Reads<P> {
         }
     }
 
-    /// `read` with what it reads from `world`, if it's built for it, and
-    /// what it reads is there. If not, it warns, once.
+    /// `read` with what it reads from `world`, if it's built for it.
+    ///
+    /// Only if what it reads is there, too; if not, it warns, once.
     fn with<R>(&self, world: &World, read: impl FnOnce(SystemParamItem<P>) -> R) -> Option<R> {
         let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
         let Some((_, state)) = kept.as_mut().filter(|(id, _)| *id == world.id()) else {
@@ -71,7 +76,7 @@ impl<P: ReadOnlySystemParam + 'static> Reads<P> {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::{Item, QueryContext};
+    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
     use bevy_arbor_eqs::test::Test;
 
     use super::LineOfSight;
@@ -79,16 +84,24 @@ mod tests {
 
     #[test]
     fn unprepared_or_without_physics_it_has_no_answer() {
-        let test = LineOfSight::from(bevy_arbor_eqs::anchor::Agent);
+        let test = LineOfSight::from(bevy_arbor_eqs::anchor::Querier);
         let mut app = app();
         let agent = looker(&mut app);
         app.tick();
-        let cx = QueryContext::new(app.world(), agent, SPACE, 1);
-        assert_eq!(test.test(&cx, &Item::Point(ahead(3.0))), None, "unprepared");
+        let cx = EnvQueryContext::new(app.world(), agent, SPACE, 1);
+        assert_eq!(
+            test.test(&cx, &EnvQueryItem::place(ahead(3.0))),
+            None,
+            "unprepared"
+        );
         let mut bare = World::new();
         let agent = bare.spawn(GlobalTransform::IDENTITY).id();
         test.prepare(&mut bare);
-        let cx = QueryContext::new(&bare, agent, SPACE, 1);
-        assert_eq!(test.test(&cx, &Item::Point(ahead(3.0))), None, "no physics");
+        let cx = EnvQueryContext::new(&bare, agent, SPACE, 1);
+        assert_eq!(
+            test.test(&cx, &EnvQueryItem::place(ahead(3.0))),
+            None,
+            "no physics"
+        );
     }
 }

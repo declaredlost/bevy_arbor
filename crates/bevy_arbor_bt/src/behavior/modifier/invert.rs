@@ -1,7 +1,10 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::Inspect;
 
 /// Its child, its result reversed.
+#[derive(Inspect)]
 pub(in crate::behavior) struct Invert {
+    #[inspect(child)]
     child: Behavior,
 }
 
@@ -22,10 +25,6 @@ impl Behave for Invert {
 
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.child.cancel(cx);
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
     }
 }
 

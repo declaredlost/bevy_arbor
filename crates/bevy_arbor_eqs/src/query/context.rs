@@ -11,18 +11,19 @@ use crate::anchor::{Locate, Located};
 /// What a query runs with: the world, read-only, and whose query it is.
 ///
 /// What generators, tests and anchors are given.
-pub struct QueryContext<'w> {
+pub struct EnvQueryContext<'w> {
     world: &'w World,
     agent: Entity,
     space: Space,
     /// Where the query's own randomness is up to.
     rng: Cell<u64>,
-    /// Where each anchor was found this run, kept with the anchor, so its
-    /// address isn't another's meanwhile.
+    /// Where each anchor was found this run, kept with the anchor.
+    ///
+    /// The anchor is kept so its address isn't another's meanwhile.
     located: RefCell<Vec<(Arc<dyn Locate>, Rc<[Located]>)>>,
 }
 
-impl<'w> QueryContext<'w> {
+impl<'w> EnvQueryContext<'w> {
     /// `agent`'s query, in `space`, its randomness from `seed`.
     #[must_use]
     pub fn new(world: &'w World, agent: Entity, space: Space, seed: u64) -> Self {
@@ -37,7 +38,9 @@ impl<'w> QueryContext<'w> {
     }
 
     /// Where `anchor` is: located once a run, however many items and tests
-    /// ask, so a test measuring every item from it locates it only once.
+    /// ask.
+    ///
+    /// A test measuring every item from it locates it only once.
     pub fn locate(&self, anchor: &Arc<dyn Locate>) -> Rc<[Located]> {
         if let Some((_, found)) = self
             .located
@@ -81,8 +84,9 @@ impl<'w> QueryContext<'w> {
         Some(self.space.flatten(transform.translation()))
     }
 
-    /// Which way `entity` looks, unit length, or zero if it can't tell: its
-    /// [`Facing`], as sight takes it, else as its transform does.
+    /// Which way `entity` looks, unit length, or zero if it can't tell.
+    ///
+    /// From its [`Facing`], as sight takes it, else from its transform.
     #[must_use]
     pub fn ahead(&self, entity: Entity) -> Vec3 {
         let facing = self.world.get::<Facing>(entity);

@@ -1,9 +1,11 @@
 use super::ordered::Order;
 use crate::behavior::system::Check;
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
-/// Its children in an order shuffled as it starts, by rolls from `roll`, until
-/// one succeeds.
+/// Its children in an order shuffled as it starts, until one succeeds.
+///
+/// The shuffle's rolls come from `roll`.
 pub(in crate::behavior) struct Random {
     roll: Check<f32>,
     children: Vec<Behavior>,
@@ -45,19 +47,21 @@ impl Behave for Random {
             child.cancel(cx);
         }
     }
+}
 
-    fn label(&self) -> String {
-        format!("Random({})", self.roll.name())
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        self.children.iter().map(Child::new).collect()
+impl Inspect for Random {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("Random").param(self.roll.name());
+        for child in &self.children {
+            inspection.child(child);
+        }
     }
 }
 
-/// Where a roll in `0..1` lands among `0..=last`: the roll scaled to the
-/// `last + 1` places, floored, and kept in range (a roll of 1 or more lands on
-/// `last`, below 0 on `0`).
+/// Where a roll in `0..1` lands among `0..=last`, kept in range.
+///
+/// The roll is scaled to the `last + 1` places and floored: a roll of 1 or more
+/// lands on `last`, below 0 on `0`.
 fn pick(rolled: f32, last: usize) -> usize {
     let places = u16::try_from(last + 1).unwrap_or(u16::MAX);
     let scaled = rolled * f32::from(places);

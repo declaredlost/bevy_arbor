@@ -84,7 +84,7 @@ fn sees_intruder(seen: &Perceived<Sight>) -> bool {
 fn spawn(mut commands: Commands) {
     commands.spawn((
         Sight::new(12.0).with_lose_range(15.0),
-        Team(1),
+        Allegiance(1),
         Transform::default(),
         BehaviorTree::new(behavior_tree! {
             Forever => {
@@ -99,7 +99,7 @@ fn spawn(mut commands: Commands) {
 
 /// Moves each chasing guard toward what it sees; `patrol` is alike.
 fn chase(
-    mut tasks: Tasks<&Chase, (&Perceived<Sight>, &mut Transform)>,
+    mut tasks: TaskQuery<&Chase, (&Perceived<Sight>, &mut Transform)>,
     targets: Query<&GlobalTransform>,
 ) {
     tasks.for_each(|_, _, (seen, mut at)| {

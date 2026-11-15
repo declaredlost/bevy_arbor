@@ -168,8 +168,8 @@ behavior_tree! {
 
 ### Shared cooldowns
 
-`cooldown_of::<K>(seconds)` shares one cooldown between every branch keyed by
-`K` on the agent. Running one cools them all. The cooldown is the
+`shared_cooldown::<K>(seconds)` shares one cooldown between every branch keyed
+by `K` on the agent. Running one cools them all. The cooldown is the
 [`Cooling<K>`] component on the agent. Insert one yourself to start it from
 elsewhere. Here, a guard that hears another's alarm doesn't raise its own:
 
@@ -186,14 +186,14 @@ struct Alarm;
 # fn tree() -> Behavior {
 behavior_tree! {
     Select => {
-        when(sees_intruder, cooldown_of::<Alarm>(10.0)) => task(Shout),
+        when(sees_intruder, shared_cooldown::<Alarm>(10.0)) => task(Shout),
     }
 }
 # }
 fn alarm_heard(time: Res<Time>, guards: Query<Entity, With<Guard>>, mut commands: Commands) {
     let over = time.elapsed() + Duration::from_secs(10);
     for guard in &guards {
-        commands.entity(guard).insert(Cooling::<Alarm>::until(over));
+        commands.entity(guard).insert(Cooling::<Alarm>::new(over));
     }
 }
 ```
@@ -218,6 +218,7 @@ use bevy_arbor::bt::decorator::Decorate;
 struct Chasers(u32);
 
 /// At most `max` agents in its branch, counted on `pool`.
+#[derive(Inspect)]
 struct Limit {
     max: u32,
     pool: Entity,
@@ -262,10 +263,10 @@ A decorator that says nothing is asked every tick.
 - A component written every frame wakes every typed condition reading it.
   Write with `set_if_neq`. See [Sleeping](sleeping.md).
 - A system condition can't capture variables. Pass what varies as its
-  parameter.
+  parameter, with `with`: `when(with(within, 6.0))`.
 
 [`Cooling<K>`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/struct.Cooling.html
 [`Decorate`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Decorate.html
-[`Condition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Condition.html
-[`IntoCondition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.IntoCondition.html
+[`Condition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/condition/trait.Condition.html
+[`IntoCondition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/condition/trait.IntoCondition.html
 [`Context`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Context.html

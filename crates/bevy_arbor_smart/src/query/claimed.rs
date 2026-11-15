@@ -1,10 +1,11 @@
 use bevy_arbor_eqs::anchor::{Locate, Located};
-use bevy_arbor_eqs::query::QueryContext;
+use bevy_arbor_eqs::query::EnvQueryContext;
 
 use crate::claim::Claims;
 
-/// An anchor at the slots the agent holds: what a query measures from to be
-/// about the agent's slot, not the agent.
+/// An anchor at the slots the agent holds, for a query about its slot.
+///
+/// What a query measures from to be about the agent's slot, not the agent.
 ///
 /// `Donut::around(ClaimedSlots)` is the places round it, a spot to step off
 /// a turret to, and `Distance::to(ClaimedSlots)` how far each item is from
@@ -13,7 +14,7 @@ use crate::claim::Claims;
 pub struct ClaimedSlots;
 
 impl Locate for ClaimedSlots {
-    fn locate(&self, cx: &QueryContext, out: &mut Vec<Located>) {
+    fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
         let Some(claims) = cx.world().get::<Claims>(cx.agent()) else {
             return;
         };
@@ -34,7 +35,7 @@ mod tests {
     use bevy::prelude::*;
     use bevy_arbor_eqs::anchor::Locate;
     use bevy_arbor_eqs::prelude::*;
-    use bevy_arbor_eqs::query::QueryContext;
+    use bevy_arbor_eqs::query::EnvQueryContext;
     use bevy_arbor_perception::Space;
 
     use super::ClaimedSlots;
@@ -42,7 +43,7 @@ mod tests {
     use crate::testing::*;
 
     fn located(app: &bevy_harness::TestApp, agent: Entity) -> Vec<Vec3> {
-        let cx = QueryContext::new(app.world(), agent, Space::Volume, 1);
+        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
         let mut out = Vec::new();
         ClaimedSlots.locate(&cx, &mut out);
         out.into_iter().map(|located| located.position).collect()
@@ -72,7 +73,7 @@ mod tests {
         app.entity_mut(seats[0]).insert(ClaimedBy(agent));
         app.app_mut().add_env_query(
             NearSeat,
-            EnvQuery::new(Donut::around(Agent).radius(2.0, 2.0).points(4))
+            EnvQuery::new(Donut::around(Querier).radius(2.0, 2.0).points(4))
                 .score(Distance::to(ClaimedSlots), Score::lower()),
         );
         app.entity_mut(agent).insert(Survey::of(NearSeat));

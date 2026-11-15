@@ -22,9 +22,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-# How queries weighed their items: `EqsGizmos`
+# How queries weighed their items: `EnvQueryGizmos`
 eqs = ["dep:bevy_arbor_eqs"]
-# Smart objects' slots: `SmartGizmos`
+# Smart objects' slots: `SmartObjectGizmos`
 smart = ["dep:bevy_arbor_smart"]
 # Where agents are going: `NavGizmos`
 nav = ["dep:bevy_arbor_nav"]

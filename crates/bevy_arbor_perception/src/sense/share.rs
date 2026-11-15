@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use super::Sense;
-use crate::perceived::{Attitude, Candidates, Perceived, Team, Trace, Traces};
+use crate::perceived::{Allegiance, Attitude, Candidates, Perceived, Stimuli, Stimulus};
 use crate::space::Space;
 
 /// On an agent: it takes what others [`Share`] with it, as
@@ -17,8 +17,9 @@ impl Sense for Shared {
     const MEMORY: Duration = Duration::from_secs(10);
 }
 
-/// `from` tells others what it perceives and remembers, by every sense: a
-/// whole squad reacts when one spots you. Write it as a message.
+/// `from` tells others what it perceives and remembers, by every sense.
+///
+/// A whole squad reacts when one spots you. Write it as a message.
 ///
 /// What's active for it now (in its view) is passed on where it is now; what
 /// it remembers, from when and where it last sensed it. Each listener, an
@@ -34,10 +35,10 @@ pub struct Share {
     pub about: Option<Entity>,
 }
 
-/// Who's told what's shared.
+/// Who's told what's shared: allies within range, or only the agents named.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Listeners {
-    /// Agents on the teller's [`Team`] within `range` of it.
+    /// Agents of the teller's [`Allegiance`] within `range` of it.
     Allies {
         /// How far it's heard.
         range: f32,
@@ -76,7 +77,9 @@ impl Share {
 }
 
 /// What tellers pass on, by every sense, for [`tell`] to hand their
-/// listeners: each with the order of the [`Share`] it's for.
+/// listeners.
+///
+/// Each with the order of the [`Share`] it's for.
 #[derive(Resource, Default)]
 pub(crate) struct Told(Vec<Passed>);
 
@@ -85,23 +88,24 @@ struct Passed {
     /// The order of the share it's for.
     share: usize,
     what: Entity,
-    trace: Trace,
+    stimulus: Stimulus,
 }
 
-/// What each teller perceives by `S` is gathered to be passed on: what's
-/// active for it, where it is now; else when and where it was last sensed.
-/// One of these runs for each sense, before [`tell`].
+/// What each teller perceives by `S` is gathered to be passed on.
+///
+/// What's active for it, where it is now; else when and where it was last
+/// sensed. One of these runs for each sense, before [`tell`].
 pub(crate) fn told<S: Sense>(
     time: Res<Time>,
     space: Res<Space>,
     mut shares: MessageReader<Share>,
-    tellers: Query<(&Perceived<S>, &Traces<S>)>,
+    tellers: Query<(&Perceived<S>, &Stimuli<S>)>,
     places: Query<&GlobalTransform>,
     mut told: ResMut<Told>,
 ) {
     let (now, space) = (time.elapsed(), *space);
     for (share, id) in shares.read_with_id() {
-        let Ok((perceived, traces)) = tellers.get(share.from) else {
+        let Ok((perceived, stimuli)) = tellers.get(share.from) else {
             continue;
         };
         let about = perceived
@@ -113,15 +117,15 @@ pub(crate) fn told<S: Sense>(
                 .is_active()
                 .then(|| places.get(entity).ok())
                 .flatten()
-                .map(|transform| Trace {
+                .map(|transform| Stimulus {
                     at: now,
                     position: space.flatten(transform.translation()),
                 });
-            if let Some(trace) = live.or_else(|| traces.get(entity)) {
+            if let Some(stimulus) = live.or_else(|| stimuli.get(entity)) {
                 told.0.push(Passed {
                     share: id.id,
                     what: entity,
-                    trace,
+                    stimulus,
                 });
             }
         }
@@ -129,15 +133,17 @@ pub(crate) fn told<S: Sense>(
 }
 
 /// Each [`Share`]'s listeners are found once, and handed what its teller
-/// passes on by every sense, as candidates for [`Shared`].
+/// passes on.
+///
+/// By every sense, as candidates for [`Shared`].
 pub(crate) fn tell(
     space: Res<Space>,
     mut shares: MessageReader<Share>,
-    tellers: Query<(&GlobalTransform, Option<&Team>)>,
+    tellers: Query<(&GlobalTransform, Option<&Allegiance>)>,
     mut listeners: Query<(
         Entity,
         &GlobalTransform,
-        Option<&Team>,
+        Option<&Allegiance>,
         &mut Candidates<Shared>,
     )>,
     mut told: ResMut<Told>,
@@ -158,12 +164,12 @@ pub(crate) fn tell(
         }
         let tell = |listener: Entity, mut candidates: Mut<Candidates<Shared>>| {
             for passed in told.iter().filter(|passed| passed.what != listener) {
-                candidates.sense_at(passed.what, passed.trace.position, passed.trace.at);
+                candidates.sense_at(passed.what, passed.stimulus.position, passed.stimulus.at);
             }
         };
         match &share.to {
             Listeners::Allies { range } => {
-                let Ok((teller, team)) = tellers.get(share.from) else {
+                let Ok((teller, allegiance)) = tellers.get(share.from) else {
                     continue;
                 };
                 let at = space.flatten(teller.translation());
@@ -171,8 +177,8 @@ pub(crate) fn tell(
                     let near = *range > 0.0
                         && space.flatten(transform.translation()).distance_squared(at)
                             <= range * range;
-                    let allied =
-                        Team::attitude(team.copied(), theirs.copied()) == Attitude::Friendly;
+                    let allied = Allegiance::attitude(allegiance.copied(), theirs.copied())
+                        == Attitude::Friendly;
                     if listener != share.from && near && allied {
                         tell(listener, candidates);
                     }
@@ -204,24 +210,32 @@ mod tests {
     use crate::prelude::*;
     use crate::testing::*;
 
-    /// An agent on `team` at `at` that perceives only what it's told.
-    fn listener(app: &mut TestApp, team: u8, at: Vec3) -> Entity {
-        app.spawn((Shared, Team(team), GlobalTransform::from_translation(at)))
+    /// An agent of `allegiance` at `at` that perceives only what it's told.
+    fn listener(app: &mut TestApp, allegiance: u8, at: Vec3) -> Entity {
+        app.spawn((
+            Shared,
+            Allegiance(allegiance),
+            GlobalTransform::from_translation(at),
+        ))
     }
 
-    /// An agent on team 1 at the origin that sees all round, every tick.
+    /// An agent of allegiance 1 at the origin that sees all round, every tick.
     fn teller(app: &mut TestApp) -> Entity {
         app.spawn((
             Sight::new(10.0)
                 .with_half_angle(PI)
                 .with_interval(Duration::ZERO),
-            Team(1),
+            Allegiance(1),
             GlobalTransform::IDENTITY,
         ))
     }
 
     fn enemy(app: &mut TestApp, at: Vec3) -> Entity {
-        app.spawn((Perceivable, Team(2), GlobalTransform::from_translation(at)))
+        app.spawn((
+            Perceivable,
+            Allegiance(2),
+            GlobalTransform::from_translation(at),
+        ))
     }
 
     #[test]
@@ -240,7 +254,7 @@ mod tests {
             app.tick();
             let told = perceived::<Shared>(&app, ally).get(target).unwrap();
             assert_eq!(
-                traces::<Shared>(&app, ally).get(target).unwrap().position,
+                stimuli::<Shared>(&app, ally).get(target).unwrap().position,
                 space.flatten(ahead(space, 6.0)),
                 "{space:?}: where it is now"
             );
@@ -267,11 +281,11 @@ mod tests {
             app.entity_mut(target)
                 .insert(GlobalTransform::from_translation(ahead(space, 50.0)));
             app.tick();
-            let lost = traces::<Sight>(&app, teller).get(target).unwrap();
+            let lost = stimuli::<Sight>(&app, teller).get(target).unwrap();
             app.ticks(5);
             app.write(Share::to(teller, [ally]));
             app.tick();
-            let told = traces::<Shared>(&app, ally).get(target).unwrap();
+            let told = stimuli::<Shared>(&app, ally).get(target).unwrap();
             assert_eq!(told, lost, "{space:?}: when and where it was lost");
         }
     }
@@ -286,7 +300,7 @@ mod tests {
             let ally = app.spawn((
                 Shared,
                 Perceivable,
-                Team(1),
+                Allegiance(1),
                 GlobalTransform::from_translation(ahead(space, 2.0)),
             ));
             app.tick();

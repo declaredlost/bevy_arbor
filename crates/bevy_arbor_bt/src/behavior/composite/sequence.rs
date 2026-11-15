@@ -1,7 +1,10 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::Inspect;
 
 /// Its children in turn, until one fails.
+#[derive(Inspect)]
 pub(in crate::behavior) struct Sequence {
+    #[inspect(children)]
     children: Vec<Behavior>,
     at: usize,
 }
@@ -23,7 +26,7 @@ impl Behave for Sequence {
                 Status::Running => return Status::Running,
                 Status::Failure => return Status::Failure,
                 // Asked to stop, it doesn't start the next.
-                Status::Success if cx.interrupted() => break,
+                Status::Success if cx.is_interrupted() => break,
                 Status::Success => self.at += 1,
             }
         }
@@ -34,10 +37,6 @@ impl Behave for Sequence {
         for child in &mut self.children {
             child.cancel(cx);
         }
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        self.children.iter().map(Child::new).collect()
     }
 }
 

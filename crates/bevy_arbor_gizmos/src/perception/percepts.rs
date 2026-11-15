@@ -1,37 +1,39 @@
 use bevy::prelude::*;
 use bevy_arbor_perception::Space;
-use bevy_arbor_perception::perceived::{Attitude, Perceived, Traces};
+use bevy_arbor_perception::perceived::{Attitude, Perceived, Stimuli};
 use bevy_arbor_perception::sense::Sense;
 
 use super::{PerceptionGizmos, ShowPerception};
 
 /// For the sense `S`: a line from each agent to what's active for it (in its
-/// view), colored by attitude, and a cross where what it only remembers was
-/// last sensed.
+/// view).
+///
+/// Each line is colored by attitude, and a cross marks where what it only
+/// remembers was last sensed.
 pub(super) fn draw<S: Sense>(
     mut gizmos: Gizmos<PerceptionGizmos>,
     space: Res<Space>,
     places: Query<&GlobalTransform>,
     agents: Query<(
         &Perceived<S>,
-        &Traces<S>,
+        &Stimuli<S>,
         &GlobalTransform,
         Has<ShowPerception>,
     )>,
 ) {
     let (space, config) = (*space, gizmos.config_ext.clone());
-    for (perceived, traces, transform, shown) in &agents {
+    for (perceived, stimuli, transform, shown) in &agents {
         if !config.shows(shown) {
             continue;
         }
         let at = space.flatten(transform.translation());
         for percept in perceived.iter() {
             if !percept.is_active() {
-                if let (Some(color), Some(trace)) =
-                    (config.remembered, traces.get(percept.entity()))
+                if let (Some(color), Some(stimulus)) =
+                    (config.remembered, stimuli.get(percept.entity()))
                 {
                     gizmos.cross(
-                        Isometry3d::from_translation(trace.position),
+                        Isometry3d::from_translation(stimulus.position),
                         config.cross_size,
                         color,
                     );

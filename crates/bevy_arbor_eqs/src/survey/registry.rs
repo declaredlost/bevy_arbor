@@ -8,12 +8,14 @@ use bevy::utils::prelude::ShortName;
 
 use super::found::Found;
 use super::request::Survey;
-use crate::query::{EnvQuery, Scored};
+use crate::query::{EnvQuery, ScoredItem};
 
-/// Adding queries to an app.
+/// Adding queries to an app, keyed by a type, for a [`Survey`] to run.
 pub trait EnvQueryApp {
     /// Adds `query`, keyed by `Q`: what a [`Survey<Q>`] runs, and its
-    /// [`Found<Q>`] holds. Adding another keyed alike replaces it.
+    /// [`Found<Q>`] holds.
+    ///
+    /// Adding another keyed alike replaces it.
     fn add_env_query<Q: Send + Sync + 'static>(&mut self, key: Q, query: EnvQuery) -> &mut Self;
 }
 
@@ -40,7 +42,7 @@ pub(crate) struct EnvQueries(pub(super) Arc<HashMap<TypeId, Registered>>);
 pub(super) struct Registered {
     pub(super) query: Arc<EnvQuery>,
     /// Puts what it found on an agent.
-    pub(super) write: fn(&mut World, Entity, Vec<Scored>),
+    pub(super) write: fn(&mut World, Entity, Vec<ScoredItem>),
 }
 
 /// A survey waiting to run, without its key's type.
@@ -88,9 +90,10 @@ impl Default for Seed {
     }
 }
 
-/// Puts `found` on `agent` as its `Found<Q>`, or takes it off if it's empty;
-/// changed only if it's different.
-fn write<Q: Send + Sync + 'static>(world: &mut World, agent: Entity, found: Vec<Scored>) {
+/// Puts `found` on `agent` as its `Found<Q>`, or takes it off if it's empty.
+///
+/// Changed only if it's different.
+fn write<Q: Send + Sync + 'static>(world: &mut World, agent: Entity, found: Vec<ScoredItem>) {
     let Ok(mut agent) = world.get_entity_mut(agent) else {
         return;
     };

@@ -60,8 +60,8 @@ struct Turret;
 fn setup(app: &mut App) {
     app.add_env_query(
         Turret,
-        EnvQuery::new(FreeSlots::<Gunner>::within(Agent, 20.0))
-            .score(Distance::to(Agent), Score::lower()),
+        EnvQuery::new(FreeSlots::<Gunner>::within(Querier, 20.0))
+            .score(Distance::to(Querier), Score::lower()),
     );
 }
 ```
@@ -101,7 +101,7 @@ your task. It finds the slot in the guard's [`Claims`]:
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct GoToSlot;
 fn go_to_slot(
-    mut tasks: Tasks<&GoToSlot, (&Claims, &mut Transform)>,
+    mut tasks: TaskQuery<&GoToSlot, (&Claims, &mut Transform)>,
     slots: Query<&GlobalTransform, With<SlotOf>>,
 ) {
     tasks.for_each(|_, mut task, (claims, mut at)| {
@@ -140,8 +140,8 @@ of its own, it's set aside while the slot's runs, and put back after.
   the object despawns them.
 - **Disabled slots.** A slot with `SlotDisabled` can't be found or claimed: a
   broken turret.
-- **[`SmartPlugin`].** It's in `ArborPlugins`. It registers the components up
-  front, so slots can be found before any is claimed.
+- **[`SmartObjectPlugin`].** It's in `ArborPlugins`. It registers the components
+  up front, so slots can be found before any is claimed.
 
 ## Queries about the slot
 
@@ -183,4 +183,4 @@ fn setup(app: &mut App) {
 [`claim`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/claim/fn.claim.html
 [`Claims`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/claim/struct.Claims.html
 [`ClaimedBy`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/claim/struct.ClaimedBy.html
-[`SmartPlugin`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/struct.SmartPlugin.html
+[`SmartObjectPlugin`]: https://docs.rs/bevy_arbor_smart/latest/bevy_arbor_smart/struct.SmartObjectPlugin.html

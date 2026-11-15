@@ -1,12 +1,16 @@
 use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::*;
 
-use super::{Attitude, Candidate, Candidates, Lost, Noticed, Perceived, Team, Trace, Traces};
+use super::{
+    Allegiance, Attitude, Candidate, Candidates, Lost, Noticed, Perceived, Stimuli, Stimulus,
+};
 use crate::sense::{Sense, Sensors};
 use crate::space::Space;
 
 /// Each sensor of a sustained sense that looked this tick settles what it
-/// senses now: what it wasn't blocked from.
+/// senses.
+///
+/// What it senses now is what it wasn't blocked from.
 pub(crate) fn settle<S: Sense>(mut sensors: Query<&mut Candidates<S>>) {
     if !S::SUSTAINED {
         return;
@@ -17,7 +21,7 @@ pub(crate) fn settle<S: Sense>(mut sensors: Query<&mut Candidates<S>>) {
         }
         let candidates = candidates.as_mut();
         candidates.sensing.clear();
-        for candidate in candidates.list.iter().filter(|c| !c.blocked()) {
+        for candidate in candidates.list.iter().filter(|c| !c.is_blocked()) {
             if !candidates.sensing.contains(&candidate.entity()) {
                 candidates.sensing.push(candidate.entity());
             }
@@ -25,19 +29,21 @@ pub(crate) fn settle<S: Sense>(mut sensors: Query<&mut Candidates<S>>) {
     });
 }
 
-/// One attitude for each thing sensed, however many sensors sensed it: one a
-/// system set beats `mine` against its team's.
+/// One attitude for each thing sensed, however many sensors sensed it.
+///
+/// One a system set beats `mine` against its allegiance's.
 fn attitudes<'a>(
     sensed: impl Iterator<Item = &'a Candidate>,
-    mine: Option<Team>,
-    teams: &Query<&Team>,
+    mine: Option<Allegiance>,
+    allegiances: &Query<&Allegiance>,
 ) -> EntityHashMap<Attitude> {
     let mut attitudes = EntityHashMap::<(Attitude, bool)>::default();
     for candidate in sensed {
         let set = candidate.attitude();
         let slot = attitudes.entry(candidate.entity()).or_insert_with(|| {
-            let team = Team::attitude(mine, teams.get(candidate.entity()).ok().copied());
-            (set.unwrap_or(team), set.is_some())
+            let allegiance =
+                Allegiance::attitude(mine, allegiances.get(candidate.entity()).ok().copied());
+            (set.unwrap_or(allegiance), set.is_some())
         });
         if let Some(set) = set
             && !slot.1
@@ -51,23 +57,24 @@ fn attitudes<'a>(
         .collect()
 }
 
-/// Writes what an agent and its sensors sensed by `S` to its `Perceived<S>`,
-/// changing it only when something is noticed or lost, or its attitude
-/// changes, and when and where to its `Traces<S>`; and triggers [`Noticed`]
+/// Writes what an agent and its sensors sensed by `S` to its `Perceived<S>`.
+///
+/// It changes that only when something is noticed or lost, or its attitude
+/// changes, and writes when and where to its `Stimuli<S>`. Triggers [`Noticed`]
 /// and [`Lost`].
 pub(crate) fn commit<S: Sense>(
     time: Res<Time>,
     space: Res<Space>,
     commands: ParallelCommands,
-    teams: Query<&Team>,
+    allegiances: Query<&Allegiance>,
     places: Query<&GlobalTransform>,
     readings: Query<&Candidates<S>>,
-    mut agents: Query<(Entity, &mut Perceived<S>, &mut Traces<S>, Option<&Sensors>)>,
+    mut agents: Query<(Entity, &mut Perceived<S>, &mut Stimuli<S>, Option<&Sensors>)>,
 ) {
     let (now, space) = (time.elapsed(), *space);
     agents
         .par_iter_mut()
-        .for_each(|(agent, mut perceived, mut traces, sensors)| {
+        .for_each(|(agent, mut perceived, mut stimuli, sensors)| {
             let sources: Vec<&Candidates<S>> = std::iter::once(agent)
                 .chain(sensors.into_iter().flat_map(Sensors::iter))
                 .filter_map(|sensor| readings.get(sensor).ok())
@@ -77,19 +84,19 @@ pub(crate) fn commit<S: Sense>(
             if !looked && sources.iter().all(|source| source.list.is_empty()) {
                 return;
             }
-            let (mut changed, mut traced) = (false, false);
+            let (mut changed, mut recorded) = (false, false);
             let (mut noticed, mut lost) = (Vec::new(), Vec::new());
             let percepts = perceived.bypass_change_detection();
-            let known = traces.bypass_change_detection();
+            let known = stimuli.bypass_change_detection();
             percepts.recheck = false;
             let memory = percepts.memory();
             let sensed = || {
                 sources
                     .iter()
                     .flat_map(|source| source.list.iter())
-                    .filter(|candidate| !candidate.blocked() && candidate.entity() != agent)
+                    .filter(|candidate| !candidate.is_blocked() && candidate.entity() != agent)
             };
-            let attitudes = attitudes(sensed(), teams.get(agent).ok().copied(), &teams);
+            let attitudes = attitudes(sensed(), allegiances.get(agent).ok().copied(), &allegiances);
             for candidate in sensed() {
                 // Sensed so long ago it'd be forgotten at once, as an old
                 // memory shared: not noticed at all.
@@ -100,19 +107,19 @@ pub(crate) fn commit<S: Sense>(
                     continue;
                 }
                 let attitude = attitudes[&candidate.entity()];
-                let trace = Trace {
+                let stimulus = Stimulus {
                     at: candidate.at().unwrap_or(now),
                     position: candidate.position(),
                 };
                 let (percept, added) = percepts.entry(candidate.entity(), attitude);
                 changed |= percept.set_attitude(attitude);
-                // A sustained sense's trace is from as it became active; a
+                // A sustained sense's stimulus is from as it became active; a
                 // moment's, the newest.
                 let activated = S::SUSTAINED && percept.set_active(true);
                 if activated {
-                    traced |= known.set(candidate.entity(), trace);
+                    recorded |= known.set(candidate.entity(), stimulus);
                 } else if !S::SUSTAINED {
-                    traced |= known.renew(candidate.entity(), trace);
+                    recorded |= known.renew(candidate.entity(), stimulus);
                 }
                 changed |= added || activated;
                 // New to it, or active again.
@@ -133,22 +140,26 @@ pub(crate) fn commit<S: Sense>(
                     // was sensed last.
                     let entity = percept.entity();
                     let position = places.get(entity).map_or_else(
-                        |_| known.get(entity).map_or(Vec3::ZERO, |trace| trace.position),
+                        |_| {
+                            known
+                                .get(entity)
+                                .map_or(Vec3::ZERO, |stimulus| stimulus.position)
+                        },
                         |transform| space.flatten(transform.translation()),
                     );
                     percept.set_active(false);
-                    known.set(entity, Trace { at: now, position });
+                    known.set(entity, Stimulus { at: now, position });
                     lost.push(entity);
-                    (changed, traced) = (true, true);
+                    (changed, recorded) = (true, true);
                 }
             }
             if changed {
                 perceived.set_changed();
             }
-            if traced {
-                traces.set_changed();
+            if recorded {
+                stimuli.set_changed();
             }
-            if changed || traced {
+            if changed || recorded {
                 // When it next forgets may have changed.
                 perceived.bypass_change_detection().next_fade = None;
             }
@@ -236,8 +247,9 @@ mod tests {
         }
     }
 
-    /// What the agent's own looking finds, a system sets hostile; what its
-    /// sensors find, it leaves to teams.
+    /// What the agent's own looking finds, a system sets hostile.
+    ///
+    /// What its sensors find, it leaves to allegiances.
     fn hostile_to_the_agent_only(mut own: Query<&mut Candidates<Sight>, Without<SensorOf>>) {
         for mut candidates in &mut own {
             for candidate in candidates.iter_mut() {

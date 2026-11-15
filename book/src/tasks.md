@@ -7,7 +7,7 @@ how it went.
 ## Chasing and shooting
 
 `task(Chase)` spawns an entity with `Chase`, a [`Task`], and a [`TaskOf`]
-pointing at the guard. A system finds it with [`Tasks`], which pairs each
+pointing at the guard. A system finds it with [`TaskQuery`], which pairs each
 task with what you ask of its agent:
 
 ```rust
@@ -23,7 +23,7 @@ struct Shoot;
 struct Ammo(u32);
 
 fn chase(
-    mut tasks: Tasks<&Chase, (&Perceived<Sight>, &mut Transform)>,
+    mut tasks: TaskQuery<&Chase, (&Perceived<Sight>, &mut Transform)>,
     places: Query<&GlobalTransform>,
     time: Res<Time>,
 ) {
@@ -44,7 +44,7 @@ fn chase(
     });
 }
 
-fn shoot(mut tasks: Tasks<&Shoot, &mut Ammo>) {
+fn shoot(mut tasks: TaskQuery<&Shoot, &mut Ammo>) {
     tasks.for_each(|_, mut task, mut ammo| {
         if ammo.0 == 0 {
             task.fail();
@@ -82,8 +82,8 @@ fn main() {
 - `task.elapsed()` is how long the task has run, by the tree's clock. It
   counts in whatever schedule your task system runs, and goes on while the
   tree sleeps.
-- [`Tasks`] skips tasks that already reported and tasks of paused trees.
-- [`Tasks`] is a shortcut for a query of tasks and a query of agents, paired
+- [`TaskQuery`] skips tasks that already reported and tasks of paused trees.
+- [`TaskQuery`] is a shortcut for a query of tasks and a query of agents, paired
   by `TaskOf`. You can write those two queries yourself.
 - A task despawned by anything other than its tree fails.
 
@@ -134,18 +134,18 @@ fn flash_off(ended: On<Remove<Shoot>>, tasks: Query<(&Task, &TaskOf)>, mut comma
 `On<Remove<..>>` runs however the task goes: it reported, it was canceled, or
 its agent was despawned. Its [`Task`] is still there, with the outcome.
 
-An agent's [`AgentTasks`] lists its running tasks. Despawning the agent
+An agent's [`Tasks`] lists its running tasks. Despawning the agent
 despawns them.
 
 ## Names
 
 A task is named after its bundle's type, or the first component of a tuple:
 `task((Reload, Graceful))` is `Reload`. The name goes in its `Name` and in
-the [`TreeTrace`]. Give your own with `task("Warning shot", Shoot)`.
+the [`BehaviorTreeTrace`]. Give your own with `task("Warning shot", Shoot)`.
 
-## State
+## Insert
 
-`State(bundle) => { .. }` puts `bundle` on the agent while its child runs,
+`Insert(bundle) => { .. }` puts `bundle` on the agent while its child runs,
 and removes it when the child ends or is canceled. Use it for systems that
 should work only during a branch. The guard is `Alert` for the whole fight:
 
@@ -161,7 +161,7 @@ struct Alert;
 # fn tree() -> Behavior {
 behavior_tree! {
     Select => {
-        when(sees_intruder) => State(Alert) => {
+        when(sees_intruder) => Insert(Alert) => {
             task(Chase),
             task(Shoot),
         },
@@ -171,7 +171,7 @@ behavior_tree! {
 ```
 
 A system filtering on `With<Alert>` then runs only while the guard fights.
-A single task doesn't need `State`: filter on the task itself.
+A single task doesn't need `Insert`: filter on the task itself.
 
 ## Pitfalls
 
@@ -182,7 +182,7 @@ A single task doesn't need `State`: filter on the task itself.
 
 [`Task`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Task.html
 [`TaskOf`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.TaskOf.html
-[`Tasks`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Tasks.html
+[`TaskQuery`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.TaskQuery.html
 [`TaskCommands`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/trait.TaskCommands.html
-[`AgentTasks`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.AgentTasks.html
-[`TreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeTrace.html
+[`Tasks`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Tasks.html
+[`BehaviorTreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTreeTrace.html

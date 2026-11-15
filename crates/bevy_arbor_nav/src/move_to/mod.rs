@@ -2,15 +2,16 @@
 
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
-use bevy_arbor_bt::task::{TaskCommands, TaskOf, Tasks};
+use bevy_arbor_bt::task::{TaskCommands, TaskOf, TaskQuery};
 
 use crate::travel::{Destination, Goal, Route, Travel};
 
-/// A task: get the agent to a place. As it starts, the agent's
-/// [`Destination`] is set and its old [`Travel`] cleared; it succeeds once
-/// your movement says [`Travel::Arrived`], and fails once it says
-/// [`Travel::Unreachable`]. However it ends, cancelled too, the destination
-/// is taken off, so the agent stops.
+/// A task: get the agent to a place, by setting its [`Destination`].
+///
+/// As it starts, the agent's [`Destination`] is set and its old [`Travel`]
+/// cleared; it succeeds once your movement says [`Travel::Arrived`], and fails
+/// once it says [`Travel::Unreachable`]. However it ends, cancelled too, the
+/// destination is taken off, so the agent stops.
 ///
 /// Asked to stop, it stops at once, unless it's `Graceful`: then it carries
 /// on until it arrives, or can't get there, as a move you'd rather finish.
@@ -47,8 +48,9 @@ impl MoveTo {
         Self::to(To::Goal(Goal::Entity(entity)))
     }
 
-    /// To what the environment query keyed by `Q` found for the agent: the
-    /// thing, or the place. It fails if the query found nothing.
+    /// To what the environment query keyed by `Q` found for the agent.
+    ///
+    /// The thing, or the place. It fails if the query found nothing.
     #[cfg(feature = "eqs")]
     #[cfg_attr(docsrs, doc(cfg(feature = "eqs")))]
     #[must_use]
@@ -77,15 +79,17 @@ impl MoveTo {
     }
 }
 
-/// On a `MoveTo` task: the destination it set, so it takes off only that one,
-/// not one set since by another task or by you.
+/// On a `MoveTo` task: the destination it set, so it takes off only that one.
+///
+/// Not one set since by another task or by you.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct Asked(Destination);
 
-/// A `MoveTo` task starting sets its agent's destination, and clears how the
-/// last went: an old `Arrived` isn't this one's. One with nowhere to go
-/// fails. An observer, so it reads what a query found without holding every
-/// component every tick.
+/// A `MoveTo` task starting sets its agent's destination, and clears the last.
+///
+/// It clears how the last went: an old `Arrived` isn't this one's. One with
+/// nowhere to go fails. An observer, so it reads what a query found without
+/// holding every component every tick.
 pub(crate) fn start(added: On<Add<MoveTo>>, mut world: DeferredWorld) {
     let task = added.entity;
     let (Some(&move_to), Some(of)) = (world.get::<MoveTo>(task), world.get::<TaskOf>(task)) else {
@@ -115,10 +119,12 @@ pub(crate) fn start(added: On<Add<MoveTo>>, mut world: DeferredWorld) {
     }
 }
 
-/// Each `MoveTo` task reports as its agent's travel says, and fails if the
-/// entity it's going to is gone: nothing could say it's unreachable.
+/// Each `MoveTo` task reports as its agent's travel says.
+///
+/// It fails if the entity it's going to is gone: nothing could say it's
+/// unreachable.
 pub(crate) fn follow(
-    mut tasks: Tasks<(&MoveTo, Option<&Asked>), Option<&Travel>>,
+    mut tasks: TaskQuery<(&MoveTo, Option<&Asked>), Option<&Travel>>,
     places: Query<&GlobalTransform>,
 ) {
     tasks.for_each(|(_, asked), mut task, travel| {
@@ -135,8 +141,9 @@ pub(crate) fn follow(
     });
 }
 
-/// A `MoveTo` task ending, however it ends, takes its agent's destination
-/// off, if it's still the one it set, with how it went and the way it took:
+/// A `MoveTo` task ending, however it ends, takes its agent's destination off.
+///
+/// Only if it's still the one it set, with how it went and the way it took:
 /// the agent stops.
 pub(crate) fn stop(
     ended: On<Remove<MoveTo>>,

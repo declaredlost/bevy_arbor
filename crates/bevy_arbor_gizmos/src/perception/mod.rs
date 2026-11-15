@@ -1,5 +1,7 @@
-//! Drawing what agents perceive: sight cones, hearing ranges, lines to what's
-//! in view and crosses where what's remembered was.
+//! Drawing what agents perceive: sight cones, hearing ranges, lines and
+//! crosses.
+//!
+//! Lines to what's in view, and crosses where what's remembered was.
 //!
 //! As Bevy's own gizmos do: [`PerceptionGizmos`] says what's drawn, each kind
 //! with a color or none, and for every agent or only those with
@@ -143,7 +145,7 @@ mod tests {
                 .with_lose_range(12.0)
                 .with_interval(Duration::ZERO),
             Hearing::new(8.0),
-            Team(1),
+            Allegiance(1),
             GlobalTransform::IDENTITY,
         ));
         if shown {
@@ -151,7 +153,7 @@ mod tests {
         }
         app.spawn((
             Perceivable,
-            Team(2),
+            Allegiance(2),
             GlobalTransform::from_translation(ahead(space, 5.0)),
         ));
         let gone = thing(app, ahead(space, 6.0));

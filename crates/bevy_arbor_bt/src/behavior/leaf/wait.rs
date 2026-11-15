@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::behavior::{Behave, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection, seconds};
 
 /// Succeeds after its length.
 pub(in crate::behavior) struct Wait {
@@ -32,9 +33,11 @@ impl Behave for Wait {
     }
 
     fn end(&mut self, _cx: &mut Context, _outcome: Option<Outcome>) {}
+}
 
-    fn label(&self) -> String {
-        format!("Wait({}s)", self.length.as_secs_f32())
+impl Inspect for Wait {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("Wait").param(seconds(self.length));
     }
 }
 

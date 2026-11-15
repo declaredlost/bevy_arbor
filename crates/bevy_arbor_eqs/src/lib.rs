@@ -12,4 +12,4 @@ pub mod test;
 #[cfg(test)]
 mod testing;
 
-pub use self::plugin::{EqsBudget, EqsPlugin, EqsSystems};
+pub use self::plugin::{EnvQueryBudget, EnvQueryPlugin, EnvQuerySystems};

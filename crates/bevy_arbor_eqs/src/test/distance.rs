@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use super::Test;
 use crate::anchor::{Locate, Located};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// How far an item is from an anchor: from the nearest, if it's at several.
+///
 /// No answer where the anchor is nowhere.
 #[derive(Clone)]
 pub struct Distance {
@@ -19,10 +20,10 @@ impl Distance {
 }
 
 impl Test for Distance {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
         cx.locate(&self.to)
             .iter()
-            .map(|Located { position, .. }| position.distance(item.position()))
+            .map(|Located { position, .. }| position.distance(item.position))
             .min_by(f32::total_cmp)
     }
 }

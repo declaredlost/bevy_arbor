@@ -98,8 +98,8 @@ fn spawn(mut commands: Commands) {
 fn setup(app: &mut App) {
     app.add_env_query(
         Seat,
-        EnvQuery::new(FreeSlots::<Sit>::within(Agent, 15.0))
-            .score(Distance::to(Agent), Score::lower()),
+        EnvQuery::new(FreeSlots::<Sit>::within(Querier, 15.0))
+            .score(Distance::to(Querier), Score::lower()),
     );
 }
 

@@ -46,8 +46,8 @@ it. The camera looking away doesn't lose what the guard still sees.
 ## Memory
 
 When the intruder goes out of view, the guard doesn't forget it at once. The
-percept stays in `Perceived<Sight>`, no longer active. Its trace, in
-`Traces<Sight>`, says when and where the guard lost it. `remembers_intruder`
+percept stays in `Perceived<Sight>`, no longer active. Its stimulus, in
+`Stimuli<Sight>`, says when and where the guard lost it. `remembers_intruder`
 reads the first:
 
 ```rust
@@ -77,7 +77,7 @@ behavior_tree! {
 # }
 ```
 
-The `Search` task reads the trace and walks to where the intruder was lost:
+The `Search` task reads the stimulus and walks to where the intruder was lost:
 
 ```rust
 # use bevy::prelude::*;
@@ -85,13 +85,13 @@ The `Search` task reads the trace and walks to where the intruder was lost:
 # #[derive(Component, Clone)] struct Search;
 fn search(
     time: Res<Time>,
-    mut tasks: Tasks<&Search, (&Perceived<Sight>, &Traces<Sight>, &mut Transform)>,
+    mut tasks: TaskQuery<&Search, (&Perceived<Sight>, &Stimuli<Sight>, &mut Transform)>,
 ) {
-    tasks.for_each(|_, mut task, (seen, traces, mut at)| {
+    tasks.for_each(|_, mut task, (seen, stimuli, mut at)| {
         let last = seen
             .iter()
             .filter(|p| p.is_hostile() && !p.is_active())
-            .find_map(|p| traces.get(p.entity()));
+            .find_map(|p| stimuli.get(p.entity()));
         let Some(last) = last else {
             task.fail();
             return;
@@ -144,7 +144,7 @@ commands.spawn((
 `Duration::MAX` remembers for good.
 
 Memory belongs to the agent, not to a sensor. The guard and its camera share
-one memory of sight, and one set of traces.
+one memory of sight, and one set of stimuli.
 
 ## Events
 
@@ -183,7 +183,7 @@ forgotten.
   `remembers_intruder`, and keep events for side effects.
 - **A sensor that doesn't follow.** `SensorOf` doesn't move the sensor. Add
   `ChildOf` for that.
-- **A trace is the past.** For the intruder's position while in view, read
+- **A stimulus is the past.** For the intruder's position while in view, read
   its transform.
 
 [`SensorOf`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.SensorOf.html

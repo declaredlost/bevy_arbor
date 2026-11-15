@@ -28,8 +28,9 @@ pub(crate) fn app(space: Space) -> TestApp {
         .build()
 }
 
-/// `distance` ahead of an agent at the origin looking its own way. In 2D, on
-/// another z layer, which doesn't count.
+/// `distance` ahead of an agent at the origin looking its own way.
+///
+/// In 2D, on another z layer, which doesn't count.
 pub(crate) fn ahead(space: Space, distance: f32) -> Vec3 {
     match space {
         Space::Planar => Vec3::new(distance, 0.0, 3.0),
@@ -72,8 +73,8 @@ pub(crate) fn perceived<S: Sense>(app: &TestApp, agent: Entity) -> &Perceived<S>
 }
 
 /// When and where `agent` sensed what it perceives by `S`.
-pub(crate) fn traces<S: Sense>(app: &TestApp, agent: Entity) -> &Traces<S> {
-    app.world().get::<Traces<S>>(agent).unwrap()
+pub(crate) fn stimuli<S: Sense>(app: &TestApp, agent: Entity) -> &Stimuli<S> {
+    app.world().get::<Stimuli<S>>(agent).unwrap()
 }
 
 /// Whether `agent` has `thing` in view.
@@ -114,8 +115,9 @@ pub(crate) fn log(app: &TestApp) -> &[(&'static str, &'static str, Entity)] {
     &app.world().resource::<Log>().0
 }
 
-/// An agent at the origin that sees every tick and hears, remembering for
-/// `sight` and `hearing` seconds.
+/// An agent at the origin that sees every tick and hears, and remembers it.
+///
+/// It remembers for `sight` and `hearing` seconds.
 pub(crate) fn remembering(app: &mut TestApp, sight: f32, hearing: f32) -> Entity {
     let memory = |seconds: f32| {
         if seconds.is_finite() {

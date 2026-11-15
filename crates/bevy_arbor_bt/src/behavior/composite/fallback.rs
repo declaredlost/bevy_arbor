@@ -1,7 +1,9 @@
-use crate::behavior::{Behave, Branch, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Branch, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
-/// The first branch whose decorator passes, asking each decorator only as it
-/// gets there: what's started isn't interrupted.
+/// The first branch whose decorator passes, asking each only as it gets there.
+///
+/// What's started isn't interrupted.
 pub(in crate::behavior) struct Fallback {
     branches: Vec<Branch>,
     active: Option<usize>,
@@ -30,7 +32,7 @@ impl Behave for Fallback {
             }
         }
         // Asked to stop, it doesn't start another.
-        if cx.interrupted() {
+        if cx.is_interrupted() {
             return Status::Failure;
         }
         for index in next..self.branches.len() {
@@ -52,9 +54,11 @@ impl Behave for Fallback {
             branch.cancel(cx);
         }
     }
+}
 
-    fn children(&self) -> Vec<Child<'_>> {
-        self.branches.iter().map(Branch::child).collect()
+impl Inspect for Fallback {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("Fallback").branches(&self.branches);
     }
 }
 

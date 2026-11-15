@@ -69,7 +69,7 @@ finishes, so it just keeps going.
 
 ## Doing the work
 
-Your systems do the work of a task. [`Tasks`] pairs each task with
+Your systems do the work of a task. [`TaskQuery`] pairs each task with
 components of its agent. Here it pairs each `Patrol` with the guard's
 transform and facing:
 
@@ -78,7 +78,7 @@ transform and facing:
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
 fn patrol(
-    mut tasks: Tasks<&Patrol, (&mut Transform, &mut Facing)>,
+    mut tasks: TaskQuery<&Patrol, (&mut Transform, &mut Facing)>,
     time: Res<Time>,
 ) {
     tasks.for_each(|patrol, _task, (mut transform, mut facing)| {
@@ -137,7 +137,7 @@ fn spawn(mut commands: Commands) {
     commands.spawn((
         Guard,
         Sight::new(12.0).with_lose_range(15.0),
-        Team(1),
+        Allegiance(1),
         Facing(Dir3::X),
         Transform::from_xyz(0.0, 0.0, 0.0),
         BehaviorTree::new(guard()),
@@ -145,14 +145,14 @@ fn spawn(mut commands: Commands) {
     commands.spawn((
         Intruder,
         Perceivable,
-        Team(2),
+        Allegiance(2),
         Transform::from_xyz(30.0, 0.0, 0.0),
     ));
 }
 ```
 
-The guard sees 12 units ahead. Once it sees something, it keeps seeing it up
-to 15 units away. The intruder is [`Perceivable`] and on another team, so to
+The guard sees 12 units ahead. Once it sees something, it keeps seeing it up to
+15 units away. The intruder is [`Perceivable`] and of another allegiance, so to
 the guard it is hostile.
 
 `Select` runs the first branch whose condition passes. While the guard sees
@@ -173,7 +173,7 @@ toward it:
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Chase;
 fn chase(
-    mut tasks: Tasks<&Chase, (&Perceived<Sight>, &mut Transform)>,
+    mut tasks: TaskQuery<&Chase, (&Perceived<Sight>, &mut Transform)>,
     targets: Query<&GlobalTransform>,
     time: Res<Time>,
 ) {
@@ -210,7 +210,7 @@ Next, [How it fits together](concepts.md) shows how these parts share a
 tick. [Building trees](trees.md) teaches the guard to fight.
 
 [`ArborSystems`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/struct.ArborSystems.html
-[`Tasks`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Tasks.html
+[`TaskQuery`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.TaskQuery.html
 [`Task`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Task.html
 [`Facing`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Facing.html
 [`Perceivable`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Perceivable.html

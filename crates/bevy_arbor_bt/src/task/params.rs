@@ -3,20 +3,21 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use super::components::{Task, TaskOf};
-use crate::tree::TreePaused;
+use crate::tree::BehaviorTreePaused;
 
 /// A system parameter: tasks with `T`, each paired with `A` of its agent.
 ///
 /// A shortcut for a query of tasks and one of agents, paired by [`TaskOf`]. A
 /// paused tree's tasks are skipped.
 #[derive(SystemParam)]
-pub struct Tasks<'w, 's, T: QueryData + 'static, A: QueryData + 'static> {
+pub struct TaskQuery<'w, 's, T: QueryData + 'static, A: QueryData + 'static> {
     tasks: Query<'w, 's, (T, &'static mut Task, &'static TaskOf)>,
-    agents: Query<'w, 's, A, (Without<Task>, Without<TreePaused>)>,
+    agents: Query<'w, 's, A, (Without<Task>, Without<BehaviorTreePaused>)>,
 }
 
-impl<'s, T: IterQueryData + 'static, A: QueryData + 'static> Tasks<'_, 's, T, A> {
+impl<'s, T: IterQueryData + 'static, A: QueryData + 'static> TaskQuery<'_, 's, T, A> {
     /// Runs `tick` for each task that hasn't reported and whose agent has `A`.
+    ///
     /// A closure, as Bevy's `Query::for_each` takes, since each task and its
     /// agent are lent out together.
     pub fn for_each(
@@ -44,15 +45,15 @@ mod tests {
 
     #[test]
     fn tasks_pairs_each_task_with_its_agent_and_skips_reported_ones() {
-        fn tick(mut tasks: Tasks<&Work, &mut Flags>) {
+        fn tick(mut tasks: TaskQuery<&Work, &mut Flags>) {
             tasks.for_each(|_, mut task, mut flags| {
                 flags.low = true;
                 task.succeed();
             });
         }
         let mut app = TestApp::builder()
-            .plugins(TreePlugin::default())
-            .systems(FixedUpdate, tick.after(TreeSystems))
+            .plugins(BehaviorTreePlugin::default())
+            .systems(FixedUpdate, tick.after(BehaviorTreeSystems))
             .build();
         let npc = agent(&mut app, behavior_tree! { task(Work) });
         app.tick();

@@ -1,28 +1,28 @@
-//! Drawing how queries weighed their items.
+//! Drawing how queries weighed their items: kept, dropped, and picked.
 //!
-//! Every agent with a [`SurveyTrace`] has its last query drawn: each item
-//! kept as a circle, from [`low`](EqsGizmos::low) to
-//! [`high`](EqsGizmos::high) by its score, each dropped as a small one in
-//! [`dropped`](EqsGizmos::dropped), and the one picked ringed in
-//! [`picked`](EqsGizmos::picked). A color of `None` leaves that out. Turn it
-//! off altogether through Bevy's `GizmoConfigStore`, as any gizmo group.
+//! Every agent with a [`EnvQueryTrace`] has its last query drawn: each item
+//! kept as a circle, from [`low`](EnvQueryGizmos::low) to
+//! [`high`](EnvQueryGizmos::high) by its score, each dropped as a small one in
+//! [`dropped`](EnvQueryGizmos::dropped), and the one picked ringed in
+//! [`picked`](EnvQueryGizmos::picked). A color of `None` leaves that out. Turn
+//! it off altogether through Bevy's `GizmoConfigStore`, as any gizmo group.
 
 use bevy::color::palettes::css;
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
-use bevy_arbor_eqs::survey::SurveyTrace;
+use bevy_arbor_eqs::survey::EnvQueryTrace;
 use bevy_arbor_perception::Space;
 
-/// Draws how queries weighed their items, as [`EqsGizmos`] says.
+/// Draws how queries weighed their items, as [`EnvQueryGizmos`] says.
 pub(crate) fn plugin(app: &mut App) {
-    app.init_gizmo_group::<EqsGizmos>()
+    app.init_gizmo_group::<EnvQueryGizmos>()
         .add_systems(PostUpdate, draw.after(TransformSystems::Propagate));
 }
 
 /// What's drawn of queries. A color of `None` leaves that out.
 #[derive(Reflect, GizmoConfigGroup, Debug, Clone)]
 #[reflect(Default)]
-pub struct EqsGizmos {
+pub struct EnvQueryGizmos {
     /// An item kept with the lowest score.
     pub low: Option<Color>,
     /// An item kept with the highest; those between are blended.
@@ -35,7 +35,7 @@ pub struct EqsGizmos {
     pub size: f32,
 }
 
-impl Default for EqsGizmos {
+impl Default for EnvQueryGizmos {
     fn default() -> Self {
         Self {
             low: Some(css::RED.into()),
@@ -48,7 +48,11 @@ impl Default for EqsGizmos {
 }
 
 /// Draws every traced query's items.
-fn draw(mut gizmos: Gizmos<EqsGizmos>, space: Option<Res<Space>>, traces: Query<&SurveyTrace>) {
+fn draw(
+    mut gizmos: Gizmos<EnvQueryGizmos>,
+    space: Option<Res<Space>>,
+    traces: Query<&EnvQueryTrace>,
+) {
     let space = space.map_or_else(Space::default, |space| *space);
     // Circles face the way things stand on: the plane's normal, or up.
     let rotation = match space {
@@ -63,7 +67,7 @@ fn draw(mut gizmos: Gizmos<EqsGizmos>, space: Option<Res<Space>>, traces: Query<
                 (low.min(score), high.max(score))
             });
         for weighed in &trace.items {
-            let at = Isometry3d::new(weighed.item.position(), rotation);
+            let at = Isometry3d::new(weighed.item.position, rotation);
             let color = match weighed.score {
                 Some(score) => {
                     let along = if highest > lowest {
@@ -101,12 +105,12 @@ mod tests {
 
     use bevy::gizmos::{GizmoAsset, GizmoHandles};
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::Item;
-    use bevy_arbor_eqs::survey::{SurveyTrace, Weighed};
+    use bevy_arbor_eqs::query::EnvQueryItem;
+    use bevy_arbor_eqs::survey::{EnvQueryTrace, Weighed};
     use bevy_arbor_perception::prelude::*;
     use bevy_harness::TestApp;
 
-    use super::EqsGizmos;
+    use super::EnvQueryGizmos;
     use crate::ArborGizmosPlugin;
 
     fn gizmo_app() -> TestApp {
@@ -122,7 +126,7 @@ mod tests {
 
     fn drawn(app: &TestApp) -> usize {
         let handles = app.world().resource::<GizmoHandles>();
-        let Some(handle) = handles.handles().get(&TypeId::of::<EqsGizmos>()) else {
+        let Some(handle) = handles.handles().get(&TypeId::of::<EnvQueryGizmos>()) else {
             return 0;
         };
         let assets = app.world().resource::<Assets<GizmoAsset>>();
@@ -140,11 +144,11 @@ mod tests {
         app.tick();
         assert_eq!(drawn(&app), 0, "nothing traced");
         let weighed = |x: f32, score: Option<f32>, picked: bool| Weighed {
-            item: Item::Point(Vec3::new(x, 0.0, 0.0)),
+            item: EnvQueryItem::place(Vec3::new(x, 0.0, 0.0)),
             score,
             picked,
         };
-        app.spawn(SurveyTrace {
+        app.spawn(EnvQueryTrace {
             query: "Spot".to_owned(),
             items: vec![
                 weighed(0.0, Some(1.0), true),

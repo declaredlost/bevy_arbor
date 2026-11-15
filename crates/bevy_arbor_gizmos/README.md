@@ -23,16 +23,16 @@ queries weighed their items, smart objects' slots, and where agents are going.
 - Perception: sight cones out to `range`, fainter to `lose_range`; hearing
   ranges; a line to everything in view, colored by attitude; a cross where
   what's remembered was last sensed.
-- Queries, with `eqs`: each agent's last query from its `SurveyTrace`, kept
+- Queries, with `eqs`: each agent's last query from its `EnvQueryTrace`, kept
   items from red to green by score, dropped ones gray, the pick ringed.
 - Smart objects, with `smart`: every slot, free, claimed with a line to its
   agent, or disabled.
 - Navigation, with `nav`: a ring round each agent's destination, and the
   route it's taking.
-- Each part is a gizmo group of its own, [`PerceptionGizmos`], [`EqsGizmos`],
-  [`SmartGizmos`] and [`NavGizmos`]: a color for each kind of shape, or `None` to leave it
-  out. To draw only some agents, turn `draw_all` off and give them
-  [`ShowPerception`].
+- Each part is a gizmo group of its own, [`PerceptionGizmos`],
+  [`EnvQueryGizmos`], [`SmartObjectGizmos`] and [`NavGizmos`]: a color for each
+  kind of shape, or `None` to leave it out. To draw only some agents, turn
+  `draw_all` off and give them [`ShowPerception`].
 
 ## Installation
 
@@ -96,7 +96,7 @@ or [MIT license](https://github.com/declaredlost/bevy_arbor/blob/main/LICENSE-MI
 
 [`ArborGizmosPlugin`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/struct.ArborGizmosPlugin.html
 [`PerceptionGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/perception/struct.PerceptionGizmos.html
-[`EqsGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/eqs/struct.EqsGizmos.html
-[`SmartGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/smart/struct.SmartGizmos.html
+[`EnvQueryGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/eqs/struct.EnvQueryGizmos.html
+[`SmartObjectGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/smart/struct.SmartObjectGizmos.html
 [`NavGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/nav/struct.NavGizmos.html
 [`ShowPerception`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/perception/struct.ShowPerception.html

@@ -6,7 +6,7 @@ use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 
 use super::systems::Ticking;
-use super::trace::TreeTrace;
+use super::trace::BehaviorTreeTrace;
 use super::wake::{NODE, Owner, Plan, Wakes};
 use crate::behavior::{Behavior, Context, Outcome};
 
@@ -66,8 +66,9 @@ impl BehaviorTree {
         }
     }
 
-    /// Starts a finished tree again from the top, on its next tick. One still
-    /// running is left as it is.
+    /// Starts a finished tree again from the top, on its next tick.
+    ///
+    /// One still running is left as it is.
     pub fn restart(&mut self) {
         if let TreeState::Finished(_) = self.state {
             self.state = TreeState::Fresh;
@@ -83,7 +84,7 @@ impl BehaviorTree {
 impl fmt::Display for BehaviorTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.root {
-            Some(root) => TreeTrace::of(root).fmt(f),
+            Some(root) => BehaviorTreeTrace::of(root).fmt(f),
             None => Ok(()),
         }
     }
@@ -92,12 +93,12 @@ impl fmt::Display for BehaviorTree {
 /// Holds an agent's tree where it is, until it's taken away again.
 ///
 /// No decorators asked, nothing started, its task not ticked by
-/// [`Tasks`](crate::task::Tasks). Time goes on, so a `Wait` or `Timeout` may be
-/// over when it's taken away. One put on by a tree ticked before it, in the
-/// same tick, already holds it.
+/// [`TaskQuery`](crate::task::TaskQuery). Time goes on, so a `Wait` or
+/// `Timeout` may be over when it's taken away. One put on by a tree ticked
+/// before it, in the same tick, already holds it.
 #[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component, Debug, Default)]
-pub struct TreePaused;
+pub struct BehaviorTreePaused;
 
 /// Ticks a tree new on its agent next tick.
 fn inserted(mut world: DeferredWorld, context: HookContext) {
@@ -108,7 +109,7 @@ fn inserted(mut world: DeferredWorld, context: HookContext) {
 
 /// Looks at an unpaused tree next tick: it sees what changed while it was
 /// paused.
-pub(crate) fn unpaused(removed: On<Remove<TreePaused>>, mut wakes: ResMut<Wakes>) {
+pub(crate) fn unpaused(removed: On<Remove<BehaviorTreePaused>>, mut wakes: ResMut<Wakes>) {
     wakes.wake(removed.entity);
 }
 
@@ -269,7 +270,7 @@ mod tests {
 
     fn pause_other(In(agent): In<Entity>, pauses: Query<&Pauses>, mut commands: Commands) -> bool {
         if let Ok(other) = pauses.get(agent) {
-            commands.entity(other.0).insert(TreePaused);
+            commands.entity(other.0).insert(BehaviorTreePaused);
         }
         true
     }
@@ -299,13 +300,13 @@ mod tests {
             },
         );
         app.tick();
-        app.entity_mut(npc).insert(TreePaused);
+        app.entity_mut(npc).insert(BehaviorTreePaused);
         set(&mut app, npc, true, false);
         app.ticks(3);
         assert_eq!(app.count::<With<Other>>(), 1, "not canceled");
         assert_eq!(app.count::<With<Work>>(), 0, "not started");
 
-        app.entity_mut(npc).remove::<TreePaused>();
+        app.entity_mut(npc).remove::<BehaviorTreePaused>();
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 1);
     }
@@ -313,19 +314,20 @@ mod tests {
     #[test]
     fn tree_finished_is_triggered_once_on_the_agent() {
         #[derive(Resource, Default)]
-        struct Seen(Vec<TreeFinished>);
+        struct Seen(Vec<BehaviorTreeFinished>);
         let mut app = app();
         app.app_mut().init_resource::<Seen>();
-        app.app_mut()
-            .add_observer(|finished: On<TreeFinished>, mut seen: ResMut<Seen>| {
+        app.app_mut().add_observer(
+            |finished: On<BehaviorTreeFinished>, mut seen: ResMut<Seen>| {
                 seen.0.push(*finished);
-            });
+            },
+        );
         let npc = agent(&mut app, behavior_tree! { act(refuse) });
         app.ticks(3);
         let seen = &app.world().resource::<Seen>().0;
         assert_eq!(
             seen,
-            &[TreeFinished {
+            &[BehaviorTreeFinished {
                 entity: npc,
                 outcome: Outcome::Failure
             }]

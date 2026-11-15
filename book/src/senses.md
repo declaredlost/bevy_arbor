@@ -5,7 +5,7 @@ feels a hit, and hears what other guards shout.
 
 Each sense is a component on the guard. What it senses is written back to the
 guard as [`Perceived<S>`], one per sense, with when and where in
-[`Traces<S>`]. The guard's conditions read them:
+[`Stimuli<S>`]. The guard's conditions read them:
 
 ```rust
 # use bevy::prelude::*;
@@ -25,7 +25,7 @@ commands.spawn((
     Guard,
     Sight::new(12.0).with_lose_range(15.0),
     Hearing::new(8.0),
-    Team(1),
+    Allegiance(1),
     Ammo(6),
     Facing(Dir3::X),
     Transform::from_xyz(0.0, 0.0, 0.0),
@@ -82,7 +82,7 @@ intruder perceivable:
 # use bevy_arbor::prelude::*;
 # #[derive(Component)] struct Intruder;
 # fn spawn(mut commands: Commands) {
-commands.spawn((Intruder, Perceivable, Team(2), Transform::from_xyz(8.0, 0.0, 0.0)));
+commands.spawn((Intruder, Perceivable, Allegiance(2), Transform::from_xyz(8.0, 0.0, 0.0)));
 # }
 ```
 
@@ -144,8 +144,8 @@ The guard needs a `Facing` for this query to find it. Spawn it with
 
 ### What's seen
 
-What's in view is active. Its trace, in `Traces<Sight>`, says when and where
-it came into view. Once lost, it's no longer active. Its trace then says when
+What's in view is active. Its stimulus, in `Stimuli<Sight>`, says when and where
+it came into view. Once lost, it's no longer active. Its stimulus then says when
 and where it was lost. It stays like that until the guard forgets it
 ([Sensors, memory and events](sensors-memory.md)).
 
@@ -206,7 +206,7 @@ A guard that spots the intruder can tell the others. That's the guard's
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Shout;
-fn shout(mut tasks: Tasks<&Shout, Entity>, mut shares: MessageWriter<Share>) {
+fn shout(mut tasks: TaskQuery<&Shout, Entity>, mut shares: MessageWriter<Share>) {
     tasks.for_each(|_, mut task, guard| {
         shares.write(Share::allies(guard, 20.0));
         task.succeed();
@@ -215,11 +215,12 @@ fn shout(mut tasks: Tasks<&Shout, Entity>, mut shares: MessageWriter<Share>) {
 ```
 
 Listeners are agents with [`Shared`]. They get what they're told as
-`Perceived<Shared>`, and when and where as `Traces<Shared>`. Give the other guards `Shared` so they hear the shout.
+`Perceived<Shared>`, and when and where as `Stimuli<Shared>`. Give the other
+guards `Shared` so they hear the shout.
 
 | Builder | Who's told |
 |---|---|
-| `Share::allies(from, range)` | Agents on its `Team` within `range` |
+| `Share::allies(from, range)` | Agents on its `Allegiance` within `range` |
 | `Share::to(from, [..])` | The agents listed, wherever they are |
 | `.about(entity)` | Only about that one thing |
 
@@ -228,10 +229,10 @@ What it sees now is passed on where it is now. What it only remembers is
 passed on from when and where it last sensed it. Each listener gives it its
 own attitude. A listener keeps what it already knew if that's newer.
 
-## Perceived, Percept and Traces
+## Perceived, Percept and Stimuli
 
 [`Perceived<S>`] holds one [`Percept`] per thing the agent perceives by `S`.
-[`Traces<S>`] holds when and where each was sensed. It comes with
+[`Stimuli<S>`] holds when and where each was sensed. It comes with
 `Perceived<S>` and goes with it.
 
 | On `Perceived<S>` | Gives |
@@ -248,15 +249,15 @@ own attitude. A listener keeps what it already knew if that's newer.
 | `is_hostile()`, `is_friendly()` | Shortcuts for the attitude |
 | `is_active()` | Whether it's active now |
 
-| On `Traces<S>` | Gives |
+| On `Stimuli<S>` | Gives |
 |---|---|
 | `get(entity)` | When and where that thing was sensed: as it came into view or was lost, for sight; last, for the others |
-| `iter()` | Each thing and its trace |
+| `iter()` | Each thing and its stimulus |
 
 The two are apart so a tree can sleep through what it doesn't ask about. A
-footstep from the intruder the guard already heard changes its trace, not
+footstep from the intruder the guard already heard changes its stimulus, not
 `Perceived<Hearing>`. A condition asking whether the guard heard anything
-stays asleep. One reading `Traces<Hearing>` wakes.
+stays asleep. One reading `Stimuli<Hearing>` wakes.
 
 ## Pitfalls
 
@@ -266,12 +267,12 @@ stays asleep. One reading `Traces<Hearing>` wakes.
 - **Nothing is seen.** The intruder needs `Perceivable`. And in 2D, set
   `Space::Planar`, or sight looks down -Z into the screen.
 - **A flipped sprite sees behind it.** Use `Facing`, as above.
-- **Where is it now?** A trace is where it was sensed, not where it is.
+- **Where is it now?** A stimulus is where it was sensed, not where it is.
   Read the transform for that.
 
 [`Perceived<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Perceived.html
 [`Percept`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Percept.html
-[`Traces<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Traces.html
+[`Stimuli<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Stimuli.html
 [`Space::Planar`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/enum.Space.html
 [`Sight`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Sight.html
 [`Perceivable`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Perceivable.html

@@ -5,7 +5,9 @@ use quote::quote;
 use syn::{BinOp, Error, Expr, Result, UnOp};
 
 /// The code building a decorator from its parts, through `bevy_arbor_bt` at
-/// `bt`: each a condition, put together with `!`, `&&` and `||`, or a
+/// `bt`.
+///
+/// Each part is a condition, put together with `!`, `&&` and `||`, or a
 /// decorator acting as its branch starts and ends.
 pub(super) fn decorator_args(bt: &TokenStream, span: Span, args: &[Expr]) -> Result<TokenStream> {
     let Some((first, rest)) = args.split_first() else {
@@ -16,8 +18,9 @@ pub(super) fn decorator_args(bt: &TokenStream, span: Span, args: &[Expr]) -> Res
     Ok(quote! { #bt::decorator::Decorator::new(#first)#(.and(#rest))* })
 }
 
-/// The code building one part: a condition with `!`, `&&` and `||` read as
-/// written, or what's there as it is.
+/// The code building one part: a condition, or what's there as it is.
+///
+/// A condition's `!`, `&&` and `||` are read as written.
 fn part(bt: &TokenStream, expr: &Expr) -> TokenStream {
     if logic(expr) {
         condition(bt, expr)
@@ -40,13 +43,13 @@ fn logic(expr: &Expr) -> bool {
 /// The code building a condition: `!`, `&&`, `||` and brackets read as
 /// written.
 fn condition(bt: &TokenStream, expr: &Expr) -> TokenStream {
-    let into = quote! { #bt::decorator::IntoCondition };
+    let into = quote! { #bt::condition::IntoCondition };
     match expr {
         Expr::Paren(inner) => condition(bt, &inner.expr),
         Expr::Group(inner) => condition(bt, &inner.expr),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
             let inner = condition(bt, &unary.expr);
-            quote! { #bt::decorator::not(#inner) }
+            quote! { #bt::condition::not(#inner) }
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::And(_)) => {
             let (left, right) = (condition(bt, &binary.left), condition(bt, &binary.right));
@@ -71,7 +74,7 @@ mod tests {
         let code = tree(quote! { Select => { when(!a && b) => act(c) } })
             .unwrap()
             .to_string();
-        assert!(code.contains("decorator :: not"), "{code}");
+        assert!(code.contains("condition :: not"), "{code}");
         assert!(code.contains("IntoCondition :: and"), "{code}");
     }
 

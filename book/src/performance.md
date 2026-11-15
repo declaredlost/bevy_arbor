@@ -1,28 +1,19 @@
 # Performance
 
 One guard costs next to nothing. A level with hundreds of them is where cost
-shows. This chapter gives the measured numbers, then what keeps each part
-cheap.
-
-The numbers are from one machine, in release builds. Yours will differ. The
-shape won't.
+shows. This chapter says what each part costs, and what keeps it cheap.
 
 ## Trees
 
-`examples/load` in `bevy_arbor_bt` runs many agents. Each agent's tree is a
-`Select` of four decorators over one running task.
+A sleeping tree costs next to nothing: it isn't looked at until what it
+waits on comes. An awake one costs its tick, and asking its conditions. So
+what costs is what keeps trees awake.
 
-| Agents | System conditions | Typed conditions, nothing changing | Typed conditions, a tenth changing each tick |
-|---|---|---|---|
-| 100 | 17 µs | 3.7 µs | 5.5 µs |
-| 500 | 78 µs | 12 µs | 21 µs |
-| 2,000 | 305 µs | 41 µs | 78 µs |
-
-Per agent, that's about 150 nanoseconds when it asks four system conditions
-every tick. Asleep, it's about 20. Run it yourself:
+To measure, run the benchmarks, of trees awake, asleep, a few changing, their
+tasks finishing, and spawning:
 
 ```sh
-cargo run --release -p bevy_arbor_bt --example load
+cargo bench -p bevy_arbor_bt --bench trees
 ```
 
 What keeps trees cheap:
@@ -42,17 +33,8 @@ What keeps trees cheap:
 
 Without avian, sight finds what's near through a spatial grid of its own. Its
 cells are as large as a typical sight, and it's rebuilt on the ticks a sensor
-looks. This is a 2D micro-benchmark, in which a tenth of the agents look each
-tick:
-
-| Agents | Through everything | Through the grid |
-|---|---|---|
-| 1,000 | 58 µs | 38 µs |
-| 2,000 | 196 µs | 81 µs |
-| 10,000 | 4.13 ms | 435 µs |
-
-Looking through everything grows with the square of the agents. The grid
-grows in step with them, at about 10 nanoseconds a thing to rebuild.
+looks. Looking through everything would grow with the square of the agents;
+the grid grows in step with them.
 
 With avian, sight asks avian's colliders instead, which avian keeps up to date
 anyway: nothing to rebuild. See
@@ -71,9 +53,9 @@ What keeps perception cheap:
 
 ## Queries
 
-Queries share a time budget, [`EqsBudget`], a millisecond each tick unless you
-set it. Queries over budget wait for the next tick, oldest first. At least one
-runs each tick. So many guards asking at once delay each other, rather than
+Queries share a time budget, [`EnvQueryBudget`], a millisecond each tick unless
+you set it. Queries over budget wait for the next tick, oldest first. At least
+one runs each tick. So many guards asking at once delay each other, rather than
 stall the frame. See [Running queries](running-queries.md).
 
 What keeps queries cheap:
@@ -89,8 +71,8 @@ What keeps queries cheap:
 
 ## Debugging costs
 
-`TreeTrace` keeps a string per node and `SurveyTrace` a list per run. They're
-kept only on agents you put them on. Leave them off in a shipped build. See
-[Debugging](debugging.md).
+`BehaviorTreeTrace` keeps a string per node and `EnvQueryTrace` a list per run.
+They're kept only on agents you put them on. Leave them off in a shipped
+build. See [Debugging](debugging.md).
 
-[`EqsBudget`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EqsBudget.html
+[`EnvQueryBudget`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EnvQueryBudget.html

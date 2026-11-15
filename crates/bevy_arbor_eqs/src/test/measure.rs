@@ -5,17 +5,18 @@ use bevy::ecs::world::WorldId;
 use bevy::prelude::*;
 
 use super::{Cost, Test};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
-/// What a [`Measure`]'s system is asked about: the agent running the query,
-/// and every item to measure. A system takes it as its first parameter, as
-/// an observer takes `On<E>`.
+/// What a [`Measure`]'s system is asked: the agent running the query, and
+/// every item.
+///
+/// A system takes it as its first parameter, as an observer takes `On<E>`.
 #[derive(Debug, Clone, Copy)]
 pub struct Batch<'a> {
     /// The agent running the query.
     pub agent: Entity,
     /// The items, in order: the system answers each, in the same order.
-    pub items: &'a [Item],
+    pub items: &'a [EnvQueryItem],
 }
 
 impl SystemInput for Batch<'_> {
@@ -30,10 +31,11 @@ impl SystemInput for Batch<'_> {
 /// What a [`Measure`] runs: a read-only system answering a [`Batch`].
 type Measuring = BoxedReadOnlySystem<Batch<'static>, Vec<Option<f32>>>;
 
-/// A test whose numbers come from a system of yours: the game's own
-/// pathfinder, its territory, its lights. Made by [`Measure::by`].
+/// A test whose numbers come from a system of yours, made by
+/// [`Measure::by`].
 ///
-/// The system is read-only and answers a whole [`Batch`] at once, one number
+/// The system can ask the game's own pathfinder, its territory, its lights.
+/// It's read-only and answers a whole [`Batch`] at once, one number
 /// or `None` an item, in order, so what's costly to set up is set up once a
 /// query: a single search from the agent to every item. An answer of the
 /// wrong length, or a system that can't run (a resource missing), is no
@@ -45,8 +47,10 @@ pub struct Measure {
 }
 
 impl Measure {
-    /// A test answered by `system`: `fn(batch: Batch, ..) -> Vec<Option<f32>>`,
-    /// with any read-only system parameters after the batch.
+    /// A test answered by `system`, given a [`Batch`], then any read-only
+    /// system parameters.
+    ///
+    /// It's a `fn(batch: Batch, ..) -> Vec<Option<f32>>`.
     #[must_use]
     pub fn by<S, M>(system: S) -> Self
     where
@@ -81,14 +85,14 @@ impl Clone for Measure {
 }
 
 impl Test for Measure {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
         self.test_all(cx, std::slice::from_ref(item))
             .into_iter()
             .next()
             .flatten()
     }
 
-    fn test_all(&self, cx: &QueryContext, items: &[Item]) -> Vec<Option<f32>> {
+    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         let none = || vec![None; items.len()];
         let Ok(mut kept) = self.kept.lock() else {
             return none();
@@ -129,7 +133,7 @@ mod tests {
     use bevy_arbor_perception::prelude::*;
 
     use super::{Batch, Measure};
-    use crate::query::{Item, QueryContext};
+    use crate::query::{EnvQueryContext, EnvQueryItem};
     use crate::test::Test;
     use crate::testing::*;
 
@@ -141,18 +145,18 @@ mod tests {
         batch
             .items
             .iter()
-            .map(|item| Some(item.position().x * scale.0))
+            .map(|item| Some(item.position.x * scale.0))
             .collect()
     }
 
     fn measured(
         app: &mut bevy_harness::TestApp,
         test: &Measure,
-        items: &[Item],
+        items: &[EnvQueryItem],
     ) -> Vec<Option<f32>> {
         let agent = app.spawn(GlobalTransform::IDENTITY);
         test.prepare(app.world_mut());
-        let cx = QueryContext::new(app.world(), agent, Space::Volume, 1);
+        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
         test.test_all(&cx, items)
     }
 
@@ -160,7 +164,10 @@ mod tests {
     fn a_system_answers_every_item_at_once() {
         let mut app = app(Space::Volume);
         app.world_mut().insert_resource(Scale(2.0));
-        let items = [Item::Point(Vec3::X), Item::Point(Vec3::X * 3.0)];
+        let items = [
+            EnvQueryItem::place(Vec3::X),
+            EnvQueryItem::place(Vec3::X * 3.0),
+        ];
         assert_eq!(
             measured(&mut app, &Measure::by(scaled), &items),
             [Some(2.0), Some(6.0)]
@@ -170,7 +177,7 @@ mod tests {
     #[test]
     fn a_system_that_cannot_run_is_no_answer() {
         let mut app = app(Space::Volume);
-        let items = [Item::Point(Vec3::X)];
+        let items = [EnvQueryItem::place(Vec3::X)];
         assert_eq!(
             measured(&mut app, &Measure::by(scaled), &items),
             [None],
@@ -184,7 +191,7 @@ mod tests {
             vec![Some(1.0)]
         }
         let mut app = app(Space::Volume);
-        let items = [Item::Point(Vec3::X), Item::Point(Vec3::Y)];
+        let items = [EnvQueryItem::place(Vec3::X), EnvQueryItem::place(Vec3::Y)];
         assert_eq!(
             measured(&mut app, &Measure::by(short), &items),
             [None, None]
@@ -198,7 +205,7 @@ mod tests {
             let mut app = app(Space::Volume);
             app.world_mut().insert_resource(Scale(scale));
             assert_eq!(
-                measured(&mut app, &test, &[Item::Point(Vec3::X)]),
+                measured(&mut app, &test, &[EnvQueryItem::place(Vec3::X)]),
                 [Some(scale)]
             );
         }

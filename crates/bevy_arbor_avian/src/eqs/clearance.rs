@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_arbor_eqs::query::{Item, QueryContext};
+use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
 use bevy_arbor_eqs::test::{Cost, Test};
 
 use super::Reads;
@@ -15,9 +15,11 @@ type Room = (
     Query<'static, 'static, (), With<Sensor>>,
 );
 
-/// Whether there's room at an item: 1 if `shape`, centered on it, overlaps
-/// no collider, and 0 if it does. A point inside a wall, or one a crate
-/// stands on, has none.
+/// Whether there's room at an item: 1 if `shape`, centered on it, overlaps no
+/// collider.
+///
+/// And 0 if it does: a point inside a wall, or one a crate stands on, has
+/// none.
 ///
 /// Every layer counts, unless set [`on`](Self::on) some. The agent's own
 /// colliders don't, nor a thing item's own, nor trigger volumes (avian's
@@ -32,8 +34,9 @@ pub struct Clearance {
 }
 
 impl Clearance {
-    /// Whether `shape`, centered on each item, has room: the agent's size,
-    /// or a little more.
+    /// Whether `shape`, centered on each item, has room.
+    ///
+    /// `shape` is the agent's size, or a little more.
     #[must_use]
     pub fn of(shape: Collider) -> Self {
         Self {
@@ -43,8 +46,8 @@ impl Clearance {
         }
     }
 
-    /// Only colliders on `layers` take room: the level's walls, not what's
-    /// moving through it.
+    /// Only colliders on `layers` take room: the level's walls, not what moves
+    /// through it.
     #[must_use]
     pub fn on(mut self, layers: impl Into<LayerMask>) -> Self {
         self.layers = layers.into();
@@ -53,14 +56,14 @@ impl Clearance {
 }
 
 impl Test for Clearance {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
         self.test_all(cx, std::slice::from_ref(item))
             .into_iter()
             .next()
             .flatten()
     }
 
-    fn test_all(&self, cx: &QueryContext, items: &[Item]) -> Vec<Option<f32>> {
+    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         let agent = cx.agent();
         let filter = SpatialQueryFilter::from_mask(self.layers);
         self.room
@@ -71,7 +74,7 @@ impl Test for Clearance {
                         let mut room = true;
                         spatial.shape_intersections_callback(
                             &self.shape,
-                            dim::point(item.position()),
+                            dim::point(item.position),
                             dim::upright(),
                             &filter,
                             |entity| {
@@ -80,7 +83,7 @@ impl Test for Clearance {
                                 let solid = !triggers.contains(entity)
                                     && !under(&colliders, &parents, entity, agent)
                                     && !item
-                                        .entity()
+                                        .entity
                                         .is_some_and(|own| owns(&colliders, &parents, entity, own));
                                 room &= !solid;
                                 room
@@ -105,7 +108,7 @@ impl Test for Clearance {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::query::{Item, QueryContext};
+    use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
     use bevy_arbor_eqs::test::Test;
 
     use crate::avian::prelude::*;
@@ -116,10 +119,10 @@ mod tests {
         app: &mut bevy_harness::TestApp,
         agent: Entity,
         test: &Clearance,
-        item: Item,
+        item: EnvQueryItem,
     ) -> Option<f32> {
         test.prepare(app.world_mut());
-        let cx = QueryContext::new(app.world(), agent, SPACE, 1);
+        let cx = EnvQueryContext::new(app.world(), agent, SPACE, 1);
         test.test(&cx, &item)
     }
 
@@ -138,12 +141,12 @@ mod tests {
         app.ticks(3);
         let test = Clearance::of(body());
         assert_eq!(
-            room(&mut app, agent, &test, Item::Point(ahead(5.0))),
+            room(&mut app, agent, &test, EnvQueryItem::place(ahead(5.0))),
             Some(0.0),
             "in it"
         );
         assert_eq!(
-            room(&mut app, agent, &test, Item::Point(ahead(3.0))),
+            room(&mut app, agent, &test, EnvQueryItem::place(ahead(3.0))),
             Some(1.0),
             "before it"
         );
@@ -162,7 +165,7 @@ mod tests {
         app.ticks(3);
         let test = Clearance::of(body()).on(LayerMask(1 << 2));
         assert_eq!(
-            room(&mut app, agent, &test, Item::Point(ahead(5.0))),
+            room(&mut app, agent, &test, EnvQueryItem::place(ahead(5.0))),
             Some(1.0)
         );
     }
@@ -177,14 +180,11 @@ mod tests {
         app.ticks(3);
         let test = Clearance::of(body());
         assert_eq!(
-            room(&mut app, agent, &test, Item::Point(Vec3::ZERO)),
+            room(&mut app, agent, &test, EnvQueryItem::place(Vec3::ZERO)),
             Some(1.0),
             "itself"
         );
-        let item = Item::Entity {
-            entity: crate_,
-            position: ahead(5.0),
-        };
+        let item = EnvQueryItem::thing(crate_, ahead(5.0));
         assert_eq!(room(&mut app, agent, &test, item), Some(1.0), "the crate");
     }
 }

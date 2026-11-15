@@ -47,8 +47,8 @@ impl Expand {
             (Node::Timeout, [time], Some(body)) => {
                 self.one(name, "timeout", &[length(time)?], body)
             }
-            (Node::State, [bundle], Some(body)) => {
-                self.one(name, "state", &[quote! { #bundle }], body)
+            (Node::Insert, [bundle], Some(body)) => {
+                self.one(name, "insert", &[quote! { #bundle }], body)
             }
             (Node::RepeatWhile, [_, ..], Some(body)) => {
                 let decorator = decorator_args(bt, name.span(), args)?;
@@ -88,8 +88,9 @@ impl Expand {
         }
     }
 
-    /// A node over one child, built by `build` with `args` before it: several
-    /// children run as a sequence.
+    /// A node over one child, built by `build` with `args` before it.
+    ///
+    /// Several children run as a sequence.
     fn one(
         &self,
         name: &Ident,
@@ -196,8 +197,8 @@ impl Expand {
         let bt = &self.bt;
         let Some(prefix) = prefix else {
             return Ok(match kind {
-                Branches::Decorated => quote! { #bt::behavior::Branch::always(#node) },
-                Branches::Scored => quote! { #bt::behavior::ScoredBranch::last(#node) },
+                Branches::Decorated => quote! { #bt::behavior::Branch::otherwise(#node) },
+                Branches::Scored => quote! { #bt::behavior::ScoredBranch::otherwise(#node) },
             });
         };
         let span = prefix.name.span();
@@ -229,8 +230,9 @@ enum Branches {
     Scored,
 }
 
-/// The name of the list being built: invisible to what goes in it, so an
-/// expression there can use the same name.
+/// The name of the list being built: invisible to what goes in it.
+///
+/// That way an expression there can use the same name.
 fn out() -> Ident {
     Ident::new("out", Span::mixed_site())
 }
@@ -255,7 +257,7 @@ mod tests {
                     Race => { act(a), act(b) },
                     RepeatWhile(decorator) => { act(a) },
                     RepeatWhile(with(within, 2.0), b) => { act(a) },
-                    State(Hunting) => { act(a) },
+                    Insert(Hunting) => { act(a) },
                     Socket(Weapon),
                     Fallback => { when(a) => act(b), act(c) },
                     Scored => { score(a) => act(b), act(c) },

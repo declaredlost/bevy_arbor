@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection, seconds};
 
 /// Its child, cancelled and failed if it takes more than its length.
 pub(in crate::behavior) struct Timeout {
@@ -40,13 +41,14 @@ impl Behave for Timeout {
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.child.cancel(cx);
     }
+}
 
-    fn label(&self) -> String {
-        format!("Timeout({}s)", self.length.as_secs_f32())
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
+impl Inspect for Timeout {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection
+            .name("Timeout")
+            .param(seconds(self.length))
+            .child(&self.child);
     }
 }
 

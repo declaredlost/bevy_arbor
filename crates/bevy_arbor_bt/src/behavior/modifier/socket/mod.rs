@@ -7,7 +7,8 @@ use std::marker::PhantomData;
 use bevy::utils::prelude::ShortName;
 
 pub use self::plugged::{Plugged, plugged};
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
 /// What's plugged into it on the agent, its [`Plugged<S>`]: swapped as that
 /// is.
@@ -64,9 +65,9 @@ impl<S: Send + Sync + 'static> Behave for Socket<S> {
             let mut ended = None;
             if let Some((child, _)) = &mut self.child {
                 // One holding goes on until it can stop, as in a `Select`.
-                if child.holds() {
+                if child.is_holding() {
                     let status = child.tick_interrupted(cx);
-                    if status == Status::Running && child.holds() {
+                    if status == Status::Running && child.is_holding() {
                         return Status::Running;
                     }
                     ended = status.outcome().map(Status::from);
@@ -74,7 +75,7 @@ impl<S: Send + Sync + 'static> Behave for Socket<S> {
                 child.cancel(cx);
             }
             // Asked to stop, it starts nothing new: it ends as what ran did.
-            if cx.interrupted() {
+            if cx.is_interrupted() {
                 return ended.unwrap_or(Status::Failure);
             }
             self.build(plugged);
@@ -91,16 +92,14 @@ impl<S: Send + Sync + 'static> Behave for Socket<S> {
             child.cancel(cx);
         }
     }
+}
 
-    fn label(&self) -> String {
-        format!("Socket({})", ShortName::of::<S>())
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        self.child
-            .iter()
-            .map(|(child, _)| Child::new(child))
-            .collect()
+impl<S: Send + Sync + 'static> Inspect for Socket<S> {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("Socket").param(ShortName::of::<S>());
+        if let Some((child, _)) = &self.child {
+            inspection.child(child);
+        }
     }
 }
 
@@ -231,12 +230,16 @@ mod tests {
     fn its_trace_shows_what_is_plugged_in() {
         let mut app = app();
         let npc = app.spawn((
-            TreeTrace::default(),
+            BehaviorTreeTrace::default(),
             BehaviorTree::new(behavior_tree! { Socket(Weapon) }),
         ));
         plug(&mut app, npc, work);
         app.tick();
-        let trace = app.world().get::<TreeTrace>(npc).unwrap().to_string();
+        let trace = app
+            .world()
+            .get::<BehaviorTreeTrace>(npc)
+            .unwrap()
+            .to_string();
         assert_eq!(trace, "> Socket(Weapon)\n>   Work\n");
     }
 

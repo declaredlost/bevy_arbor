@@ -23,14 +23,14 @@ fn cover() -> EnvQuery {
     // Where the intruder is, or was last seen.
     let intruders = || Hostiles::<Sight>::remembered();
     // Points level with the guard, either side of it.
-    EnvQuery::new(Row::along(Agent).extent(8.0).spacing(0.5))
+    EnvQuery::new(Row::along(Querier).extent(8.0).spacing(0.5))
         // Keep the points the guard fits in.
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         // And that the intruder can't see.
         .filter(LineOfSight::from(intruders()), Filter::is(false))
         // Prefer up against the wall, near the guard, far from the intruder.
         .score(OccluderDistance::new(), Score::lower())
-        .score(Distance::to(Agent), Score::lower().weight(0.5))
+        .score(Distance::to(Querier), Score::lower().weight(0.5))
         .score(Distance::to(intruders()), Score::higher().weight(0.5))
 }
 ```
@@ -59,8 +59,8 @@ struct Target;
 fn target() -> EnvQuery {
     EnvQuery::new(Percepts::<Sight>::all().active().hostile())
         // The nearest, and then the one most in front.
-        .score(Distance::to(Agent), Score::lower())
-        .score(Dot::of(Agent), Score::higher().weight(0.5))
+        .score(Distance::to(Querier), Score::lower())
+        .score(Dot::of(Querier), Score::higher().weight(0.5))
 }
 ```
 
@@ -90,7 +90,7 @@ An anchor is where a generator or a test measures from.
 
 | Anchor | Where |
 |---|---|
-| [`Agent`] | The agent running the query |
+| [`Querier`] | The agent running the query |
 | [`At(point)`][`At`] | A fixed point |
 | [`Thing(entity)`][`Thing`] | An entity |
 | [`Hostiles::<S>::active()`][`Hostiles`] | Hostiles the agent perceives by `S` now |
@@ -175,7 +175,7 @@ item kept 1.
 [`Row`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Row.html
 [`Percepts`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Percepts.html
 [`Nearby`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/struct.Nearby.html
-[`Agent`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Agent.html
+[`Querier`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Querier.html
 [`At`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.At.html
 [`Thing`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Thing.html
 [`Hostiles`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/struct.Hostiles.html

@@ -34,11 +34,6 @@ bevy_harness = { workspace = true }
 # Benchmarks
 criterion = { workspace = true, features = [] }
 
-# What decorators cost: `cargo run --release -p bevy_arbor_bt --example load`.
-[[example]]
-name = "load"
-test = false
-
 # What ticking trees costs: `cargo bench -p bevy_arbor_bt --bench trees`.
 [[bench]]
 name = "trees"

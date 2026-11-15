@@ -8,6 +8,7 @@ use crate::behavior::Outcome;
 ///
 /// Whose it is is its [`TaskOf`].
 #[derive(Component, Reflect, Debug, Clone, Default)]
+#[component(on_remove = crate::tree::task_removed)]
 #[reflect(Component, Debug, Default)]
 pub struct Task {
     /// When it started, by the clock its tree ticks on.
@@ -26,8 +27,10 @@ impl Task {
         }
     }
 
-    /// How long it's been running, by the clock its tree ticks on, as of the
-    /// last time trees ticked: the same whichever schedule reads it.
+    /// How long it's been running, by the clock its tree ticks on.
+    ///
+    /// It's as of the last time trees ticked: the same whichever schedule reads
+    /// it.
     #[must_use]
     pub fn elapsed(&self) -> Duration {
         self.elapsed
@@ -60,12 +63,14 @@ impl Task {
     }
 
     /// Whether the tree wants it to stop, for a [`Graceful`] one: it should
-    /// wind down, and report when it has.
+    /// wind down.
+    ///
+    /// It should report once it has.
     ///
     /// Asked again each tick, so it goes back to `false` if what wanted it
     /// stopped no longer does, before it has reported.
     #[must_use]
-    pub fn interrupted(&self) -> bool {
+    pub fn is_interrupted(&self) -> bool {
         self.interrupted
     }
 
@@ -76,11 +81,11 @@ impl Task {
 
 /// On a task: the agent whose tree spawned it, as a Bevy relationship.
 ///
-/// Despawning the agent despawns its tasks; its [`AgentTasks`] are kept by
+/// Despawning the agent despawns its tasks; its [`Tasks`] are kept by
 /// this, not to be set by hand.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
 #[reflect(Component, Debug, PartialEq)]
-#[relationship(relationship_target = AgentTasks)]
+#[relationship(relationship_target = Tasks)]
 pub struct TaskOf(Entity);
 
 impl TaskOf {
@@ -101,9 +106,9 @@ impl TaskOf {
 #[derive(Component, Reflect, Debug, Default)]
 #[reflect(Component, Debug)]
 #[relationship_target(relationship = TaskOf, linked_spawn)]
-pub struct AgentTasks(Vec<Entity>);
+pub struct Tasks(Vec<Entity>);
 
-impl AgentTasks {
+impl Tasks {
     /// The tasks, in the order they started.
     pub fn iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.0.iter().copied()
@@ -113,7 +118,7 @@ impl AgentTasks {
 /// Marks a task to be told to stop and waited for, instead of despawned.
 ///
 /// In a task's bundle: when the tree wants it to stop, it isn't despawned but
-/// told ([`Task::interrupted`]), and the tree waits for it to report. Only
+/// told ([`Task::is_interrupted`]), and the tree waits for it to report. Only
 /// force still despawns it: a `Timeout`, an `All`, `Any` or `Race` settling,
 /// anything above being canceled, or the tree going. Under a `Commit` it isn't
 /// told at all.

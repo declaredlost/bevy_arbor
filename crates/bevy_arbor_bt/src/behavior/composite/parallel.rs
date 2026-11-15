@@ -1,4 +1,5 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
 /// What settles a [`Parallel`] early.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -80,18 +81,18 @@ impl Behave for Parallel {
             child.cancel(cx);
         }
     }
+}
 
-    fn label(&self) -> String {
-        match self.mode {
+impl Inspect for Parallel {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name(match self.mode {
             Mode::All => "All",
             Mode::Any => "Any",
             Mode::Race => "Race",
+        });
+        for child in &self.children {
+            inspection.child(child);
         }
-        .to_owned()
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        self.children.iter().map(Child::new).collect()
     }
 }
 

@@ -22,9 +22,9 @@ on changes, with tasks as entities.
   [`behavior_tree!`] macro or [`Behavior`]'s builders: composites (`Select`,
   `Sequence`, `Fallback`, parallels, scored and random picks), modifiers
   (`Forever`, `Repeat`, `Commit`, `Timeout`, sockets) and leaves.
-- A task is an entity the tree spawns to do its work, with a component of
-  yours on it. Your systems tick it through [`Tasks`] and report how it went;
-  the tree despawns it once it's done or no longer wanted.
+- A task is an entity the tree spawns to do its work, with a component of yours
+  on it. Your systems tick it through [`TaskQuery`] and report how it went; the
+  tree despawns it once it's done or no longer wanted.
 - Decorators decide which branches may run: conditions (plain functions of
   components, system conditions, or your own [`Condition`]) put together with
   `!`, `&&` and `||`; and after a comma, those acting as their branch starts
@@ -70,7 +70,7 @@ fn has_target(target: &Target) -> bool {
 }
 
 /// The chase task, ticked by your system after the trees.
-fn chase(mut tasks: Tasks<&Chase, &Target>) {
+fn chase(mut tasks: TaskQuery<&Chase, &Target>) {
     tasks.for_each(|_, mut task, target| {
         if target.0.is_none() {
             task.fail();
@@ -94,9 +94,9 @@ fn spawn(mut commands: Commands) {
 
 fn main() {
     App::new()
-        .add_plugins((MinimalPlugins, TreePlugin::default()))
+        .add_plugins((MinimalPlugins, BehaviorTreePlugin::default()))
         .add_systems(Startup, spawn)
-        .add_systems(FixedUpdate, chase.after(TreeSystems))
+        .add_systems(FixedUpdate, chase.after(BehaviorTreeSystems))
         .run();
 }
 ```
@@ -129,6 +129,6 @@ or [MIT license](https://github.com/declaredlost/bevy_arbor/blob/main/LICENSE-MI
 [`BehaviorTree`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTree.html
 [`behavior_tree!`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/macro.behavior_tree.html
 [`Behavior`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Behavior.html
-[`Tasks`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.Tasks.html
+[`TaskQuery`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/task/struct.TaskQuery.html
 [`Decorate`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Decorate.html
-[`Condition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Condition.html
+[`Condition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/condition/trait.Condition.html

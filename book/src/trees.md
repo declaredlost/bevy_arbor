@@ -81,7 +81,7 @@ Modifiers have one child:
 | `Succeed => { .. }` | Succeeds whatever its child did |
 | `Commit => { .. }` | Can't be interrupted once started. See [Interruption](interruption.md) |
 | `Timeout(length) => { .. }` | Cancels and fails its child after `length` |
-| `State(bundle) => { .. }` | Puts `bundle` on the agent while its child runs. See [Tasks](tasks.md#state) |
+| `Insert(bundle) => { .. }` | Puts `bundle` on the agent while its child runs. See [Tasks](tasks.md#insert) |
 | `Socket(key)` | Runs the subtree plugged into the agent. See [Large trees](large-trees.md#sockets) |
 
 Leaves do the work:
@@ -191,19 +191,19 @@ use bevy_arbor::bt::behavior::Branch;
 fn guard() -> Behavior {
     Behavior::forever(Behavior::select(vec![
         Branch::when(sees_intruder, Behavior::task(Chase)),
-        Branch::always(Behavior::task(Patrol { from: -10.0, to: 10.0 })),
+        Branch::otherwise(Behavior::task(Patrol { from: -10.0, to: 10.0 })),
     ]))
 }
 ```
 
 ## The tree on the guard
 
-- [`TreeFinished`] is triggered on the guard when its tree ends.
+- [`BehaviorTreeFinished`] is triggered on the guard when its tree ends.
   `BehaviorTree::outcome` says how it ended. A tree under `Forever` never ends.
 - `BehaviorTree::restart` starts a finished tree again.
-- [`TreePaused`] on the guard holds its tree where it is: no decorators
-  asked, nothing started, and its task skipped by `Tasks`. Time still passes,
-  so a `Wait` may be over when you remove it.
+- [`BehaviorTreePaused`] on the guard holds its tree where it is: no decorators
+  asked, nothing started, and its task skipped by `TaskQuery`. Time still
+  passes, so a `Wait` may be over when you remove it.
 - Removing the tree, replacing it, or despawning the guard cancels what the
   tree was running.
 
@@ -217,5 +217,5 @@ fn guard() -> Behavior {
 [`behavior_tree!`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/macro.behavior_tree.html
 [`BehaviorTree`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTree.html
 [`Behavior`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Behavior.html
-[`TreeFinished`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeFinished.html
-[`TreePaused`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreePaused.html
+[`BehaviorTreeFinished`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTreeFinished.html
+[`BehaviorTreePaused`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTreePaused.html

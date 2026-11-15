@@ -118,7 +118,7 @@ fn spawn(mut commands: Commands) {
         Sight::new(12.0).with_lose_range(15.0),
         Hearing::new(8.0),
         Shared,
-        Team(1),
+        Allegiance(1),
         Facing(Dir3::X),
         Ammo(6),
         Transform::from_xyz(0.0, 0.0, 0.0),
@@ -128,7 +128,7 @@ fn spawn(mut commands: Commands) {
     commands.spawn((
         Intruder,
         Perceivable,
-        Team(2),
+        Allegiance(2),
         Collider::capsule(0.4, 1.0),
         Transform::from_xyz(30.0, 0.0, 0.0),
     ));
@@ -212,23 +212,23 @@ fn fire_turret() -> Behavior {
 
 fn cover() -> EnvQuery {
     let intruders = || Hostiles::<Sight>::remembered();
-    EnvQuery::new(Row::along(Agent).extent(8.0).spacing(0.5))
+    EnvQuery::new(Row::along(Querier).extent(8.0).spacing(0.5))
         .filter(Clearance::of(Collider::circle(0.4)), Filter::is(true))
         .filter(LineOfSight::from(intruders()), Filter::is(false))
         .score(OccluderDistance::new(), Score::lower())
-        .score(Distance::to(Agent), Score::lower().weight(0.5))
+        .score(Distance::to(Querier), Score::lower().weight(0.5))
         .score(Distance::to(intruders()), Score::higher().weight(0.5))
 }
 
 fn target() -> EnvQuery {
     EnvQuery::new(Percepts::<Sight>::all().active().hostile())
-        .score(Distance::to(Agent), Score::lower())
-        .score(Dot::of(Agent), Score::higher().weight(0.5))
+        .score(Distance::to(Querier), Score::lower())
+        .score(Dot::of(Querier), Score::higher().weight(0.5))
 }
 
 fn turret() -> EnvQuery {
-    EnvQuery::new(FreeSlots::<Gunner>::within(Agent, 20.0))
-        .score(Distance::to(Agent), Score::lower())
+    EnvQuery::new(FreeSlots::<Gunner>::within(Querier, 20.0))
+        .score(Distance::to(Querier), Score::lower())
 }
 
 // The task systems.
@@ -245,7 +245,7 @@ mod systems {
         gap.abs() < 0.1
     }
 
-    pub fn patrol(mut tasks: Tasks<&Patrol, (&mut Transform, &mut Facing)>, time: Res<Time>) {
+    pub fn patrol(mut tasks: TaskQuery<&Patrol, (&mut Transform, &mut Facing)>, time: Res<Time>) {
         tasks.for_each(|patrol, _, (mut at, mut facing)| {
             let x = at.translation.x;
             if x >= patrol.to {
@@ -258,7 +258,7 @@ mod systems {
     }
 
     pub fn chase(
-        mut tasks: Tasks<&Chase, (&Found<Target>, &mut Transform)>,
+        mut tasks: TaskQuery<&Chase, (&Found<Target>, &mut Transform)>,
         places: Query<&GlobalTransform>,
         time: Res<Time>,
     ) {
@@ -276,7 +276,7 @@ mod systems {
         });
     }
 
-    pub fn shoot(mut tasks: Tasks<&Shoot, &mut Ammo>) {
+    pub fn shoot(mut tasks: TaskQuery<&Shoot, &mut Ammo>) {
         tasks.for_each(|_, mut task, mut ammo| {
             if ammo.0 == 0 {
                 task.fail();
@@ -287,25 +287,25 @@ mod systems {
         });
     }
 
-    pub fn reload(mut tasks: Tasks<&Reload, &mut Ammo>) {
+    pub fn reload(mut tasks: TaskQuery<&Reload, &mut Ammo>) {
         const RELOAD: Duration = Duration::from_secs(2);
         tasks.for_each(|_, mut task, mut ammo| {
             if task.elapsed() >= RELOAD {
                 ammo.0 = 6;
                 task.succeed();
-            } else if task.interrupted() && task.elapsed() < RELOAD / 2 {
+            } else if task.is_interrupted() && task.elapsed() < RELOAD / 2 {
                 task.fail();
             }
         });
     }
 
     pub fn search(
-        mut tasks: Tasks<&Search, (&Perceived<Sight>, &Traces<Sight>, &mut Transform)>,
+        mut tasks: TaskQuery<&Search, (&Perceived<Sight>, &Stimuli<Sight>, &mut Transform)>,
         time: Res<Time>,
     ) {
-        tasks.for_each(|_, mut task, (seen, traces, mut at)| {
+        tasks.for_each(|_, mut task, (seen, stimuli, mut at)| {
             let intruder = seen.iter().find(|p| p.is_hostile());
-            let last_seen = intruder.and_then(|p| traces.get(p.entity()));
+            let last_seen = intruder.and_then(|p| stimuli.get(p.entity()));
             if task.elapsed() > Duration::from_secs(8) {
                 task.fail();
             } else if let Some(there) = last_seen {
@@ -314,7 +314,7 @@ mod systems {
         });
     }
 
-    pub fn shout(mut tasks: Tasks<&Shout, Entity>, mut shares: MessageWriter<Share>) {
+    pub fn shout(mut tasks: TaskQuery<&Shout, Entity>, mut shares: MessageWriter<Share>) {
         tasks.for_each(|_, mut task, guard| {
             shares.write(Share::allies(guard, 20.0));
             task.succeed();
@@ -345,7 +345,7 @@ mod systems {
         }
     }
 
-    pub fn fire_turret(mut tasks: Tasks<&FireTurret, Entity>) {
+    pub fn fire_turret(mut tasks: TaskQuery<&FireTurret, Entity>) {
         tasks.for_each(|_, _, _gunner| {
             // Aim the turret and fire. It runs until the guard leaves it.
         });

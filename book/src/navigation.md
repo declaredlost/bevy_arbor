@@ -169,7 +169,7 @@ fn walk_costs(batch: Batch, places: Query<&GlobalTransform>) -> Vec<Option<f32>>
         .items
         .iter()
         .map(|item| {
-            let to = item.position();
+            let to = item.position;
             ((to.y - from.y).abs() <= 1.0).then(|| (to.x - from.x).abs())
         })
         .collect()
@@ -178,12 +178,12 @@ fn walk_costs(batch: Batch, places: Query<&GlobalTransform>) -> Vec<Option<f32>>
 fn setup(app: &mut App) {
     app.set_path_costs(walk_costs).add_env_query(
         Cover,
-        EnvQuery::new(Donut::around(Agent).radius(2.0, 8.0).rings(3).points(16))
+        EnvQuery::new(Donut::around(Querier).radius(2.0, 8.0).rings(3).points(16))
             // Cheap first: no further than 10 as the crow flies.
-            .filter(Distance::to(Agent), Filter::at_most(10.0))
+            .filter(Distance::to(Querier), Filter::at_most(10.0))
             // Then only what's a walk of 12 or less.
             .filter(PathDistance::new(), Filter::at_most(12.0))
-            .score(Distance::to(Agent), Score::lower()),
+            .score(Distance::to(Querier), Score::lower()),
     );
 }
 ```

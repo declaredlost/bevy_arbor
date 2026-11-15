@@ -1,14 +1,17 @@
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
-use bevy_arbor_perception::perceived::{Perceived, Traces};
+use bevy_arbor_perception::perceived::{Perceived, Stimuli};
 use bevy_arbor_perception::sense::Sense;
 
 use super::{Locate, Located};
-use crate::query::QueryContext;
+use crate::query::EnvQueryContext;
 
 /// What the agent perceives as hostile by `S`: where each is now, while it's
-/// active, or, [`remembered`](Self::remembered), where it was last sensed.
+/// active.
+///
+/// With [`remembered`](Self::remembered), also what it only remembers, where
+/// that was last sensed.
 pub struct Hostiles<S: Sense> {
     remembered: bool,
     sense: PhantomData<fn() -> S>,
@@ -35,12 +38,12 @@ impl<S: Sense> Hostiles<S> {
 }
 
 impl<S: Sense> Locate for Hostiles<S> {
-    fn locate(&self, cx: &QueryContext, out: &mut Vec<Located>) {
+    fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
         let Ok(agent) = cx.world().get_entity(cx.agent()) else {
             return;
         };
-        let (Some(perceived), Some(traces)) =
-            (agent.get::<Perceived<S>>(), agent.get::<Traces<S>>())
+        let (Some(perceived), Some(stimuli)) =
+            (agent.get::<Perceived<S>>(), agent.get::<Stimuli<S>>())
         else {
             return;
         };
@@ -51,7 +54,10 @@ impl<S: Sense> Locate for Hostiles<S> {
             let (position, ahead) = if percept.is_active() {
                 (cx.position(entity), cx.ahead(entity))
             } else if self.remembered {
-                (traces.get(entity).map(|trace| trace.position), Vec3::ZERO)
+                (
+                    stimuli.get(entity).map(|stimulus| stimulus.position),
+                    Vec3::ZERO,
+                )
             } else {
                 (None, Vec3::ZERO)
             };

@@ -1,5 +1,6 @@
-//! What this crate's tests share: each test runs in the dimension it's built
-//! for, with avian's physics stepping headless.
+//! What this crate's tests share: each runs in the dimension it's built for.
+//!
+//! Avian's physics steps headless.
 
 use std::f32::consts::PI;
 use std::time::Duration;
@@ -32,8 +33,9 @@ pub(crate) fn ahead(distance: f32) -> Vec3 {
     return Vec3::new(0.0, 0.0, -distance);
 }
 
-/// A collider a unit thick along the line ahead, a unit wide across it, and
-/// `height` high: the same block in either dimension.
+/// A collider a unit thick along the line ahead, a unit wide across it.
+///
+/// It's `height` high: the same block in either dimension.
 pub(crate) fn block(height: f32) -> Collider {
     #[cfg(dim = "2d")]
     return Collider::rectangle(1.0, height);
@@ -66,8 +68,9 @@ pub(crate) fn looker(app: &mut TestApp) -> Entity {
     ))
 }
 
-/// Something that can be seen, `distance` ahead: with a small collider, for
-/// sight to find it through avian.
+/// Something that can be seen, `distance` ahead, with a small collider.
+///
+/// Sight finds it through avian.
 pub(crate) fn thing(app: &mut TestApp, distance: f32) -> Entity {
     app.spawn((
         Perceivable,

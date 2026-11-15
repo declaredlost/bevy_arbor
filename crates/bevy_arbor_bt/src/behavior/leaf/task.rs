@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy::utils::prelude::ShortName;
 
 use crate::behavior::{Behave, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 use crate::task::{Graceful, Task, TaskOf};
 
 type Insert = Box<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
@@ -47,12 +48,12 @@ impl Behave for Spawn {
         let Some(task) = self.entity else {
             return Status::Failure;
         };
-        let interrupted = self.graceful && cx.interrupted();
+        let interrupted = self.graceful && cx.is_interrupted();
         let outcome = match cx.world_mut().get_mut::<Task>(task) {
             Some(mut task) => {
                 // Asked again each tick: what wanted it stopped may have
                 // stopped.
-                if task.interrupted() != interrupted {
+                if task.is_interrupted() != interrupted {
                     task.set_interrupted(interrupted);
                 }
                 task.outcome()
@@ -71,21 +72,27 @@ impl Behave for Spawn {
         outcome.into()
     }
 
-    /// Takes the task away, if it's still there: its `Task` is still on it
-    /// for `On<Remove<..>>` observers, with what it reported, if it has.
+    /// Takes the task away, if it's still there, its `Task` left on for
+    /// observers.
+    ///
+    /// `On<Remove<..>>` observers see the `Task`, with what it reported, if it
+    /// has.
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         if let Some(task) = self.entity.take() {
             let _ = cx.world_mut().try_despawn(task);
         }
     }
+}
 
-    fn label(&self) -> String {
-        self.name.to_string()
+impl Inspect for Spawn {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name(&self.name);
     }
 }
 
-/// What a bundle `B` is called: its type's short name, or for a tuple, its
-/// first element's.
+/// What a bundle `B` is called: its type's short name, unless it's a tuple.
+///
+/// A tuple's is its first element's.
 pub(in crate::behavior) fn bundle_name<B: ?Sized>() -> String {
     ShortName(first_element(type_name::<B>())).to_string()
 }
@@ -138,7 +145,7 @@ mod tests {
             .copied()
             .unwrap();
         assert_eq!(of.agent(), npc);
-        let tasks: Vec<Entity> = app.world().get::<AgentTasks>(npc).unwrap().iter().collect();
+        let tasks: Vec<Entity> = app.world().get::<Tasks>(npc).unwrap().iter().collect();
         assert_eq!(tasks.len(), 1, "the agent knows its task");
         assert_eq!(outcome(&app, npc), None);
     }
@@ -173,7 +180,7 @@ mod tests {
             if *told {
                 task.succeed();
             }
-            *told = task.interrupted();
+            *told = task.is_interrupted();
         }
     }
 
@@ -181,7 +188,7 @@ mod tests {
     fn a_graceful_task_is_told_and_waited_for() {
         let mut app = app();
         app.app_mut()
-            .add_systems(FixedUpdate, wind_down.after(TreeSystems));
+            .add_systems(FixedUpdate, wind_down.after(BehaviorTreeSystems));
         let npc = agent(
             &mut app,
             behavior_tree! {

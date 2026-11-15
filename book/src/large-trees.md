@@ -76,7 +76,7 @@ struct Search;
 
 const GIVE_UP: Duration = Duration::from_secs(8);
 
-fn search(mut tasks: Tasks<&Search, &mut Transform>) {
+fn search(mut tasks: TaskQuery<&Search, &mut Transform>) {
     tasks.for_each(|_, mut task, mut at| {
         if task.elapsed() > GIVE_UP {
             task.fail();

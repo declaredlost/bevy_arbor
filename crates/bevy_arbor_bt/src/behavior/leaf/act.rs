@@ -1,5 +1,6 @@
 use crate::behavior::system::Check;
 use crate::behavior::{Behave, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
 /// Runs a system once: what it returns is the result.
 pub(in crate::behavior) struct Act(Check<bool>);
@@ -16,8 +17,10 @@ impl Behave for Act {
     }
 
     fn end(&mut self, _cx: &mut Context, _outcome: Option<Outcome>) {}
+}
 
-    fn label(&self) -> String {
-        format!("act {}", self.0.name())
+impl Inspect for Act {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name(format_args!("act {}", self.0.name()));
     }
 }

@@ -5,8 +5,9 @@ use bevy::prelude::*;
 
 use crate::sense::Sense;
 
-/// Writes the parts of a perception event: Clone, Copy, Debug and the
-/// constructor, without asking anything of `S`.
+/// Writes the parts of a perception event, without asking anything of `S`.
+///
+/// The parts: Clone, Copy, Debug and the constructor.
 macro_rules! event {
     ($name:ident) => {
         impl<S: Sense> $name<S> {
@@ -41,8 +42,9 @@ macro_rules! event {
     };
 }
 
-/// Triggered on an agent as something comes to its attention by `S`: sensed
-/// when nothing remembered it that way, or active again.
+/// Triggered on an agent as something comes to its attention by `S`.
+///
+/// That's sensed when nothing remembered it that way, or active again.
 #[derive(EntityEvent)]
 pub struct Noticed<S: Sense> {
     /// The agent.
@@ -52,8 +54,9 @@ pub struct Noticed<S: Sense> {
     sense: PhantomData<fn() -> S>,
 }
 
-/// Triggered on an agent as something stops being active for `S`, a
-/// sustained sense: out of view, for sight.
+/// Triggered on an agent as something stops being active for `S`.
+///
+/// Only for a sustained sense: out of view, for sight.
 #[derive(EntityEvent)]
 pub struct Lost<S: Sense> {
     /// The agent.

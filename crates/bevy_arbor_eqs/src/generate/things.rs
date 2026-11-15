@@ -2,15 +2,17 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_arbor_perception::perceived::{Perceived, Traces};
+use bevy_arbor_perception::perceived::{Perceived, Stimuli};
 use bevy_arbor_perception::sense::Sense;
 
 use super::{CachedQuery, Generate};
 use crate::anchor::{Locate, Located};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// What the agent perceives by `S`, where each is now, or was last sensed if
-/// it's gone: among what's in view, the best target.
+/// it's gone.
+///
+/// Among what's in view, it finds the best target.
 pub struct Percepts<S: Sense> {
     active: bool,
     hostile: bool,
@@ -44,12 +46,12 @@ impl<S: Sense> Percepts<S> {
 }
 
 impl<S: Sense> Generate for Percepts<S> {
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let Ok(agent) = cx.world().get_entity(cx.agent()) else {
             return;
         };
-        let (Some(perceived), Some(traces)) =
-            (agent.get::<Perceived<S>>(), agent.get::<Traces<S>>())
+        let (Some(perceived), Some(stimuli)) =
+            (agent.get::<Perceived<S>>(), agent.get::<Stimuli<S>>())
         else {
             return;
         };
@@ -63,10 +65,10 @@ impl<S: Sense> Generate for Percepts<S> {
             let position = if percept.is_active() {
                 cx.position(entity)
             } else {
-                traces.get(entity).map(|trace| trace.position)
+                stimuli.get(entity).map(|stimulus| stimulus.position)
             };
             if let Some(position) = position {
-                out.push(Item::Entity { entity, position });
+                out.push(EnvQueryItem::thing(entity, position));
             }
         }
     }
@@ -94,7 +96,7 @@ impl<C: Component> Nearby<C> {
 }
 
 impl<C: Component> Generate for Nearby<C> {
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.around);
         if anchors.is_empty() {
             return;
@@ -110,7 +112,7 @@ impl<C: Component> Generate for Nearby<C> {
                     .iter()
                     .any(|Located { position: at, .. }| at.distance(position) <= self.range);
                 if near {
-                    out.push(Item::Entity { entity, position });
+                    out.push(EnvQueryItem::thing(entity, position));
                 }
             }
         });

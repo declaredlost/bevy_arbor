@@ -9,8 +9,10 @@ use syn::{Error, Expr, ExprLit, Lit, Result, UnOp};
 /// What a length too long for `u64` nanoseconds gets.
 const TOO_LONG: &str = "too long: a length is at most 18446744073 seconds";
 
-/// The code building a `Duration`: a number is seconds, checked here, so a
-/// negative one doesn't compile; anything else is a `Duration` already.
+/// The code building a `Duration`, from a number of seconds or a `Duration`.
+///
+/// A number is checked here, so a negative one doesn't compile; anything else
+/// is a `Duration` already.
 pub(super) fn length(expr: &Expr) -> Result<TokenStream> {
     let Some(seconds) = seconds(expr)? else {
         return Ok(quote! { #expr });

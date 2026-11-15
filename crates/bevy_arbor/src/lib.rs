@@ -20,14 +20,16 @@ pub use bevy_arbor_avian2d as avian2d;
 #[cfg_attr(docsrs, doc(cfg(feature = "avian3d")))]
 #[doc(inline)]
 pub use bevy_arbor_avian3d as avian3d;
-/// Reactive behavior trees: trees that sleep until something they wait on
-/// changes, with tasks as entities.
+/// Reactive behavior trees, sleeping until something they wait on changes.
+///
+/// Their tasks are entities.
 #[cfg(feature = "bt")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bt")))]
 #[doc(inline)]
 pub use bevy_arbor_bt as bt;
-/// Environment queries: places and things generated round an agent,
-/// filtered and scored, and the best picked.
+/// Environment queries: places and things round an agent, the best picked.
+///
+/// They're generated round it, then filtered and scored.
 #[cfg(feature = "eqs")]
 #[cfg_attr(docsrs, doc(cfg(feature = "eqs")))]
 #[doc(inline)]
@@ -38,8 +40,9 @@ pub use bevy_arbor_eqs as eqs;
 #[cfg_attr(docsrs, doc(cfg(feature = "gizmos")))]
 #[doc(inline)]
 pub use bevy_arbor_gizmos as gizmos;
-/// Navigation: where agents are asked to go and how it goes, a `MoveTo`
-/// task, and path costs for queries, over any pathfinding.
+/// Navigation: where agents are asked to go, and how getting there goes.
+///
+/// With a `MoveTo` task, and path costs for queries, over any pathfinding.
 #[cfg(feature = "nav")]
 #[cfg_attr(docsrs, doc(cfg(feature = "nav")))]
 #[doc(inline)]
@@ -94,20 +97,20 @@ pub mod prelude {
 }
 
 plugin_group! {
-    /// The plugin of every part its features enable.
+    /// The plugin of every part its features enable, and the order they run in.
     ///
     /// Each keeps its defaults; change one with
-    /// `ArborPlugins.set(TreePlugin::new(Update))`. For a 2D game, set the
-    /// space with `ArborPlugins.with_space(Space::Planar)`.
+    /// `ArborPlugins.set(BehaviorTreePlugin::new(Update))`. For a 2D game, set
+    /// the space with `ArborPlugins.with_space(Space::Planar)`.
     pub struct ArborPlugins {
         #[cfg(feature = "bt")]
-        bt:::TreePlugin,
+        bt:::BehaviorTreePlugin,
         #[cfg(feature = "perception")]
         perception:::PerceptionPlugin,
         #[cfg(feature = "eqs")]
-        eqs:::EqsPlugin,
+        eqs:::EnvQueryPlugin,
         #[cfg(feature = "smart")]
-        smart:::SmartPlugin,
+        smart:::SmartObjectPlugin,
         #[cfg(feature = "nav")]
         nav:::NavPlugin,
         :ArborSystemsPlugin,
@@ -122,8 +125,9 @@ plugin_group! {
 
 #[cfg(feature = "perception")]
 impl ArborPlugins {
-    /// Every part's plugin, with perception in `space`: [`Space::Planar`] for
-    /// 2D. Everything that works in a space (perception, queries, avian, the
+    /// Every part's plugin, perception in `space`: [`Space::Planar`] for 2D.
+    ///
+    /// Everything that works in a space (perception, queries, avian, the
     /// gizmos) takes it from there.
     ///
     /// The same as
@@ -153,9 +157,10 @@ impl ArborPlugins {
 #[doc = include_str!("../README.md")]
 pub struct ReadmeDoctests;
 
-/// The book's examples, one item per chapter, compiled as doctests with every
-/// feature enabled. The book isn't published with the crate, so this only
-/// builds in the repository.
+/// The book's examples, one item per chapter, compiled as doctests.
+///
+/// They're compiled with every feature enabled. The book isn't published with
+/// the crate, so this only builds in the repository.
 #[cfg(all(
     doctest,
     feature = "bt",

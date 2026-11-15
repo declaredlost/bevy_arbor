@@ -1,10 +1,11 @@
-//! Decorators: what decides whether a branch may run.
+//! Decorators: conditions and cooldowns, deciding whether a branch may run.
 //!
-//! [`Condition`]s only answer: functions of the agent's components, or your
-//! own, put together with `!`, `&&` and `||`. Decorators that act as their
-//! branch starts and ends, as [`Cooldown`] or a claim, are [`Decorate`]s:
-//! they go after a comma, never under `!` or `||`, so whenever their branch
-//! runs, they passed, and they're told it started and ended.
+//! [`Condition`]s only answer: functions of the agent's components, read-only
+//! systems on the agent, or your own, put together with `!`, `&&` and `||`.
+//! Decorators that act as their branch starts and ends, as [`Cooldown`] or a
+//! claim, are [`Decorate`]s: they go after a comma, never under `!` or `||`, so
+//! whenever their branch runs, they passed, and they're told it started and
+//! ended.
 //!
 //! ```
 //! # use bevy::prelude::*;
@@ -41,22 +42,20 @@
 //! };
 //! ```
 
-mod condition;
 mod cooldown;
 mod decorate;
 
-pub(crate) use self::condition::asked;
-pub use self::condition::{
-    AgentFn, And, Asked, Condition, ConditionParam, IntoCondition, Not, Or, Typed, not, with,
-};
-pub use self::cooldown::{Cooldown, Cooling, SharedCooldown, cooldown, cooldown_of};
+pub use self::cooldown::{Cooldown, Cooling, SharedCooldown, cooldown, shared_cooldown};
 pub use self::decorate::Decorate;
 use crate::behavior::{Context, Outcome};
+use crate::condition::{Condition, IntoCondition, poll_if_silent};
+use crate::inspect::{Inspect, Inspection, label};
 use crate::tree::{NODE, Owner};
 
-/// A branch's decorators, all of which must pass: its conditions, put
-/// together with `!`, `&&` and `||`, and after commas, any that act as it
-/// starts and ends.
+/// A branch's decorators, all of which must pass: what's in its `when(..)`.
+///
+/// Its conditions, put together with `!`, `&&` and `||`, and after commas, any
+/// that act as it starts and ends.
 ///
 /// The macro writes one from `when(has_target && !calm)`, or
 /// `when(has_target, cooldown(8.0))`.
@@ -72,8 +71,9 @@ pub struct Decorator {
 /// asks that one again, not every decorator in it.
 struct Part {
     decorate: Box<dyn Decorate>,
-    /// Whether it acts as its branch starts and ends: then that may change its
-    /// answer too.
+    /// Whether it acts as its branch starts and ends.
+    ///
+    /// Then that may change its answer too.
     scoped: bool,
     /// Its id in its tree, once it has one.
     id: Owner,
@@ -94,13 +94,22 @@ impl Part {
         }
     }
 
-    /// Whether it passes: as it last answered, if nothing it waits on came
-    /// and it was asked the tree's tick before, or asked again.
+    /// Whether it passes: as it last answered, or asked again.
+    ///
+    /// It answers as it last did if nothing it waits on came and it was asked
+    /// the tree's tick before.
     fn passes(&mut self, cx: &mut Context) -> bool {
         if self.id == NODE {
             self.id = cx.new_id();
         }
         let tick = cx.tick_count();
+        // Asked already this tick: as it said then. What's changed since,
+        // it's waiting on, and wakes the tree next tick.
+        if let Some(answer) = self.answer
+            && self.checked == tick
+        {
+            return answer;
+        }
         // Asked the tick before, so what it waits on was waited on since.
         if let Some(answer) = self.answer
             && self.checked + 1 == tick
@@ -111,7 +120,7 @@ impl Part {
             return answer;
         }
         let decorate = &mut self.decorate;
-        let answer = cx.asking(self.id, |cx| asked(cx, |cx| decorate.passes(cx)));
+        let answer = cx.asking(self.id, |cx| poll_if_silent(cx, |cx| decorate.passes(cx)));
         self.answer = Some(answer);
         self.checked = tick;
         answer
@@ -152,15 +161,17 @@ impl Decorator {
         let labels: Vec<String> = self
             .parts
             .iter()
-            .map(|part| part.decorate.label())
+            .map(|part| label(&*part.decorate))
             .collect();
         labels.join(", ")
     }
 
-    /// Asks it about the agent: whether every part passes, each asked only if
-    /// those before it did. One that says nothing it waits on is asked again
-    /// next tick; one that's not asked, as one before it failed, isn't waited
-    /// on, so its answer is forgotten.
+    /// Asks it about the agent: whether every part passes, each only if those
+    /// before did.
+    ///
+    /// One that says nothing it waits on is asked again next tick; one that's
+    /// not asked, as one before it failed, isn't waited on, so its answer is
+    /// forgotten.
     pub(crate) fn passes(&mut self, cx: &mut Context) -> bool {
         let mut passes = true;
         for part in &mut self.parts {
@@ -196,15 +207,18 @@ impl<C: Condition> Decorate for Guard<C> {
     fn passes(&mut self, cx: &mut Context) -> bool {
         self.0.passes(cx)
     }
+}
 
-    fn label(&self) -> String {
-        self.0.label()
+impl<C: Inspect> Inspect for Guard<C> {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        self.0.inspect(inspection);
     }
 }
 
-/// What a [`Decorator`] can be made from: a condition, as
-/// [`IntoCondition`] takes, a [`Decorate`], or a tuple of them, all of which
-/// must pass.
+/// What a [`Decorator`] can be made from: conditions, decorators, or a tuple.
+///
+/// A condition, as [`IntoCondition`] takes, a [`Decorate`], or a tuple of
+/// them, all of which must pass.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` isn't a decorator",
     label = "not a decorator",
@@ -279,313 +293,14 @@ many!(A MA, B MB, C MC, D MD, E ME, F MF, G MG, H MH);
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use bevy::ecs::error::{ErrorContext, FallbackErrorHandler};
     use bevy::prelude::*;
-    use bevy_harness::TestApp;
 
-    use crate::behavior::Context;
-    use crate::decorator::{Condition, Decorate, IntoCondition, with};
     use crate::prelude::*;
     use crate::testing::*;
-
-    fn at_least(In((agent, least)): In<(Entity, u32)>, levels: Query<&Level>) -> bool {
-        levels.get(agent).is_ok_and(|level| level.0 >= least)
-    }
-
-    #[derive(Component)]
-    struct Level(u32);
-
-    fn with_flags(app: &mut TestApp, tree: Behavior, high: bool, low: bool) -> Entity {
-        let npc = agent(app, tree);
-        set(app, npc, high, low);
-        npc
-    }
-
-    #[test]
-    fn boolean_decorators_read_as_written() {
-        let mut app = app();
-        let tree = || {
-            behavior_tree! {
-                Select => {
-                    when(high && !low) => act(count),
-                }
-            }
-        };
-        let yes = with_flags(&mut app, tree(), true, false);
-        let no = with_flags(&mut app, tree(), true, true);
-        app.tick();
-        assert_eq!(outcome(&app, yes), Some(true));
-        assert_eq!(outcome(&app, no), Some(false));
-    }
-
-    #[test]
-    fn or_and_grouping() {
-        let mut app = app();
-        let tree = || {
-            behavior_tree! {
-                Select => {
-                    when(!(high || low)) => act(count),
-                }
-            }
-        };
-        let yes = with_flags(&mut app, tree(), false, false);
-        let no = with_flags(&mut app, tree(), false, true);
-        app.tick();
-        assert_eq!(outcome(&app, yes), Some(true));
-        assert_eq!(outcome(&app, no), Some(false));
-    }
-
-    #[test]
-    fn a_decorator_takes_a_parameter() {
-        let mut app = app();
-        let npc = app.spawn((
-            Level(3),
-            BehaviorTree::new(behavior_tree! {
-                Sequence => {
-                    Select => { when(with(at_least, 2)) => act(count) },
-                    Select => { when(with(at_least, 5)) => act(count) },
-                }
-            }),
-        ));
-        app.tick();
-        assert_eq!(acts(&app), 1, "one function, two decorators");
-        assert_eq!(outcome(&app, npc), Some(false));
-    }
-
-    static ERRORS: AtomicUsize = AtomicUsize::new(0);
-
-    fn count_errors(_: BevyError, _: ErrorContext) {
-        ERRORS.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn broken(In(_): In<Entity>) -> Result<bool> {
-        Err("broken".into())
-    }
-
-    #[expect(
-        clippy::unnecessary_wraps,
-        reason = "an act returning a `Result`, which is what's tested"
-    )]
-    fn fine(In(_): In<Entity>, mut acts: ResMut<Acts>) -> Result<bool> {
-        acts.0 += 1;
-        Ok(true)
-    }
-
-    #[test]
-    fn a_decorator_or_act_can_use_question_marks_and_an_error_counts_as_no() {
-        let mut app = app();
-        app.app_mut()
-            .insert_resource(FallbackErrorHandler(count_errors));
-        let npc = agent(
-            &mut app,
-            behavior_tree! {
-                Sequence => {
-                    act(fine),
-                    Select => {
-                        when(broken) => act(count),
-                        act(refuse),
-                    },
-                }
-            },
-        );
-        app.tick();
-        assert_eq!(acts(&app), 2, "`fine`, then `refuse`: `broken` said no");
-        assert_eq!(outcome(&app, npc), Some(false));
-        assert_eq!(ERRORS.load(Ordering::Relaxed), 1, "to Bevy's error handler");
-    }
-
-    #[test]
-    fn a_decorator_built_by_hand_goes_in_too() {
-        let mut app = app();
-        let npc = app.spawn((
-            Level(3),
-            BehaviorTree::new(behavior_tree! {
-                Select => {
-                    when((with(at_least, 2).and(with(at_least, 3)), cooldown(1.0))) => act(count),
-                }
-            }),
-        ));
-        app.tick();
-        assert_eq!(outcome(&app, npc), Some(true));
-    }
-
-    /// Says no the first time it's asked, by any agent, and yes after.
-    fn asked_before(In(_): In<Entity>, mut asked: Local<bool>) -> bool {
-        std::mem::replace(&mut *asked, true)
-    }
-
-    #[test]
-    fn a_decorator_s_local_is_shared_by_every_agent_using_it() {
-        let mut app = app();
-        let tree = || behavior_tree! { Select => { when(asked_before) => act(count) } };
-        agent(&mut app, tree());
-        agent(&mut app, tree());
-        app.tick();
-        assert_eq!(acts(&app), 1, "the second saw the first's `Local`");
-    }
-
-    #[derive(Component)]
-    struct Asked;
-
-    fn noted(In(agent): In<Entity>, mut commands: Commands) -> bool {
-        commands.entity(agent).insert(Asked);
-        true
-    }
-
-    #[test]
-    fn a_decorator_can_queue_commands_as_a_run_condition_can() {
-        let mut app = app();
-        let npc = agent(
-            &mut app,
-            behavior_tree! { Select => { when(noted) => act(count) } },
-        );
-        app.tick();
-        assert!(
-            app.world().get::<Asked>(npc).is_some(),
-            "applied as it returned"
-        );
-    }
-
-    /// Whether another entity's `Level` is above 2, as a closure.
-    fn above(other: Entity) -> impl Condition {
-        move |cx: &mut Context| {
-            cx.watch::<Level>(other);
-            cx.world()
-                .get::<Level>(other)
-                .is_some_and(|level| level.0 > 2)
-        }
-    }
-
-    #[test]
-    fn a_closure_taking_the_context_is_a_condition_too() {
-        let mut app = app();
-        let other = app.spawn(Level(1));
-        agent(
-            &mut app,
-            behavior_tree! {
-                Select => {
-                    when(above(other) && !low) => task(Work),
-                    when(|_: &mut Context| true) => task(Other),
-                }
-            },
-        );
-        app.tick();
-        assert_eq!(app.count::<With<Other>>(), 1);
-        app.entity_mut(other).insert(Level(3));
-        app.tick();
-        assert_eq!(app.count::<With<Work>>(), 1, "woken by the other's change");
-    }
-
-    #[test]
-    fn a_typed_condition_can_capture_what_varies() {
-        fn least(least: u32) -> impl Condition {
-            (move |level: &Level| level.0 >= least).into_condition()
-        }
-        let mut app = app();
-        let npc = app.spawn((
-            Level(3),
-            BehaviorTree::new(behavior_tree! {
-                Sequence => {
-                    Select => { when(least(2)) => act(count) },
-                    Select => { when(least(5)) => act(count) },
-                }
-            }),
-        ));
-        app.tick();
-        assert_eq!(acts(&app), 1);
-        assert_eq!(outcome(&app, npc), Some(false));
-    }
-
-    /// Whether another entity's `Level` is above 2: a condition of its own,
-    /// reading beyond the agent.
-    struct Above(Entity);
-
-    impl Condition for Above {
-        fn passes(&mut self, cx: &mut Context) -> bool {
-            cx.watch::<Level>(self.0);
-            cx.world()
-                .get::<Level>(self.0)
-                .is_some_and(|level| level.0 > 2)
-        }
-    }
-
-    #[test]
-    fn a_condition_of_your_own_reads_beyond_the_agent_and_wakes_for_it() {
-        let mut app = app();
-        let other = app.spawn(Level(1));
-        agent(
-            &mut app,
-            behavior_tree! {
-                Select => {
-                    when(Above(other) && !low) => task(Work),
-                    task(Other),
-                }
-            },
-        );
-        app.tick();
-        assert_eq!(app.count::<With<Other>>(), 1);
-        app.entity_mut(other).insert(Level(3));
-        app.tick();
-        assert_eq!(app.count::<With<Work>>(), 1, "woken by the other's change");
-    }
-
-    static SILENT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-    /// A condition of its own saying nothing it waits on.
-    struct Silent;
-
-    impl Condition for Silent {
-        fn passes(&mut self, _cx: &mut Context) -> bool {
-            SILENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            false
-        }
-    }
-
-    fn typed_low(flags: &Flags) -> bool {
-        flags.low
-    }
-
-    #[test]
-    fn a_condition_saying_nothing_is_asked_every_tick_even_beside_one_that_waits() {
-        let mut app = app();
-        agent(
-            &mut app,
-            behavior_tree! {
-                Select => {
-                    when(typed_low || Silent) => task(Work),
-                    Wait(100.0),
-                }
-            },
-        );
-        app.ticks(4);
-        assert_eq!(SILENT.load(std::sync::atomic::Ordering::Relaxed), 4);
-    }
-
-    /// How many are in a branch.
-    #[derive(Resource, Default)]
-    struct Inside(i32);
-
-    /// Counts its branch's runs in and out.
-    struct Counted;
-
-    impl Decorate for Counted {
-        fn start(&mut self, cx: &mut Context) {
-            cx.world_mut().resource_mut::<Inside>().0 += 1;
-        }
-
-        fn passes(&mut self, _cx: &mut Context) -> bool {
-            true
-        }
-
-        fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
-            cx.world_mut().resource_mut::<Inside>().0 -= 1;
-        }
-    }
 
     #[test]
     fn a_decorator_after_a_comma_is_told_its_branch_starts_and_ends() {
         let mut app = app();
-        app.app_mut().init_resource::<Inside>();
         let npc = agent(
             &mut app,
             behavior_tree! {
@@ -596,15 +311,17 @@ mod tests {
             },
         );
         app.tick();
-        assert_eq!(app.world().resource::<Inside>().0, 1, "started");
+        assert_eq!(inside(&app), 1, "started");
         set(&mut app, npc, true, false);
         app.tick();
-        assert_eq!(app.world().resource::<Inside>().0, 0, "ended as cancelled");
+        assert_eq!(inside(&app), 0, "ended as cancelled");
         assert_eq!(app.count::<With<Other>>(), 1);
     }
 
     /// Takes the agent's tree away if it's low: a system condition queuing
-    /// commands, as one may.
+    /// commands.
+    ///
+    /// One may queue them.
     fn remover(In(agent): In<Entity>, flags: Query<&Flags>, mut commands: Commands) -> bool {
         if flags.get(agent).is_ok_and(|flags| flags.low) {
             commands.entity(agent).remove::<BehaviorTree>();
@@ -615,7 +332,6 @@ mod tests {
     #[test]
     fn a_tree_taken_away_by_its_own_condition_ends_each_decorator_once() {
         let mut app = app();
-        app.app_mut().init_resource::<Inside>();
         let npc = agent(
             &mut app,
             behavior_tree! {
@@ -623,20 +339,15 @@ mod tests {
             },
         );
         app.tick();
-        assert_eq!(app.world().resource::<Inside>().0, 1, "started");
+        assert_eq!(inside(&app), 1, "started");
         set(&mut app, npc, false, true);
         app.tick();
-        assert_eq!(
-            app.world().resource::<Inside>().0,
-            0,
-            "ended once, not twice"
-        );
+        assert_eq!(inside(&app), 0, "ended once, not twice");
     }
 
     #[test]
     fn a_decorator_whose_condition_before_it_failed_is_neither_asked_nor_told() {
         let mut app = app();
-        app.app_mut().init_resource::<Inside>();
         agent(
             &mut app,
             behavior_tree! {
@@ -647,7 +358,7 @@ mod tests {
             },
         );
         app.ticks(3);
-        assert_eq!(app.world().resource::<Inside>().0, 0);
+        assert_eq!(inside(&app), 0);
         assert_eq!(app.count::<With<Other>>(), 1);
     }
 
@@ -656,16 +367,17 @@ mod tests {
     #[test]
     fn a_branch_never_run_after_its_tree_went_is_told_nothing() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! {
                 Select => {
                     when(remover) => act(refuse),
-                    when(cooldown_of::<Thrown>(5.0)) => act(count),
+                    when(shared_cooldown::<Thrown>(5.0)) => act(count),
                 }
             },
+            false,
+            true,
         );
-        set(&mut app, npc, false, true);
         app.tick();
         assert!(
             app.world().get::<Cooling<Thrown>>(npc).is_none(),

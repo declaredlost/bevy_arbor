@@ -1,5 +1,6 @@
-//! Slots: the places on a smart object an agent can claim, each offering an
-//! activity, and maybe behavior of its own.
+//! Slots: the places on a smart object an agent can claim, and what they offer.
+//!
+//! Each offers an activity, and maybe behavior of its own.
 
 use bevy::prelude::*;
 
@@ -41,7 +42,7 @@ impl SlotOf {
     }
 }
 
-/// On a smart object: its slots, kept by [`SlotOf`].
+/// On a smart object: its slots, kept by [`SlotOf`], each a place to claim.
 #[derive(Component, Reflect, Debug, Default)]
 #[reflect(Component, Debug)]
 #[relationship_target(relationship = SlotOf, linked_spawn)]
@@ -54,14 +55,17 @@ impl Slots {
     }
 }
 
-/// On a slot: it can't be found or claimed. One claimed as it's disabled is
-/// given up: what claimed it is cancelled, as its decorator stops passing.
+/// On a slot: it can't be found or claimed, and one claimed is given up.
+///
+/// What claimed it as it's disabled is cancelled, as its decorator stops
+/// passing.
 #[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component, Debug, Default)]
 pub struct SlotDisabled;
 
-/// The socket a claimed slot's behavior is plugged into: `Socket(Using)` in
-/// the claiming agent's tree runs it.
+/// The socket a claimed slot's behavior is plugged into, in the agent's tree.
+///
+/// `Socket(Using)` in the claiming agent's tree runs it.
 ///
 /// A slot offers behavior with a `Plugged<Using>` on it, as the agent's own
 /// would be: claiming the slot plugs it into the agent, and releasing it takes

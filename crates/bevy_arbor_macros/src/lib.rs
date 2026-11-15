@@ -1,5 +1,6 @@
 //! The macros of every `bevy_arbor` part, each re-exported by its part.
 
+mod inspect;
 mod path;
 mod tree;
 
@@ -28,6 +29,18 @@ use proc_macro::TokenStream;
 #[proc_macro]
 pub fn behavior_tree(input: TokenStream) -> TokenStream {
     tree::expand(input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives `Inspect`: the type shows in a trace as its name, and its marked
+/// fields.
+///
+/// Fields marked `#[inspect(param)]` show in brackets after its name, and those
+/// marked `#[inspect(child)]` or `#[inspect(children)]` under it.
+#[proc_macro_derive(Inspect, attributes(inspect))]
+pub fn derive_inspect(input: TokenStream) -> TokenStream {
+    inspect::derive(input.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
