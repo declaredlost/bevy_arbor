@@ -15,13 +15,14 @@ shape won't.
 
 | Agents | Awake: conditions asked every tick | Typed conditions, nothing changing | Typed conditions, a tenth changing each tick |
 |---|---|---|---|
-| 100 | 36 µs | 12 µs | 20 µs |
-| 2,000 | 211 µs | 55 µs | 111 µs |
-| 10,000 | 885 µs | 228 µs | 494 µs |
+| 100 | 31 µs | 12 µs | 21 µs |
+| 2,000 | 189 µs | 52 µs | 101 µs |
+| 10,000 | 743 µs | 217 µs | 432 µs |
 
-Per agent, that's about 90 nanoseconds awake, asking four conditions every
+Per agent, that's about 75 nanoseconds awake, asking four conditions every
 tick, and about 20 asleep. At 100 agents, most of it is the frame's own cost
-of Bevy's multi-threaded executor. Run it yourself:
+of Bevy's multi-threaded executor, about 10 µs. Trees are handed to threads
+a few hundred at a time, so a handful woken in a tick tick on one. Run it yourself:
 
 ```sh
 cargo run --release -p bevy_arbor_bt --example load

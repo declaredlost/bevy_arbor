@@ -16,6 +16,10 @@ pub(crate) struct Plan {
     at: Option<Duration>,
     /// Components it waits on a change to.
     watches: Vec<Watch>,
+    /// Which of them are on entities that weren't there as they were looked
+    /// at: ones the tree's own commands are spawning, most likely, so they're
+    /// looked at again once those are applied.
+    unborn: Vec<usize>,
 }
 
 /// A component on an entity, waited on to change, come or go.
@@ -26,10 +30,6 @@ struct Watch {
     seen: Option<Tick>,
     /// When it last changed now: `None` if it isn't there.
     changed: fn(&World, Entity) -> Option<Tick>,
-    /// That its entity wasn't there as it was looked at: one the tree's own
-    /// commands are spawning, most likely, so it's looked at again once
-    /// they're applied.
-    unborn: bool,
 }
 
 impl Plan {
@@ -56,18 +56,20 @@ impl Plan {
         {
             return;
         }
+        if world.get_entity(entity).is_err() {
+            self.unborn.push(self.watches.len());
+        }
         self.watches.push(Watch {
             entity,
             kind,
             seen: changed::<T>(world, entity),
             changed: changed::<T>,
-            unborn: world.get_entity(entity).is_err(),
         });
     }
 
     /// Whether anything it watches is on an entity that wasn't there yet.
     pub(crate) fn unborn(&self) -> bool {
-        self.watches.iter().any(|watch| watch.unborn)
+        !self.unborn.is_empty()
     }
 
     /// Looks again at what was watched on entities that weren't there yet, now
@@ -77,12 +79,14 @@ impl Plan {
     ///
     /// One still not there is left as it was: it wakes the tree as it comes.
     pub(crate) fn settle(&mut self, world: &World, before: Tick) {
-        for watch in self.watches.iter_mut().filter(|watch| watch.unborn) {
-            if world.get_entity(watch.entity).is_ok() {
+        self.unborn.retain(|&index| {
+            let watch = &mut self.watches[index];
+            let born = world.get_entity(watch.entity).is_ok();
+            if born {
                 watch.seen = Some(before);
-                watch.unborn = false;
             }
-        }
+            !born
+        });
     }
 
     /// Whether any of it has come, as of the change tick `now`, or the clock

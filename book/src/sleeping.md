@@ -42,7 +42,7 @@ tree doesn't tick.
 | Every tick | A custom node, condition or decorator that says nothing |
 
 A sleeping tree costs a check of the change ticks it watches. That's about 20
-nanoseconds an agent, against about 90 for one asking four conditions every
+nanoseconds an agent, against about 75 for one asking four conditions every
 tick. See [Performance](performance.md).
 
 ## What "changed" means
