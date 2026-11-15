@@ -10,7 +10,7 @@ mod system;
 mod typed;
 
 pub(crate) use self::logic::poll_if_silent;
-pub use self::logic::{And, Not, Or, not};
+pub use self::logic::{Conditions, IntoConditions, all, any, unless};
 pub use self::system::{ConditionSystem, with};
 pub use self::typed::{AgentFn, ConditionParam, TypedCondition};
 use crate::behavior::Context;
@@ -84,7 +84,7 @@ pub trait Condition: Inspect + Send + Sync + 'static {
 ///
 /// ```
 /// # use bevy::prelude::*;
-/// # use bevy_arbor_bt::condition::{Condition, IntoCondition};
+/// # use bevy_arbor_bt::condition::{Condition, IntoCondition, all};
 /// #[derive(Component)]
 /// struct Target(Option<Entity>);
 ///
@@ -100,7 +100,7 @@ pub trait Condition: Inspect + Send + Sync + 'static {
 ///     (move |ammo: &Ammo| ammo.0 >= least).into_condition()
 /// }
 ///
-/// let armed = has_target.and(ammo(3));
+/// let armed = all((has_target, ammo(3)));
 /// ```
 ///
 /// Anything else, a typed condition can't read: another entity, a resource,
@@ -141,20 +141,6 @@ pub trait IntoCondition<M>: Sized {
 
     /// It, as a condition.
     fn into_condition(self) -> Self::Condition;
-
-    /// Passes when this and `other` both do; `other` only asked if this does.
-    ///
-    /// `a && b` in `when(..)`.
-    fn and<N, C: IntoCondition<N>>(self, other: C) -> And<Self::Condition, C::Condition> {
-        And(self.into_condition(), other.into_condition())
-    }
-
-    /// Passes when this or `other` does; `other` only asked if this doesn't.
-    ///
-    /// `a || b` in `when(..)`.
-    fn or<N, C: IntoCondition<N>>(self, other: C) -> Or<Self::Condition, C::Condition> {
-        Or(self.into_condition(), other.into_condition())
-    }
 }
 
 /// A closure taking the [`Context`] is a condition of your own, as a
@@ -309,7 +295,7 @@ mod tests {
             Level(3),
             BehaviorTree::new(behavior_tree! {
                 Select => {
-                    when((with(at_least, 2).and(with(at_least, 3)), cooldown(1.0))) => act(count),
+                    when((all((with(at_least, 2), with(at_least, 3))), cooldown(1.0))) => act(count),
                 }
             }),
         ));

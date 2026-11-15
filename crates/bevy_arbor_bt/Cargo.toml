@@ -27,6 +27,7 @@ bevy_arbor_macros = { workspace = true, features = [] }
 
 # Game engine
 bevy = { workspace = true, features = ["std", "bevy_log"] }
+variadics_please = { workspace = true, features = [] }
 
 [dev-dependencies]
 bevy_harness = { workspace = true }

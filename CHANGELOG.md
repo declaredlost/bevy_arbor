@@ -30,17 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     marked `#[inspect(param)]`, `child` or `children`. They say what they wait
     on as they tick (`Context::wake_at`, `Context::watch`); a running node
     whose subtree said nothing is ticked every tick.
-  - Decorators: what's in `when(..)`, every part of which must pass.
-    Conditions only answer: typed ones (functions or closures of the agent's
-    components), system conditions (`with(system, param)` for a parameter),
-    closures over the `Context`, or your own `Condition`, combined with `!`,
-    `&&` and `||` (outside the macro, `IntoCondition::and`, `or`, and `not`).
-    Those acting as their branch starts and ends go after a comma, never under
-    `!` or `||`, so whenever their branch runs they passed, and hear it start
-    and end: `when(has_target, cooldown(8.0))`. `cooldown(seconds)` keeps a
-    branch from running again for that long after it ends; `Decorate` is for
-    your own. One at rest says so with `Context::wait_on_nothing`, so its tree
-    can sleep.
+  - Decorators: what's in `when(..)`, every part of which must pass. Conditions
+    only answer: typed ones (functions or closures of the agent's components),
+    system conditions (`with(system, param)` for a parameter), closures over the
+    `Context`, or your own `Condition`, combined with `!`, `&&` and `||`
+    (outside the macro, `all((a, b))`, `any((a, b))` and `unless(a)`). Those
+    acting as their branch starts and ends go after a comma, never under `!` or
+    `||`, so whenever their branch runs they passed, and hear it start and end:
+    `when(has_target, cooldown(8.0))`. `cooldown(seconds)` keeps a branch from
+    running again for that long after it ends; `Decorate` is for your own. One
+    at rest says so with `Context::wait_on_nothing`, so its tree can sleep.
   - System conditions and acts run from a table of their own, not Bevy's system
     registry: several times cheaper to ask.
   - `Repeat(times) => { .. }`: its child that many times, until it fails.

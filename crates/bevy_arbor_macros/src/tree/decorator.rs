@@ -31,9 +31,7 @@ fn part(bt: &TokenStream, expr: &Expr) -> TokenStream {
 
 /// Whether `expr` puts conditions together.
 fn logic(expr: &Expr) -> bool {
-    match expr {
-        Expr::Paren(inner) => logic(&inner.expr),
-        Expr::Group(inner) => logic(&inner.expr),
+    match strip(expr) {
         Expr::Unary(unary) => matches!(unary.op, UnOp::Not(_)),
         Expr::Binary(binary) => matches!(binary.op, BinOp::And(_) | BinOp::Or(_)),
         _ => false,
@@ -42,24 +40,58 @@ fn logic(expr: &Expr) -> bool {
 
 /// The code building a condition: `!`, `&&`, `||` and brackets read as
 /// written.
+///
+/// A run of one of `&&` or `||` is one `all` or `any` of everything in it.
 fn condition(bt: &TokenStream, expr: &Expr) -> TokenStream {
-    let into = quote! { #bt::condition::IntoCondition };
-    match expr {
-        Expr::Paren(inner) => condition(bt, &inner.expr),
-        Expr::Group(inner) => condition(bt, &inner.expr),
+    let condition_mod = quote! { #bt::condition };
+    match strip(expr) {
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
             let inner = condition(bt, &unary.expr);
-            quote! { #bt::condition::not(#inner) }
+            quote! { #condition_mod::unless(#inner) }
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::And(_)) => {
-            let (left, right) = (condition(bt, &binary.left), condition(bt, &binary.right));
-            quote! { #into::and(#left, #right) }
+            let parts = run(bt, expr, |op| matches!(op, BinOp::And(_)));
+            joined(&quote! { #condition_mod::all }, parts)
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::Or(_)) => {
-            let (left, right) = (condition(bt, &binary.left), condition(bt, &binary.right));
-            quote! { #into::or(#left, #right) }
+            let parts = run(bt, expr, |op| matches!(op, BinOp::Or(_)));
+            joined(&quote! { #condition_mod::any }, parts)
         }
         _ => quote! { #expr },
+    }
+}
+
+/// `expr` without the brackets around it.
+fn strip(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Paren(inner) => strip(&inner.expr),
+        Expr::Group(inner) => strip(&inner.expr),
+        _ => expr,
+    }
+}
+
+/// `parts` given to `join`, `all` or `any`.
+///
+/// Past eight, the tuple's last is another of the rest.
+fn joined(join: &TokenStream, mut parts: Vec<TokenStream>) -> TokenStream {
+    if parts.len() > 8 {
+        let rest = joined(join, parts.split_off(7));
+        parts.push(rest);
+    }
+    quote! { #join((#(#parts,)*)) }
+}
+
+/// The conditions joined by one operator, `same`, in `expr`, in order.
+///
+/// `a && b && c` is `a`, `b` and `c`.
+fn run(bt: &TokenStream, expr: &Expr, same: fn(&BinOp) -> bool) -> Vec<TokenStream> {
+    match strip(expr) {
+        Expr::Binary(binary) if same(&binary.op) => {
+            let mut parts = run(bt, &binary.left, same);
+            parts.extend(run(bt, &binary.right, same));
+            parts
+        }
+        _ => vec![condition(bt, expr)],
     }
 }
 
@@ -74,8 +106,28 @@ mod tests {
         let code = tree(quote! { Select => { when(!a && b) => act(c) } })
             .unwrap()
             .to_string();
-        assert!(code.contains("condition :: not"), "{code}");
-        assert!(code.contains("IntoCondition :: and"), "{code}");
+        assert!(code.contains("condition :: unless"), "{code}");
+        assert!(code.contains("condition :: all"), "{code}");
+    }
+
+    #[test]
+    fn a_run_of_one_operator_is_one_call() {
+        let code = tree(quote! { Select => { when(a && (b && c) && d) => act(e) } })
+            .unwrap()
+            .to_string();
+        assert_eq!(code.matches("condition :: all").count(), 1, "{code}");
+        assert!(code.contains("all ((a , b , c , d ,))"), "{code}");
+    }
+
+    #[test]
+    fn a_run_past_eight_nests() {
+        let code = tree(quote! {
+            Select => { when(a || b || c || d || e || f || g || h || i) => act(j) }
+        })
+        .unwrap()
+        .to_string();
+        assert_eq!(code.matches("condition :: any").count(), 2, "{code}");
+        assert!(code.contains("any ((h , i ,))"), "{code}");
     }
 
     #[test]
@@ -83,7 +135,7 @@ mod tests {
         let code = tree(quote! { Select => { when(a || b, c, d) => act(e) } })
             .unwrap()
             .to_string();
-        assert!(code.contains("IntoCondition :: or"), "{code}");
+        assert!(code.contains("condition :: any"), "{code}");
         assert_eq!(code.matches(". and (").count(), 2, "{code}");
     }
 

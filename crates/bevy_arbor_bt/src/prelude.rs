@@ -4,16 +4,11 @@
 //! [`Context`](crate::behavior::Context) too, a condition of your own
 //! [`Condition`](crate::condition::Condition), and a decorator acting as its
 //! branch starts and ends [`Decorate`](crate::decorator::Decorate).
-//!
-//! The conditions' `and`, `or` and `not` aren't here, as Bevy's prelude has
-//! run conditions' by those names: in `when(..)`, write `&&`, `||` and `!`, or
-//! import [`IntoCondition`](crate::condition::IntoCondition) and
-//! [`not`](crate::condition::not).
 
 #[doc(no_inline)]
 pub use crate::behavior::{Behavior, Branch, Outcome, Plugged, ScoredBranch, Status, plugged};
 #[doc(no_inline)]
-pub use crate::condition::with;
+pub use crate::condition::{all, any, unless, with};
 #[doc(no_inline)]
 pub use crate::decorator::{
     Cooldown, Cooling, Decorator, IntoDecorator, cooldown, shared_cooldown,
