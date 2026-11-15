@@ -8,8 +8,9 @@ use crate::avian::prelude::*;
 use crate::dim;
 use crate::plugin::check_space;
 
-/// The layers what can be seen is on: what sight asks avian for, as it
-/// finds what's near a sensor. Every layer, unless set.
+/// The layers what can be seen is on: what sight asks avian for.
+///
+/// It asks as it finds what's near a sensor. Every layer, unless set.
 ///
 /// Put what's [`Perceivable`] on a layer of its own and set it here: a look
 /// then skips the walls and tiles round it.
@@ -23,8 +24,10 @@ impl Default for PerceivableLayers {
     }
 }
 
-/// Sight finds what's near a sensor through avian's colliders, instead of
-/// perception's own grid: nothing to rebuild, avian keeps them up to date.
+/// Sight finds what's near a sensor through avian's colliders, not
+/// perception's grid.
+///
+/// Nothing to rebuild: avian keeps them up to date.
 ///
 /// Only what has a collider can be found: a [`Perceivable`] without one, on
 /// it or on a child of it, isn't seen. Colliders on

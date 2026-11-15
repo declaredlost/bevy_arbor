@@ -5,7 +5,6 @@
 
 mod behave;
 mod branch;
-mod child;
 mod composite;
 mod context;
 mod leaf;
@@ -21,18 +20,19 @@ use bevy::prelude::*;
 
 pub use self::behave::Behave;
 pub use self::branch::Branch;
-pub use self::child::Child;
 pub use self::composite::ScoredBranch;
 use self::composite::{Fallback, Mode, Parallel, Random, Scored, Select, Sequence};
 pub use self::context::Context;
+pub(crate) use self::context::Waits;
 use self::leaf::{Act, Spawn, Wait};
 use self::modifier::{
-    Commit, Forever, Invert, Repeat, RepeatWhile, Socket, Succeed, Timeout, WithState,
+    Commit, Forever, Insert, Invert, Repeat, RepeatWhile, Socket, Succeed, Timeout,
 };
 pub use self::modifier::{Plugged, plugged};
 pub use self::status::{Outcome, Status};
 use crate::behavior::system::Check;
 use crate::decorator::IntoDecorator;
+use crate::inspect::{Inspect, Inspection};
 
 /// A part of a tree: built by the macro, these functions, or any `Behave`.
 ///
@@ -56,27 +56,31 @@ impl<B: Behave> From<B> for Behavior {
 }
 
 impl Behavior {
-    /// Runs `child` again each time it ends. Never ends itself. What ends is
-    /// started again the same tick, at most once, so a child that ends every
-    /// time can't hang the tick.
+    /// Runs `child` again each time it ends, never ending itself.
+    ///
+    /// What ends is started again the same tick, at most once, so a child that
+    /// ends every time can't hang the tick.
     #[must_use]
     pub fn forever(child: Behavior) -> Self {
         Forever::new(child).into()
     }
 
     /// Runs `child` `times` times, until it fails: succeeds once it has run
-    /// them all, and fails at its first failure. What ends is started again
-    /// the same tick, as in a `Sequence` of copies. `Repeat(times)` in the
-    /// macro.
+    /// them all.
+    ///
+    /// It fails at its first failure. What ends is started again the same tick,
+    /// as in a `Sequence` of copies. `Repeat(times)` in the macro.
     #[must_use]
     pub fn repeat(times: u32, child: Behavior) -> Self {
         Repeat::new(times, child).into()
     }
 
     /// Runs the first of `branches` whose decorator passes, asking again each
-    /// tick: a decorator passing cancels what's running below it, and one
-    /// stopping cancels its own branch, unless what's running
-    /// [holds](Context::hold). A branch without a decorator always passes.
+    /// tick.
+    ///
+    /// A decorator passing cancels what's running below it, and one stopping
+    /// cancels its own branch, unless what's running [holds](Context::hold). A
+    /// branch without a decorator always passes.
     ///
     /// A branch that fails falls through to the next, and stays out until its
     /// decorator stops passing or the `Select` restarts, so it can't restart
@@ -87,8 +91,11 @@ impl Behavior {
         Select::new(branches).into()
     }
 
-    /// Runs the first of `branches` whose decorator passes, asking each
-    /// decorator only as it gets there: what's started isn't interrupted.
+    /// Runs the first of `branches` whose decorator passes, asking each in
+    /// turn.
+    ///
+    /// Each decorator is asked only as it gets there: what's started isn't
+    /// interrupted.
     #[must_use]
     pub fn fallback(branches: Vec<Branch>) -> Self {
         Fallback::new(branches).into()
@@ -100,8 +107,9 @@ impl Behavior {
         Sequence::new(children).into()
     }
 
-    /// `children` as one node: the only one, or a sequence. What the macro
-    /// builds a single-child node's body with.
+    /// `children` as one node: the only one, or a sequence of them.
+    ///
+    /// What the macro builds a single-child node's body with.
     #[doc(hidden)]
     #[must_use]
     pub fn group(mut children: Vec<Behavior>) -> Self {
@@ -111,38 +119,45 @@ impl Behavior {
         Self::sequence(children)
     }
 
-    /// Runs `children` together: fails at the first failure, canceling the
-    /// rest, and succeeds once all have.
+    /// Runs `children` together, failing at the first failure, canceling the
+    /// rest.
+    ///
+    /// It succeeds once all have.
     #[must_use]
     pub fn all(children: Vec<Behavior>) -> Self {
         Parallel::new(Mode::All, children).into()
     }
 
-    /// Runs `children` together: succeeds at the first success, canceling the
-    /// rest, and fails once all have.
+    /// Runs `children` together, succeeding at the first success, canceling the
+    /// rest.
+    ///
+    /// It fails once all have.
     #[must_use]
     pub fn any(children: Vec<Behavior>) -> Self {
         Parallel::new(Mode::Any, children).into()
     }
 
-    /// Runs `children` together: the first to end, however it ends, settles it,
-    /// canceling the rest.
+    /// Runs `children` together: the first to end, however it ends, settles it.
+    ///
+    /// The rest are canceled.
     #[must_use]
     pub fn race(children: Vec<Behavior>) -> Self {
         Parallel::new(Mode::Race, children).into()
     }
 
-    /// Tries `branches` from the highest score down, until one succeeds,
-    /// scoring them once as it starts. A score system takes the agent, and may
-    /// change things. A NaN score counts as no score: it goes last.
+    /// Tries `branches` from the highest score down, until one succeeds.
+    ///
+    /// They're scored once as it starts. A score system takes the agent, and
+    /// may change things. A NaN score counts as no score: it goes last.
     #[must_use]
     pub fn scored(branches: Vec<ScoredBranch>) -> Self {
         Scored::new(branches).into()
     }
 
-    /// Tries `children` in a random order, until one succeeds. `roll` is where
-    /// the randomness comes from, so it's yours: a system taking the agent and
-    /// returning a number from 0 up to 1.
+    /// Tries `children` in a random order, until one of them succeeds.
+    ///
+    /// `roll` is where the randomness comes from, so it's yours: a system
+    /// taking the agent and returning a number from 0 up to 1.
     pub fn random<S, M>(roll: S, children: Vec<Behavior>) -> Self
     where
         S: IntoSystem<In<Entity>, f32, M> + Copy + Send + Sync + 'static,
@@ -173,9 +188,12 @@ impl Behavior {
         Commit::new(child).into()
     }
 
-    /// Runs `child` over and over while `decorator` passes, canceling it when
-    /// it stops (unless it [holds](Context::hold)): succeeds then, and
-    /// fails if `child` does. `RepeatWhile(decorator)` in the macro.
+    /// Runs `child` over and over while `decorator` passes: succeeds when it
+    /// stops.
+    ///
+    /// As `decorator` stops, `child` is canceled, unless it
+    /// [holds](Context::hold); it fails if `child` does.
+    /// `RepeatWhile(decorator)` in the macro.
     pub fn repeat_while<M>(decorator: impl IntoDecorator<M>, child: Behavior) -> Self {
         RepeatWhile::new(decorator.into_decorator(), child).into()
     }
@@ -193,19 +211,22 @@ impl Behavior {
         Timeout::new(length, child).into()
     }
 
-    /// `child`, with `bundle` on the agent while it runs: inserted as it
-    /// starts, removed as it ends or is canceled. `State(bundle)` in the
-    /// macro.
+    /// `child`, with `bundle` inserted on the agent as it starts, removed as it
+    /// ends.
+    ///
+    /// It's removed as it's canceled too. `Insert(bundle)` in the macro.
     ///
     /// For systems that work only while a branch runs, as `With<Hunting>`. A
     /// branch of one task needn't: its task entity is already that.
     #[must_use]
-    pub fn state<B: Bundle + Clone>(bundle: B, child: Behavior) -> Self {
-        WithState::new(bundle, child).into()
+    pub fn insert<B: Bundle + Clone>(bundle: B, child: Behavior) -> Self {
+        Insert::new(bundle, child).into()
     }
 
-    /// What's plugged into the agent's socket `S`: its [`Plugged<S>`], built
-    /// as it starts, and swapped as that is. `Socket(Weapon)` in the macro.
+    /// What's plugged into the agent's socket `S`: its [`Plugged<S>`], built as
+    /// it starts.
+    ///
+    /// It's swapped as that is. `Socket(Weapon)` in the macro.
     ///
     /// Empty, it fails: `when(plugged::<S>)` keeps it out of the way until
     /// something's plugged in. Swapped while running, what it ran is cancelled,
@@ -224,15 +245,18 @@ impl Behavior {
     }
 
     /// Spawns a task entity named `name` with `bundle`, and waits for it to
-    /// report: `task("Hunt down", Chase)` in the macro.
+    /// report.
+    ///
+    /// `task("Hunt down", Chase)` in the macro.
     pub fn task_named<B: Bundle + Clone>(name: impl Into<Cow<'static, str>>, bundle: B) -> Self {
         Spawn::new(name.into(), bundle).into()
     }
 
-    /// Runs `system` once on the agent: what it returns is the result. It can
-    /// return a `Result<bool>` to use `?`: an error fails, and goes to Bevy's
-    /// error handler. Cached like a system condition, its `Local`s are every
-    /// agent's.
+    /// Runs `system` once on the agent: what it returns is the result.
+    ///
+    /// It can return a `Result<bool>` to use `?`: an error fails, and goes to
+    /// Bevy's error handler. Cached like a system condition, its `Local`s are
+    /// every agent's.
     pub fn act<S, M>(system: S) -> Self
     where
         S: IntoSystem<In<Entity>, bool, M> + Copy + Send + Sync + 'static,
@@ -278,16 +302,20 @@ impl Behavior {
     }
 
     /// Runs it a tick asking it to stop, for a node about to switch away from
-    /// it while it [holds](Self::holds): it winds down, and ends or stops
+    /// it.
+    ///
+    /// While it [holds](Self::is_holding), it winds down, and ends or stops
     /// holding when it has, starting nothing new. What `Select` and
     /// `RepeatWhile` do.
     pub fn tick_interrupted(&mut self, cx: &mut Context) -> Status {
         cx.interrupting(|cx| self.tick(cx))
     }
 
-    /// Keeps it holding through a tick it isn't ticked: a node that doesn't
-    /// tick a running child every time calls this on the ticks it skips, or the
-    /// child's hold lapses for them.
+    /// Keeps it holding through a tick it isn't ticked, for a node that skips
+    /// it.
+    ///
+    /// A node that doesn't tick a running child every time calls this on the
+    /// ticks it skips, or the child's hold lapses for them.
     pub fn skip(&self, cx: &mut Context) {
         if self.held {
             cx.hold();
@@ -311,18 +339,14 @@ impl Behavior {
     /// Whether it asked, on its last tick, not to be stopped: see
     /// [`Context::hold`].
     #[must_use]
-    pub fn holds(&self) -> bool {
+    pub fn is_holding(&self) -> bool {
         self.held
     }
+}
 
-    /// How it reads in a trace.
-    pub(crate) fn label(&self) -> String {
-        self.inner.label()
-    }
-
-    /// Its children, for a trace.
-    pub(crate) fn children(&self) -> Vec<Child<'_>> {
-        self.inner.children()
+impl Inspect for Behavior {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        self.inner.inspect(inspection);
     }
 }
 
@@ -333,11 +357,13 @@ mod tests {
     use bevy::prelude::*;
     use bevy_harness::TestApp;
 
-    use crate::behavior::{Behave, Child, Context};
+    use crate::behavior::{Behave, Context};
+    use crate::inspect::Inspection;
     use crate::prelude::*;
     use crate::testing::*;
 
     /// A custom node: what a user would write.
+    #[derive(Inspect)]
     struct Twice {
         done: bool,
         child: Behavior,
@@ -402,6 +428,7 @@ mod tests {
     }
 
     /// A custom node over a child, with nothing about interrupts in it.
+    #[derive(Inspect)]
     struct Plain {
         child: Behavior,
     }
@@ -466,17 +493,22 @@ mod tests {
     fn a_custom_node_shows_its_type_name_in_the_outline_unless_it_says_otherwise() {
         let mut app = app();
         let npc = app.spawn((
-            TreeTrace::default(),
+            BehaviorTreeTrace::default(),
             BehaviorTree::new(behavior_tree! {
                 @ Plain { child: Behavior::wait(Duration::from_secs(1)) }
             }),
         ));
         app.tick();
-        let trace = app.world().get::<TreeTrace>(npc).unwrap().to_string();
+        let trace = app
+            .world()
+            .get::<BehaviorTreeTrace>(npc)
+            .unwrap()
+            .to_string();
         assert_eq!(trace.trim(), "> Plain", "{trace}");
     }
 
     /// A custom node ticking its child every other tick.
+    #[derive(Inspect)]
     struct EveryOther {
         now: bool,
         child: Behavior,
@@ -529,6 +561,7 @@ mod tests {
     struct Told(Vec<&'static str>);
 
     /// A node recording its lifecycle, done on its second tick.
+    #[derive(Inspect)]
     struct Recorder {
         ticks: u32,
     }
@@ -594,6 +627,7 @@ mod tests {
     }
 
     /// A node that says nothing it waits on, counting its ticks.
+    #[derive(Inspect)]
     struct Silent;
 
     impl Behave for Silent {
@@ -627,6 +661,15 @@ mod tests {
         second: Behavior,
     }
 
+    impl Inspect for Pair {
+        fn inspect(&self, inspection: &mut Inspection<'_>) {
+            inspection
+                .name("Pair of two")
+                .child(&self.first)
+                .noted("spare", &self.second);
+        }
+    }
+
     impl Behave for Pair {
         fn tick(&mut self, cx: &mut Context) -> Status {
             self.first.tick(cx)
@@ -636,21 +679,13 @@ mod tests {
             self.first.cancel(cx);
             self.second.cancel(cx);
         }
-
-        fn label(&self) -> String {
-            "Pair of two".to_owned()
-        }
-
-        fn children(&self) -> Vec<Child<'_>> {
-            vec![Child::new(&self.first), Child::noted(&self.second, "spare")]
-        }
     }
 
     #[test]
     fn a_custom_node_says_how_it_reads_and_what_is_under_it() {
         let mut app = app();
         let npc = app.spawn((
-            TreeTrace::default(),
+            BehaviorTreeTrace::default(),
             BehaviorTree::new(behavior_tree! {
                 @ Pair {
                     first: Behavior::wait(Duration::from_secs(1)),
@@ -659,7 +694,11 @@ mod tests {
             }),
         ));
         app.tick();
-        let trace = app.world().get::<TreeTrace>(npc).unwrap().to_string();
+        let trace = app
+            .world()
+            .get::<BehaviorTreeTrace>(npc)
+            .unwrap()
+            .to_string();
         assert_eq!(
             trace, "> Pair of two\n>   Wait(1s)\n    spare\n      Wait(2s)\n",
             "{trace}"

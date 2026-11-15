@@ -1,5 +1,6 @@
-//! What `Scored` and `Random` share: trying their nodes in an order settled as
-//! they start, until one succeeds.
+//! What `Scored` and `Random` share: trying their nodes in a settled order.
+//!
+//! The order is settled as they start, and they try nodes until one succeeds.
 
 use crate::behavior::{Behavior, Context, Status};
 
@@ -17,8 +18,9 @@ impl Order {
         self.at = 0;
     }
 
-    /// Ticks `items` in order, from where it got to, until one succeeds; `node`
-    /// finds each one's node.
+    /// Ticks `items` in order, from where it got to, until one succeeds.
+    ///
+    /// `node` finds each one's node.
     pub(super) fn tick<T>(
         &mut self,
         items: &mut [T],
@@ -30,7 +32,7 @@ impl Order {
                 Status::Running => return Status::Running,
                 Status::Success => return Status::Success,
                 // Asked to stop, it doesn't start the next.
-                Status::Failure if cx.interrupted() => break,
+                Status::Failure if cx.is_interrupted() => break,
                 Status::Failure => self.at += 1,
             }
         }

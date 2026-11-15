@@ -1,8 +1,9 @@
-//! Generators: what a query weighs. Places in a [`Donut`], [`Grid`] or
-//! [`Fan`] around an anchor, or in a [`Row`] through it; things the agent
-//! perceives ([`Percepts`]), or things with a component near an anchor
-//! ([`Nearby`]); or a [`Generate`] of your own, keeping its Bevy query in a
-//! [`CachedQuery`].
+//! Generators: what a query weighs, places around an anchor or things.
+//!
+//! Places in a [`Donut`], [`Grid`] or [`Fan`] around an anchor, or in a [`Row`]
+//! through it; things the agent perceives ([`Percepts`]), or things with a
+//! component near an anchor ([`Nearby`]); or a [`Generate`] of your own,
+//! keeping its Bevy query in a [`CachedQuery`].
 
 mod cached;
 mod donut;
@@ -22,16 +23,18 @@ pub use self::fan::Fan;
 pub use self::grid::Grid;
 pub use self::row::Row;
 pub use self::things::{Nearby, Percepts};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// A kind of generator: what makes the items a query weighs.
 pub trait Generate: Send + Sync + 'static {
     /// The items, for the agent of `cx`: pushed onto `out`.
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>);
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>);
 }
 
 /// The point `radius` from `center` at `angle` round it, in the plane things
-/// stand on: XY in 2D, XZ in 3D, where 0 is +X.
+/// stand on.
+///
+/// XY in 2D, XZ in 3D, where 0 is +X.
 pub(crate) fn round(space: Space, center: Vec3, angle: f32, radius: f32) -> Vec3 {
     let (sin, cos) = angle.sin_cos();
     match space {
@@ -40,14 +43,17 @@ pub(crate) fn round(space: Space, center: Vec3, angle: f32, radius: f32) -> Vec3
     }
 }
 
-/// How many points a grid or row has each way of its anchor, at most: one
-/// asking for more is spread further apart, so a tiny spacing can't hang the
-/// game.
+/// How many points a grid or row has each way of its anchor, at most.
+///
+/// One asking for more is spread further apart, so a tiny spacing can't hang
+/// the game.
 pub(crate) const MOST_STEPS: i32 = 50;
 
 /// How many points each way, and how far apart, out to `extent`, `spacing`
-/// apart; if that's more than [`MOST_STEPS`], how far apart they're spread
-/// instead.
+/// apart.
+///
+/// If that's more than [`MOST_STEPS`], the error is how far apart they're
+/// spread instead.
 pub(crate) fn steps(extent: f32, spacing: f32) -> Result<(i32, f32), f32> {
     let wanted = (extent / spacing).floor();
     #[expect(clippy::cast_precision_loss, reason = "a small step count")]
@@ -79,7 +85,7 @@ mod tests {
     use bevy_harness::TestApp;
 
     use super::*;
-    use crate::anchor::{Agent, At};
+    use crate::anchor::{At, Querier};
     use crate::testing::*;
 
     fn generated(
@@ -87,15 +93,15 @@ mod tests {
         agent: Entity,
         space: Space,
         generator: &dyn Generate,
-    ) -> Vec<Item> {
-        let cx = QueryContext::new(app.world(), agent, space, 1);
+    ) -> Vec<EnvQueryItem> {
+        let cx = EnvQueryContext::new(app.world(), agent, space, 1);
         let mut out = Vec::new();
         generator.generate(&cx, &mut out);
         out
     }
 
-    fn points(items: &[Item]) -> Vec<Vec3> {
-        items.iter().map(Item::position).collect()
+    fn points(items: &[EnvQueryItem]) -> Vec<Vec3> {
+        items.iter().map(|item| item.position).collect()
     }
 
     #[test]
@@ -128,7 +134,7 @@ mod tests {
     fn a_grid_covers_its_extent() {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        let grid = Grid::around(Agent).extent(2.0).spacing(1.0);
+        let grid = Grid::around(Querier).extent(2.0).spacing(1.0);
         let points = points(&generated(&app, agent, Space::Volume, &grid));
         assert_eq!(points.len(), 25);
         assert!(points.contains(&Vec3::new(-2.0, 0.0, 2.0)));
@@ -140,7 +146,7 @@ mod tests {
         for space in [Space::Planar, Space::Volume] {
             let mut app = app(space);
             let agent = app.spawn(GlobalTransform::IDENTITY);
-            let cone = Fan::from(Agent).angle(0.5).range(1.0, 4.0).rays(3, 4);
+            let cone = Fan::from(Querier).angle(0.5).range(1.0, 4.0).rays(3, 4);
             let points = points(&generated(&app, agent, space, &cone));
             assert_eq!(points.len(), 12, "{space:?}");
             let ahead = match space {
@@ -162,7 +168,7 @@ mod tests {
         for space in [Space::Planar, Space::Volume] {
             let mut app = app(space);
             let agent = app.spawn(GlobalTransform::from_xyz(1.0, 2.0, 0.0));
-            let row = Row::along(Agent).extent(2.0).spacing(1.0);
+            let row = Row::along(Querier).extent(2.0).spacing(1.0);
             let points = points(&generated(&app, agent, space, &row));
             let ahead = match space {
                 Space::Planar => Vec3::X,
@@ -189,7 +195,7 @@ mod tests {
     fn a_row_too_fine_is_spread_out_rather_than_hang() {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        let row = Row::along(Agent).extent(5.0).spacing(0.0);
+        let row = Row::along(Querier).extent(5.0).spacing(0.0);
         assert_eq!(generated(&app, agent, Space::Volume, &row).len(), 101);
     }
 
@@ -208,12 +214,12 @@ mod tests {
         let enemy = enemy(&mut app, Vec3::new(0.0, 0.0, -5.0));
         let friend = app.spawn((
             Perceivable,
-            Team(1),
+            Allegiance(1),
             GlobalTransform::from_xyz(1.0, 0.0, -5.0),
         ));
         app.tick();
         let all = generated(&app, agent, Space::Volume, &Percepts::<Sight>::all());
-        let all: Vec<_> = all.iter().filter_map(Item::entity).collect();
+        let all: Vec<_> = all.iter().filter_map(|item| item.entity).collect();
         assert!(all.contains(&enemy) && all.contains(&friend));
         let hostile = generated(
             &app,
@@ -222,7 +228,10 @@ mod tests {
             &Percepts::<Sight>::all().hostile(),
         );
         assert_eq!(
-            hostile.iter().filter_map(Item::entity).collect::<Vec<_>>(),
+            hostile
+                .iter()
+                .filter_map(|item| item.entity)
+                .collect::<Vec<_>>(),
             [enemy]
         );
     }
@@ -237,10 +246,10 @@ mod tests {
         let near = app.spawn((Medkit, GlobalTransform::from_xyz(3.0, 0.0, 0.0)));
         app.spawn((Medkit, GlobalTransform::from_xyz(30.0, 0.0, 0.0)));
         app.spawn(GlobalTransform::from_xyz(1.0, 0.0, 0.0));
-        let nearby = Nearby::<Medkit>::within(Agent, 5.0);
+        let nearby = Nearby::<Medkit>::within(Querier, 5.0);
         let found: Vec<_> = generated(&app, agent, Space::Volume, &nearby)
             .iter()
-            .filter_map(Item::entity)
+            .filter_map(|item| item.entity)
             .collect();
         assert_eq!(
             found,
@@ -253,7 +262,7 @@ mod tests {
     fn a_grid_too_fine_is_spread_out_rather_than_hang() {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
-        let grid = Grid::around(Agent).extent(5.0).spacing(0.0);
+        let grid = Grid::around(Querier).extent(5.0).spacing(0.0);
         let points = points(&generated(&app, agent, Space::Volume, &grid));
         assert_eq!(points.len(), 101 * 101, "at most 50 each way");
         assert!(

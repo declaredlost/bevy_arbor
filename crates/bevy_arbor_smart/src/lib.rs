@@ -10,4 +10,4 @@ pub mod slot;
 #[cfg(test)]
 mod testing;
 
-pub use self::plugin::SmartPlugin;
+pub use self::plugin::SmartObjectPlugin;

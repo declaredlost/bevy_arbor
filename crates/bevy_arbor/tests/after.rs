@@ -1,11 +1,12 @@
-//! `ArborSystems` holds every part's systems, so a task system after it sees,
-//! the same tick, what every part did that tick.
+//! A task system after `ArborSystems` sees what every part did, the same tick.
+//!
+//! `ArborSystems` holds every part's systems.
 #![cfg(all(feature = "eqs", feature = "nav"))]
 
 use bevy::ecs::schedule::{InternedSystemSet, NodeId, SystemSet};
 use bevy::prelude::*;
-use bevy_arbor::bt::TreeSystems;
-use bevy_arbor::eqs::EqsSystems;
+use bevy_arbor::bt::BehaviorTreeSystems;
+use bevy_arbor::eqs::EnvQuerySystems;
 use bevy_arbor::nav::NavSystems;
 use bevy_arbor::perception::PerceptionSystems;
 use bevy_arbor::prelude::*;
@@ -14,8 +15,9 @@ use bevy_harness::TestApp;
 /// Somewhere to go.
 struct Spot;
 
-/// What the system after `ArborSystems` saw, each tick: whether the agent had
-/// `Found<Spot>`, and a `Destination`.
+/// What the system after `ArborSystems` saw of the agent, each tick.
+///
+/// Whether it had `Found<Spot>`, and a `Destination`.
 #[derive(Resource, Default)]
 struct Seen(Vec<(bool, bool)>);
 
@@ -31,14 +33,15 @@ fn app() -> TestApp {
         .plugins(ArborPlugins)
         .with(|app| {
             app.init_resource::<Seen>()
-                .add_env_query(Spot, EnvQuery::new(Donut::around(Agent)))
+                .add_env_query(Spot, EnvQuery::new(Donut::around(Querier)))
                 .add_systems(FixedUpdate, look.after(ArborSystems));
         })
         .build()
 }
 
-/// Whether `set` is in `ArborSystems`, in `FixedUpdate`, where every part
-/// runs unless told otherwise.
+/// Whether `set` is in `ArborSystems`, in `FixedUpdate`.
+///
+/// That's where every part runs unless told otherwise.
 fn in_arbor(app: &TestApp, set: impl SystemSet) -> bool {
     let graph = app
         .world()
@@ -56,8 +59,8 @@ fn in_arbor(app: &TestApp, set: impl SystemSet) -> bool {
 fn every_part_is_in_arbor_systems() {
     let app = app();
     assert!(in_arbor(&app, PerceptionSystems::Commit), "perception");
-    assert!(in_arbor(&app, TreeSystems), "trees");
-    assert!(in_arbor(&app, EqsSystems), "queries");
+    assert!(in_arbor(&app, BehaviorTreeSystems), "trees");
+    assert!(in_arbor(&app, EnvQuerySystems), "queries");
     assert!(in_arbor(&app, NavSystems), "navigation");
 }
 

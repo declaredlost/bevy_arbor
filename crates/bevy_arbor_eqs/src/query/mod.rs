@@ -7,13 +7,15 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-pub use self::context::QueryContext;
-pub use self::item::{Item, Scored};
+pub use self::context::EnvQueryContext;
+pub use self::item::{EnvQueryItem, ScoredItem};
 use crate::generate::Generate;
 use crate::test::Test;
 
 /// An environment query: items from its generators, those its filters keep,
-/// scored, and the one or more it [picks](Pick).
+/// scored.
+///
+/// It gives the one or more it [picks](Pick).
 ///
 /// ```
 /// # use bevy_arbor_eqs::prelude::*;
@@ -21,14 +23,14 @@ use crate::test::Test;
 /// // Somewhere near me, outside where the enemy faces (or faced, when last
 /// // seen), the further from it the better.
 /// let cover = EnvQuery::new(
-///     Donut::around(Agent).radius(3.0, 9.0).rings(3).points(16),
+///     Donut::around(Querier).radius(3.0, 9.0).rings(3).points(16),
 /// )
-/// .filter(Distance::to(Agent), Filter::at_most(10.0))
+/// .filter(Distance::to(Querier), Filter::at_most(10.0))
 /// .filter(
 ///     Dot::of(Hostiles::<Sight>::remembered()),
 ///     Filter::at_most(0.5),
 /// )
-/// .score(Distance::to(Agent), Score::lower())
+/// .score(Distance::to(Querier), Score::lower())
 /// .score(
 ///     Distance::to(Hostiles::<Sight>::remembered()),
 ///     Score::higher().weight(0.5),
@@ -82,9 +84,12 @@ impl Filter {
     }
 }
 
-/// How a test's numbers score: normalized over the items to 0 for the lowest
-/// and 1 for the highest, turned round for [`lower`](Self::lower), squared if
-/// [`squared`](Self::squared), and weighted.
+/// How a test's numbers score: normalized over the items from 0 to 1, then
+/// weighted.
+///
+/// The lowest is 0 and the highest 1, turned round for
+/// [`lower`](Self::lower), and squared if [`squared`](Self::squared), before
+/// the weight.
 #[derive(Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Debug, PartialEq)]
 pub struct Score {
@@ -143,7 +148,7 @@ impl Score {
     }
 }
 
-/// Which of what a query keeps it gives.
+/// Which of what a query keeps it gives: the best, one of the best, or all.
 #[derive(Reflect, Debug, Clone, Copy, PartialEq, Default)]
 #[reflect(Debug, PartialEq, Default)]
 pub enum Pick {
@@ -151,7 +156,9 @@ pub enum Pick {
     #[default]
     Best,
     /// One at random among the best: this share of them, from 0 to 1, at
-    /// least one: `RandomOfBest(0.05)` is one of the best 5%.
+    /// least one.
+    ///
+    /// `RandomOfBest(0.05)` is one of the best 5%.
     RandomOfBest(f32),
     /// All of them, best first.
     All,
@@ -160,9 +167,9 @@ pub enum Pick {
 /// What a query found, and how it weighed everything.
 pub(crate) struct Run {
     /// What it picked, best first: empty if nothing was kept.
-    pub(crate) picked: Vec<Scored>,
+    pub(crate) picked: Vec<ScoredItem>,
     /// Every item, and its score, or `None` if a filter dropped it.
-    pub(crate) weighed: Vec<(Item, Option<f32>)>,
+    pub(crate) weighed: Vec<(EnvQueryItem, Option<f32>)>,
 }
 
 impl EnvQuery {
@@ -183,8 +190,10 @@ impl EnvQuery {
         self
     }
 
-    /// Keeps only items `test` gives a number `filter` keeps. Filters run
-    /// before scores, cheapest first, whatever order they're given in.
+    /// Keeps only items `test` gives a number `filter` keeps: filters run
+    /// before scores.
+    ///
+    /// They run cheapest first, whatever order they're given in.
     #[must_use]
     pub fn filter(mut self, test: impl Test, filter: Filter) -> Self {
         self.filters.push((Arc::new(test), filter));
@@ -216,7 +225,7 @@ impl EnvQuery {
     }
 
     /// Runs it for the agent of `cx`.
-    pub(crate) fn run(&self, cx: &QueryContext) -> Run {
+    pub(crate) fn run(&self, cx: &EnvQueryContext) -> Run {
         let mut items = Vec::new();
         for generator in &self.generators {
             generator.generate(cx, &mut items);
@@ -228,21 +237,21 @@ impl EnvQuery {
         let mut kept: Vec<bool> = vec![true; items.len()];
         for (test, filter) in filters {
             let indices: Vec<usize> = (0..items.len()).filter(|&index| kept[index]).collect();
-            let asked: Vec<Item> = indices.iter().map(|&index| items[index]).collect();
+            let asked: Vec<EnvQueryItem> = indices.iter().map(|&index| items[index]).collect();
             for (index, value) in indices.into_iter().zip(test.test_all(cx, &asked)) {
                 kept[index] = value.is_some_and(|value| filter.keeps(value));
             }
         }
-        let survivors: Vec<Item> = items
+        let survivors: Vec<EnvQueryItem> = items
             .iter()
             .zip(&kept)
             .filter_map(|(item, kept)| kept.then_some(*item))
             .collect();
         let scores = self.scores_of(cx, &survivors);
-        let mut ranked: Vec<Scored> = survivors
+        let mut ranked: Vec<ScoredItem> = survivors
             .iter()
             .zip(&scores)
-            .map(|(&item, &score)| Scored { item, score })
+            .map(|(&item, &score)| ScoredItem { item, score })
             .collect();
         ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
         let mut each = scores.into_iter();
@@ -257,9 +266,10 @@ impl EnvQuery {
         }
     }
 
-    /// Each of `items`' score: its scores, normalized and weighted, added up;
-    /// 1 each with none.
-    fn scores_of(&self, cx: &QueryContext, items: &[Item]) -> Vec<f32> {
+    /// Each of `items`' score: its scores, normalized and weighted, added up.
+    ///
+    /// With no scores, 1 each.
+    fn scores_of(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<f32> {
         if self.scores.is_empty() {
             return vec![1.0; items.len()];
         }
@@ -294,7 +304,7 @@ impl EnvQuery {
     }
 
     /// What it gives of `ranked`, best first.
-    fn picked(&self, cx: &QueryContext, mut ranked: Vec<Scored>) -> Vec<Scored> {
+    fn picked(&self, cx: &EnvQueryContext, mut ranked: Vec<ScoredItem>) -> Vec<ScoredItem> {
         match self.pick {
             Pick::All => ranked,
             _ if ranked.is_empty() => ranked,
@@ -331,7 +341,7 @@ mod tests {
     use bevy_arbor_perception::prelude::*;
 
     use super::*;
-    use crate::anchor::{Agent, At};
+    use crate::anchor::{At, Querier};
     use crate::test::{Cost, Distance};
     use crate::testing::*;
 
@@ -339,8 +349,8 @@ mod tests {
     struct Line;
 
     impl Generate for Line {
-        fn generate(&self, _cx: &QueryContext, out: &mut Vec<Item>) {
-            out.extend((1..=5u8).map(|x| Item::Point(Vec3::new(f32::from(x), 0.0, 0.0))));
+        fn generate(&self, _cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
+            out.extend((1..=5u8).map(|x| EnvQueryItem::place(Vec3::new(f32::from(x), 0.0, 0.0))));
         }
     }
 
@@ -348,20 +358,17 @@ mod tests {
         let mut app = app(Space::Volume);
         let agent = app.spawn(GlobalTransform::IDENTITY);
         app.tick();
-        query.run(&QueryContext::new(app.world(), agent, Space::Volume, 3))
+        query.run(&EnvQueryContext::new(app.world(), agent, Space::Volume, 3))
     }
 
-    fn xs(scored: &[Scored]) -> Vec<f32> {
-        scored
-            .iter()
-            .map(|scored| scored.item.position().x)
-            .collect()
+    fn xs(scored: &[ScoredItem]) -> Vec<f32> {
+        scored.iter().map(|scored| scored.item.position.x).collect()
     }
 
     #[test]
     fn filters_keep_what_is_in_range() {
         let query = EnvQuery::new(Line)
-            .filter(Distance::to(Agent), Filter::range(2.0, 4.0))
+            .filter(Distance::to(Querier), Filter::range(2.0, 4.0))
             .pick(Pick::All);
         let run = ran(&query);
         let mut kept = xs(&run.picked);
@@ -379,11 +386,11 @@ mod tests {
     #[test]
     fn scores_rank_the_best_first_and_add_up_by_weight() {
         let lower = EnvQuery::new(Line)
-            .score(Distance::to(Agent), Score::lower())
+            .score(Distance::to(Querier), Score::lower())
             .pick(Pick::All);
         assert_eq!(xs(&ran(&lower).picked), [1.0, 2.0, 3.0, 4.0, 5.0]);
         let higher = EnvQuery::new(Line)
-            .score(Distance::to(Agent), Score::higher())
+            .score(Distance::to(Querier), Score::higher())
             .pick(Pick::All);
         assert_eq!(ran(&higher).picked[0].score, 1.0);
         assert_eq!(xs(&ran(&higher).picked)[0], 5.0);
@@ -393,7 +400,7 @@ mod tests {
                 Distance::to(At(Vec3::new(4.0, 0.0, 0.0))),
                 Score::lower().weight(2.0),
             )
-            .score(Distance::to(Agent), Score::higher());
+            .score(Distance::to(Querier), Score::higher());
         assert_eq!(xs(&ran(&weighed).picked), [4.0]);
     }
 
@@ -416,10 +423,10 @@ mod tests {
 
     #[test]
     fn best_gives_one_and_random_of_best_one_of_the_best() {
-        let best = EnvQuery::new(Line).score(Distance::to(Agent), Score::higher());
+        let best = EnvQuery::new(Line).score(Distance::to(Querier), Score::higher());
         assert_eq!(xs(&ran(&best).picked), [5.0]);
         let random = EnvQuery::new(Line)
-            .score(Distance::to(Agent), Score::higher())
+            .score(Distance::to(Querier), Score::higher())
             .pick(Pick::RandomOfBest(0.4));
         let picked = xs(&ran(&random).picked);
         assert_eq!(picked.len(), 1);
@@ -428,7 +435,7 @@ mod tests {
 
     #[test]
     fn nothing_kept_picks_nothing() {
-        let query = EnvQuery::new(Line).filter(Distance::to(Agent), Filter::at_least(100.0));
+        let query = EnvQuery::new(Line).filter(Distance::to(Querier), Filter::at_least(100.0));
         assert_eq!(ran(&query).picked.len(), 0);
     }
 
@@ -436,9 +443,9 @@ mod tests {
     struct Counted(Arc<AtomicUsize>, Cost, f32);
 
     impl Test for Counted {
-        fn test(&self, _cx: &QueryContext, item: &Item) -> Option<f32> {
+        fn test(&self, _cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
             self.0.fetch_add(1, Ordering::Relaxed);
-            Some(f32::from(u8::from(item.position().x < self.2)))
+            Some(f32::from(u8::from(item.position.x < self.2)))
         }
 
         fn cost(&self) -> Cost {
@@ -466,8 +473,8 @@ mod tests {
     struct Broken;
 
     impl Test for Broken {
-        fn test(&self, _cx: &QueryContext, item: &Item) -> Option<f32> {
-            let x = item.position().x;
+        fn test(&self, _cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
+            let x = item.position.x;
             Some(if (x - 3.0).abs() < f32::EPSILON {
                 f32::NAN
             } else {

@@ -1,16 +1,28 @@
-//! What using trees takes: `use bevy_arbor_bt::prelude::*`.
+//! What using trees takes, as one import: `use bevy_arbor_bt::prelude::*`.
 //!
 //! Writing a node of your own takes [`Behave`](crate::behavior::Behave) and
-//! [`Context`](crate::behavior::Context) too, and a decorator of your own
-//! [`Decorate`](crate::decorator::Decorate).
+//! [`Context`](crate::behavior::Context) too, a condition of your own
+//! [`Condition`](crate::condition::Condition), and a decorator acting as its
+//! branch starts and ends [`Decorate`](crate::decorator::Decorate).
+//!
+//! The conditions' `and`, `or` and `not` aren't here, as Bevy's prelude has
+//! run conditions' by those names: in `when(..)`, write `&&`, `||` and `!`, or
+//! import [`IntoCondition`](crate::condition::IntoCondition) and
+//! [`not`](crate::condition::not).
 
 #[doc(no_inline)]
 pub use crate::behavior::{Behavior, Branch, Outcome, Plugged, ScoredBranch, Status, plugged};
 #[doc(no_inline)]
-pub use crate::decorator::{Cooldown, Cooling, Decorator, IntoDecorator, cooldown, cooldown_of};
+pub use crate::condition::with;
 #[doc(no_inline)]
-pub use crate::task::{AgentTasks, Graceful, Task, TaskCommands, TaskOf, Tasks};
+pub use crate::decorator::{
+    Cooldown, Cooling, Decorator, IntoDecorator, cooldown, shared_cooldown,
+};
 #[doc(no_inline)]
-pub use crate::tree::{BehaviorTree, TreeFinished, TreePaused, TreeTrace};
+pub use crate::inspect::Inspect;
 #[doc(no_inline)]
-pub use crate::{TreePlugin, TreeSystems, behavior_tree};
+pub use crate::task::{Graceful, Task, TaskCommands, TaskOf, TaskQuery, Tasks};
+#[doc(no_inline)]
+pub use crate::tree::{BehaviorTree, BehaviorTreeFinished, BehaviorTreePaused, BehaviorTreeTrace};
+#[doc(no_inline)]
+pub use crate::{BehaviorTreePlugin, BehaviorTreeSystems, behavior_tree};

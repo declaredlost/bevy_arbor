@@ -1,7 +1,10 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::Inspect;
 
 /// Its child again each time it ends.
+#[derive(Inspect)]
 pub(in crate::behavior) struct Forever {
+    #[inspect(child)]
     child: Behavior,
 }
 
@@ -17,7 +20,7 @@ impl Behave for Forever {
         // every time can't hang.
         for _ in 0..2 {
             // Asked to stop, it doesn't start its child again.
-            if cx.interrupted() && !self.child.is_running() {
+            if cx.is_interrupted() && !self.child.is_running() {
                 break;
             }
             if self.child.tick(cx) == Status::Running {
@@ -33,10 +36,6 @@ impl Behave for Forever {
 
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.child.cancel(cx);
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
     }
 }
 

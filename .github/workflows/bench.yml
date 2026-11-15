@@ -1,0 +1,119 @@
+name: Bench
+
+# Benchmarks a pull request labelled `bench` against its base, both in the
+# same job on the same runner, so a shared runner's noise mostly cancels. A
+# base without the benches can't be compared: the head is benched alone.
+#
+# The base builds in a target directory of its own: in the head's, cargo takes
+# the base's build as the head's, and both runs measure the same code.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled, synchronize, reopened]
+
+env:
+  CARGO_TERM_COLOR: never
+  RUST_TOOLCHAIN: "1.99.1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  bench:
+    name: Bench
+    if: contains(github.event.pull_request.labels.*.name, 'bench')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bench
+
+      - name: Bench the base
+        id: base
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add ../base "$BASE"
+          if [ -f ../base/crates/bevy_arbor_bt/benches/trees.rs ]; then
+            cd ../base
+            CARGO_TARGET_DIR="$PWD/target" \
+              cargo bench -p bevy_arbor_bt --bench trees -- --save-baseline base
+            echo "compared=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The base has no benches: benching the head alone."
+            echo "compared=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bench the head
+        run: |
+          if [ "${{ steps.base.outputs.compared }}" = true ]; then
+            # The base's saved baseline, where the head's run looks for it.
+            mkdir -p target
+            cp -r ../base/target/criterion target/
+            cargo bench -p bevy_arbor_bt --bench trees -- --baseline-lenient base | tee head.txt
+          else
+            cargo bench -p bevy_arbor_bt --bench trees | tee head.txt
+          fi
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          COMPARED: ${{ steps.base.outputs.compared }}
+        run: |
+          python3 - <<'EOF' > report.md
+          import os, re
+
+          # Each bench: its time, and its change if the base had it too.
+          rows, name = {}, None
+          for line in open("head.txt"):
+              match = re.match(r"^([a-z_]+/[a-z_0-9]+)", line)
+              if match:
+                  name = match.group(1)
+                  rows.setdefault(name, ["?", "new"])
+              found = re.search(r"time:\s+\[\S+ \S+ (\S+ \S+)", line)
+              if found and name:
+                  rows[name][0] = found.group(1)
+              change = re.search(r"change:\s+\[\S+ (\S+) \S+\]", line)
+              if change and name:
+                  rows[name][1] = change.group(1)
+          rows = [(bench, time, change) for bench, (time, change) in rows.items()]
+          base, head = os.environ["BASE"][:7], os.environ["HEAD"][:7]
+          if os.environ["COMPARED"] == "true":
+              print(f"### Bench: `{head}` against `{base}`\n")
+              print("| Bench | Time | Change |")
+              print("|---|---|---|")
+              for bench, time, change in rows:
+                  print(f"| `{bench}` | {time} | {change} |")
+              print("\nSame runner, back to back: changes within about 5% are noise.")
+          else:
+              print(f"### Bench: `{head}` alone\n")
+              print(f"`{base}` has no benches to compare against.\n")
+              print("| Bench | Time |")
+              print("|---|---|")
+              for bench, time, _ in rows:
+                  print(f"| `{bench}` | {time} |")
+          EOF
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file report.md

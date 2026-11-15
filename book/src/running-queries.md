@@ -12,7 +12,7 @@ Add a query to the app under its key with [`add_env_query`]:
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # struct Cover;
-# fn cover() -> EnvQuery { EnvQuery::new(Donut::around(Agent)) }
+# fn cover() -> EnvQuery { EnvQuery::new(Donut::around(Querier)) }
 fn setup(app: &mut App) {
     app.add_env_query(Cover, cover());
 }
@@ -55,7 +55,7 @@ system reads it like any component:
 # use bevy_arbor::prelude::*;
 # struct Cover;
 # #[derive(Component, Clone)] struct TakeCover;
-fn take_cover(mut tasks: Tasks<&TakeCover, (&Found<Cover>, &mut Transform)>) {
+fn take_cover(mut tasks: TaskQuery<&TakeCover, (&Found<Cover>, &mut Transform)>) {
     tasks.for_each(|_, mut task, (cover, mut at)| {
         let Some(spot) = cover.position() else {
             task.fail();
@@ -89,11 +89,11 @@ guard has cover in mind.
 
 ## When queries run
 
-Queries run in [`EqsSystems`], after trees tick in the same schedule. A query
-a tree asks for runs that tick. The tree reads its task's result the next
+Queries run in [`EnvQuerySystems`], after trees tick in the same schedule. A
+query a tree asks for runs that tick. The tree reads its task's result the next
 tick.
 
-All queries together get at most the [`EqsBudget`] each tick. It's one
+All queries together get at most the [`EnvQueryBudget`] each tick. It's one
 millisecond unless you set it:
 
 ```rust
@@ -101,7 +101,7 @@ millisecond unless you set it:
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # fn setup(app: &mut App) {
-app.insert_resource(EqsBudget(Duration::from_micros(500)));
+app.insert_resource(EnvQueryBudget(Duration::from_micros(500)));
 # }
 ```
 
@@ -119,7 +119,7 @@ a game system that wants an answer without a tree.
 
 A generator, test or anchor of your own implements a trait. A test can also
 be a system, which is easier ([below](#a-test-from-a-system)). Each trait is
-given a [`QueryContext`]. It has:
+given a [`EnvQueryContext`]. It has:
 
 - `world()`: the world, read-only.
 - `agent()`: whose query it is.
@@ -139,7 +139,7 @@ from:
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 use bevy_arbor::eqs::anchor::{Locate, Located};
-use bevy_arbor::eqs::query::QueryContext;
+use bevy_arbor::eqs::query::EnvQueryContext;
 
 /// Where a guard is posted.
 #[derive(Component)]
@@ -149,7 +149,7 @@ struct GuardPost(Vec3);
 struct Post;
 
 impl Locate for Post {
-    fn locate(&self, cx: &QueryContext, out: &mut Vec<Located>) {
+    fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>) {
         if let Some(post) = cx.world().get::<GuardPost>(cx.agent()) {
             out.push(Located { position: post.0, ahead: Vec3::ZERO, entity: None });
         }
@@ -178,14 +178,14 @@ fn darkness(batch: Batch, lamps: Query<&GlobalTransform, With<Lamp>>) -> Vec<Opt
         .items
         .iter()
         .map(|item| {
-            let lamps = lamps.iter().map(|lamp| lamp.translation().distance(item.position()));
+            let lamps = lamps.iter().map(|lamp| lamp.translation().distance(item.position));
             lamps.reduce(f32::min)
         })
         .collect()
 }
 
 fn dark_cover() -> EnvQuery {
-    EnvQuery::new(Donut::around(Agent).radius(2.0, 8.0).rings(3).points(16))
+    EnvQuery::new(Donut::around(Querier).radius(2.0, 8.0).rings(3).points(16))
         .score(Measure::by(darkness), Score::higher())
 }
 ```
@@ -205,7 +205,7 @@ For full control, implement [`Test`]. The same test, as a trait:
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-use bevy_arbor::eqs::query::{Item, QueryContext};
+use bevy_arbor::eqs::query::{EnvQueryItem, EnvQueryContext};
 use bevy_arbor::eqs::test::{Cost, Test};
 
 #[derive(Component)]
@@ -215,12 +215,12 @@ struct Lamp;
 struct Darkness;
 
 impl Test for Darkness {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
         self.test_all(cx, std::slice::from_ref(item)).pop().flatten()
     }
 
     // Find the lamps once a run, not once an item.
-    fn test_all(&self, cx: &QueryContext, items: &[Item]) -> Vec<Option<f32>> {
+    fn test_all(&self, cx: &EnvQueryContext, items: &[EnvQueryItem]) -> Vec<Option<f32>> {
         let world = cx.world();
         let lamps: Vec<Vec3> = world
             .try_query_filtered::<&GlobalTransform, With<Lamp>>()
@@ -228,7 +228,7 @@ impl Test for Darkness {
             .unwrap_or_default();
         items
             .iter()
-            .map(|item| lamps.iter().map(|lamp| lamp.distance(item.position())).reduce(f32::min))
+            .map(|item| lamps.iter().map(|lamp| lamp.distance(item.position)).reduce(f32::min))
             .collect()
     }
 
@@ -248,8 +248,10 @@ impl Test for Darkness {
 ### A generator
 
 A generator implements [`Generate`]: `generate(&self, cx, out)` pushes
-[`Item`]s onto `out`. An item is a place, `Item::Point(position)`, or a thing,
-`Item::Entity { entity, position }`.
+[`EnvQueryItem`]s onto `out`. An item is a place,
+`EnvQueryItem::place(position)`, or a thing,
+`EnvQueryItem::thing(entity, position)`. Tests read its `position`, and its
+`entity` if it's a thing.
 
 ## Pitfalls
 
@@ -264,12 +266,12 @@ A generator implements [`Generate`]: `generate(&self, cx, out)` pushes
 [`add_env_query`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/trait.EnvQueryApp.html
 [`Found`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/struct.Found.html
 [found-fn]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/fn.found.html
-[`EqsSystems`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EqsSystems.html
-[`EqsBudget`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EqsBudget.html
-[`QueryContext`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.QueryContext.html
+[`EnvQuerySystems`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EnvQuerySystems.html
+[`EnvQueryBudget`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/struct.EnvQueryBudget.html
+[`EnvQueryContext`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.EnvQueryContext.html
 [`Locate`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/anchor/trait.Locate.html
 [`Test`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/trait.Test.html
 [`Measure`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Measure.html
 [`Batch`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/test/struct.Batch.html
 [`Generate`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/generate/trait.Generate.html
-[`Item`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/enum.Item.html
+[`EnvQueryItem`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/query/struct.EnvQueryItem.html

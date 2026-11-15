@@ -2,7 +2,8 @@ use bevy::prelude::*;
 
 use super::ordered::Order;
 use crate::behavior::system::Check;
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
 /// A branch of a `Scored`: a node, and the system scoring it for the agent.
 pub struct ScoredBranch {
@@ -24,7 +25,7 @@ impl ScoredBranch {
 
     /// `node`, after every branch with a score.
     #[must_use]
-    pub fn last(node: Behavior) -> Self {
+    pub fn otherwise(node: Behavior) -> Self {
         Self { score: None, node }
     }
 }
@@ -44,8 +45,9 @@ impl Scored {
         }
     }
 
-    /// The order to try them in: highest score first, and one that can't be
-    /// scored, isn't, or scores NaN, last.
+    /// The order to try them in: highest score first, and the unscored last.
+    ///
+    /// One that can't be scored, isn't, or scores NaN goes last.
     fn rank(&mut self, cx: &mut Context) -> Vec<usize> {
         let scores: Vec<f32> = self
             .branches
@@ -81,15 +83,19 @@ impl Behave for Scored {
             branch.node.cancel(cx);
         }
     }
+}
 
-    fn children(&self) -> Vec<Child<'_>> {
-        self.branches
-            .iter()
-            .map(|branch| match &branch.score {
-                Some(score) => Child::noted(&branch.node, format!("score {}", score.name())),
-                None => Child::new(&branch.node),
-            })
-            .collect()
+impl Inspect for Scored {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("Scored");
+        for branch in &self.branches {
+            match &branch.score {
+                Some(score) => {
+                    inspection.noted(format_args!("score {}", score.name()), &branch.node)
+                }
+                None => inspection.child(&branch.node),
+            };
+        }
     }
 }
 

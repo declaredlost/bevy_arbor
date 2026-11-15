@@ -1,4 +1,5 @@
-use crate::behavior::{Behave, Branch, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Branch, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
 /// The first branch whose decorator passes, asking again each tick.
 pub(in crate::behavior) struct Select {
@@ -14,8 +15,9 @@ impl Select {
         }
     }
 
-    /// Ticks branch `index`. `Some` if that settles this: anything but a
-    /// failure, which falls through to what's next.
+    /// Ticks branch `index`, returning `Some` if that settles this.
+    ///
+    /// Anything but a failure does; a failure falls through to what's next.
     fn run(&mut self, index: usize, cx: &mut Context) -> Option<Status> {
         self.active = Some(index);
         match self.branches[index].tick(cx, false) {
@@ -25,7 +27,11 @@ impl Select {
             }
             Status::Success => Some(Status::Success),
             Status::Failure => {
-                self.branches[index].failed = true;
+                // Out until its decorator stops passing: asked again now, as
+                // ending may have changed it (a cooldown cooling), so the tree
+                // is woken when it does.
+                let branch = &mut self.branches[index];
+                branch.failed = branch.passes(cx);
                 self.active = None;
                 None
             }
@@ -62,7 +68,7 @@ impl Behave for Select {
     }
 
     fn tick(&mut self, cx: &mut Context) -> Status {
-        if cx.interrupted() {
+        if cx.is_interrupted() {
             return self.wind_down(cx);
         }
         for index in 0..self.branches.len() {
@@ -79,9 +85,9 @@ impl Behave for Select {
                 let running = &mut self.branches[active];
                 // One holding goes on until it can stop: however it ends
                 // then, it's what wanted it stopped that's next.
-                if running.holds() {
+                if running.is_holding() {
                     let status = running.tick(cx, true);
-                    if status == Status::Running && running.holds() {
+                    if status == Status::Running && running.is_holding() {
                         return Status::Running;
                     }
                 }
@@ -100,9 +106,11 @@ impl Behave for Select {
             branch.cancel(cx);
         }
     }
+}
 
-    fn children(&self) -> Vec<Child<'_>> {
-        self.branches.iter().map(Branch::child).collect()
+impl Inspect for Select {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("Select").branches(&self.branches);
     }
 }
 
@@ -124,17 +132,16 @@ mod tests {
     }
 
     #[test]
-    fn it_runs_the_first_whose_decorator_passes() {
+    fn it_runs_the_first_whose_condition_passes() {
         let mut app = app();
-        let npc = agent(&mut app, work_or_other());
-        set(&mut app, npc, true, false);
+        with_flags(&mut app, work_or_other(), true, false);
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 1);
         assert_eq!(app.count::<With<Other>>(), 0);
     }
 
     #[test]
-    fn a_decorator_passing_cancels_what_runs_below_it() {
+    fn a_condition_passing_cancels_what_runs_below_it() {
         let mut app = app();
         let npc = agent(&mut app, work_or_other());
         app.ticks(2);
@@ -146,10 +153,9 @@ mod tests {
     }
 
     #[test]
-    fn a_decorator_stopping_cancels_its_branch() {
+    fn a_condition_stopping_cancels_its_branch() {
         let mut app = app();
-        let npc = agent(&mut app, work_or_other());
-        set(&mut app, npc, true, false);
+        let npc = with_flags(&mut app, work_or_other(), true, false);
         app.ticks(2);
         assert_eq!(app.count::<With<Work>>(), 1);
         set(&mut app, npc, false, false);
@@ -161,7 +167,7 @@ mod tests {
     #[test]
     fn a_task_keeps_going_while_its_branch_stands() {
         let mut app = app();
-        let npc = agent(
+        with_flags(
             &mut app,
             behavior_tree! {
                 Select => {
@@ -169,8 +175,9 @@ mod tests {
                     when(low) => task(Other),
                 }
             },
+            false,
+            true,
         );
-        set(&mut app, npc, false, true);
         app.tick();
         let first = app
             .world_mut()
@@ -187,9 +194,9 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_branch_falls_through_and_stays_out_until_its_decorator_stops() {
+    fn a_failed_branch_falls_through_and_stays_out_until_its_condition_stops() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! {
                 Forever => {
@@ -199,8 +206,9 @@ mod tests {
                     }
                 }
             },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
         app.ticks(2);
         assert_eq!(app.count::<With<Work>>(), 0, "failed");
         assert_eq!(app.count::<With<Other>>(), 1, "fell through");
@@ -249,7 +257,7 @@ mod tests {
         let mut app = app();
         let branches = vec![
             Branch::when(high, Behavior::act(count)),
-            Branch::always(Behavior::act(refuse)),
+            Branch::otherwise(Behavior::act(refuse)),
         ];
         let npc = agent(&mut app, behavior_tree! { Select => { @[ branches ] } });
         app.tick();
@@ -263,9 +271,9 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_branch_after_the_running_one_is_let_back_in_once_its_decorator_stops() {
+    fn a_failed_branch_after_the_running_one_is_let_back_in_once_its_condition_stops() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! {
                 Select => {
@@ -274,8 +282,9 @@ mod tests {
                     Wait(100.0),
                 }
             },
+            false,
+            true,
         );
-        set(&mut app, npc, false, true);
         app.ticks(2);
         assert_eq!(app.count::<With<Other>>(), 0, "failed, so out");
         set(&mut app, npc, true, true);
@@ -290,7 +299,7 @@ mod tests {
         assert_eq!(
             app.count::<With<Other>>(),
             1,
-            "its decorator stopped: back in"
+            "its condition stopped: back in"
         );
     }
 }

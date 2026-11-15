@@ -4,11 +4,13 @@ use bevy_arbor_perception::perceived::Perceived;
 use bevy_arbor_perception::sense::Sense;
 
 use super::{Cost, Test};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
 /// Whether the agent perceives a thing by `S`: 1 or 0, and no answer for a
-/// place. [`active`](Self::active) asks whether it's active (in view, for
-/// sight), [`hostile`](Self::hostile) whether it's hostile too.
+/// place.
+///
+/// [`active`](Self::active) asks whether it's active (in view, for sight),
+/// [`hostile`](Self::hostile) whether it's hostile too.
 pub struct Perceives<S: Sense> {
     active: bool,
     hostile: bool,
@@ -42,8 +44,8 @@ impl<S: Sense> Perceives<S> {
 }
 
 impl<S: Sense> Test for Perceives<S> {
-    fn test(&self, cx: &QueryContext, item: &Item) -> Option<f32> {
-        let entity = item.entity()?;
+    fn test(&self, cx: &EnvQueryContext, item: &EnvQueryItem) -> Option<f32> {
+        let entity = item.entity?;
         let perceives = cx
             .world()
             .get::<Perceived<S>>(cx.agent())

@@ -44,7 +44,7 @@ fn guard_app() -> (TestApp, Entity) {
         .build();
     let guard = app.spawn((
         Sight::new(12.0).with_lose_range(15.0).with_interval(Duration::ZERO),
-        Team(1),
+        Allegiance(1),
         Facing(Dir3::X),
         GlobalTransform::IDENTITY,
         BehaviorTree::new(guard()),
@@ -56,7 +56,7 @@ fn guard_app() -> (TestApp, Entity) {
 // #[test]
 // fn the_guard_chases_what_it_sees() {
 let (mut app, _guard) = guard_app();
-let intruder = app.spawn((Perceivable, Team(2), GlobalTransform::from_xyz(30.0, 0.0, 0.0)));
+let intruder = app.spawn((Perceivable, Allegiance(2), GlobalTransform::from_xyz(30.0, 0.0, 0.0)));
 
 // Too far to see: it patrols.
 app.tick();
@@ -100,13 +100,13 @@ In your crate, the body is a `#[test]` function. Tasks are entities, so
 
 ## Checking the tree itself
 
-To check more than which task runs, add a [`TreeTrace`] to the guard and look
-at what's running. See [Debugging](debugging.md):
+To check more than which task runs, add a [`BehaviorTreeTrace`] to the guard
+and look at what's running. See [Debugging](debugging.md):
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-fn running(trace: &TreeTrace) -> Vec<&str> {
+fn running(trace: &BehaviorTreeTrace) -> Vec<&str> {
     trace.running().map(|(_, node)| node.label()).collect()
 }
 ```
@@ -120,4 +120,4 @@ fn running(trace: &TreeTrace) -> Vec<&str> {
   perception works in 3D, where ahead is -Z unless `Facing` says otherwise.
 
 [bevy_harness]: https://github.com/declaredlost/bevy_harness
-[`TreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeTrace.html
+[`BehaviorTreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTreeTrace.html

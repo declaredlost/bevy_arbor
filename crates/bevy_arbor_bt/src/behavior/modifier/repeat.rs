@@ -1,4 +1,5 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
 /// Its child a number of times, until it fails.
 pub(in crate::behavior) struct Repeat {
@@ -33,7 +34,7 @@ impl Behave for Repeat {
                 Status::Success => self.done += 1,
             }
             // Asked to stop, it doesn't start its child again.
-            if cx.interrupted() {
+            if cx.is_interrupted() {
                 break;
             }
         }
@@ -43,13 +44,15 @@ impl Behave for Repeat {
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.child.cancel(cx);
     }
+}
 
-    fn label(&self) -> String {
-        format!("Repeat({}, {} done)", self.times, self.done)
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
+impl Inspect for Repeat {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection
+            .name("Repeat")
+            .param(self.times)
+            .param(format_args!("{} done", self.done))
+            .child(&self.child);
     }
 }
 

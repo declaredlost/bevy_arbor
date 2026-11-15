@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use super::{Generate, round};
 use crate::anchor::{Locate, Located};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
-/// Points in a cone ahead of an anchor, in the plane things stand on: rays
-/// fanned across it, points along each.
+/// Points in a cone ahead of an anchor, in the plane things stand on.
+///
+/// Rays fanned across it, points along each.
 #[derive(Clone)]
 pub struct Fan {
     from: Arc<dyn Locate>,
@@ -17,8 +18,9 @@ pub struct Fan {
 }
 
 impl Fan {
-    /// A cone ahead of `from`: 90° across, 1 to 8 out, 5 rays of 4 points,
-    /// unless told otherwise. An anchor looking nowhere has none.
+    /// A cone ahead of `from`: 90° across, 1 to 8 out, 5 rays of 4 points.
+    ///
+    /// Each can be told otherwise. An anchor looking nowhere has none.
     pub fn from(from: impl Locate) -> Self {
         Self {
             from: Arc::new(from),
@@ -65,7 +67,7 @@ fn along(index: u32, count: u32, a: f32, b: f32) -> f32 {
 }
 
 impl Generate for Fan {
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.from);
         let space = cx.space();
         for &Located {
@@ -85,7 +87,7 @@ impl Generate for Fan {
                 let angle = facing + along(ray, self.rays, -half, half);
                 for step in 0..self.steps {
                     let radius = along(step, self.steps, self.near, self.far);
-                    out.push(Item::Point(round(space, position, angle, radius)));
+                    out.push(EnvQueryItem::place(round(space, position, angle, radius)));
                 }
             }
         }

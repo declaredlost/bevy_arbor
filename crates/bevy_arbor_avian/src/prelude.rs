@@ -1,4 +1,4 @@
-//! What using it takes.
+//! What using avian with arbor takes, as one import: its plugins and tests.
 
 #[doc(no_inline)]
 pub use crate::AvianPerceptionPlugins;

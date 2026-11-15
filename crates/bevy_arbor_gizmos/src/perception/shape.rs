@@ -9,8 +9,9 @@ use bevy_arbor_perception::Space;
 const SEGMENTS: u16 = 48;
 
 /// A cone's outline from `apex`: `half_angle` either side of `ahead`, turning
-/// around `axis`, out to `radius`. A full turn is a closed ring without the
-/// apex.
+/// around `axis`.
+///
+/// It reaches out to `radius`. A full turn is a closed ring without the apex.
 pub(super) fn cone(apex: Vec3, ahead: Vec3, axis: Vec3, half_angle: f32, radius: f32) -> Vec<Vec3> {
     let full = half_angle >= PI;
     let sweep = if full { TAU } else { 2.0 * half_angle };
@@ -43,8 +44,9 @@ pub(super) fn ring_axis(space: Space) -> Vec3 {
     }
 }
 
-/// The axes a cone turns around: in 2D the plane's normal; in 3D the
-/// agent's up and right, a fan each way.
+/// The axes a cone turns around: in 2D the plane's normal, in 3D two of them.
+///
+/// In 3D, the agent's up and right: a fan each way.
 pub(super) fn turns(space: Space, transform: &GlobalTransform) -> Vec<Vec3> {
     match space {
         Space::Planar => vec![Vec3::Z],

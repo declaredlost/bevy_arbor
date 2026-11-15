@@ -40,11 +40,29 @@ tree doesn't tick.
 | A task's report | A running task |
 | A time | A `Wait`, a `Timeout` or a cooldown |
 | Every tick | A system condition that could matter |
-| Every tick | A custom node or decorator that says nothing |
+| Every tick | A custom node, decorator or condition that says nothing |
 
-A sleeping tree costs a check of the change ticks it watches. That's about 20
-nanoseconds an agent, against about 150 for one asking four system conditions
-every tick. See [Performance](performance.md).
+A sleeping tree isn't looked at. What trees watch is kept in an index, by
+component type: each tick, it finds what changed of each type watched, and
+only the trees watching that are looked at. Removals are heard by an
+observer, timers kept in order. See [Performance](performance.md).
+
+## What a woken tree asks again
+
+A decorator's answer can only change when something it waits on does. So a
+woken tree asks again only the decorators whose wait came, and those that ask
+every tick. The rest answer as they did, and keep waiting on what they did.
+A guard woken by its patrol task reporting doesn't ask `sees_intruder` again;
+one woken by `Perceived<Sight>` changing asks only that.
+
+This is what Unreal calls observer aborts: a decorator watching what it
+reads, and a change to that re-evaluating it, and switching branch if its
+answer flipped.
+
+A decorator acting as its branch starts and ends, as a cooldown does, is
+asked again once its branch has started or ended too: those may change it.
+One not asked for a while, as its branch was below the one running, is asked
+again when it's next reached, as nothing was watching for it meanwhile.
 
 ## What "changed" means
 

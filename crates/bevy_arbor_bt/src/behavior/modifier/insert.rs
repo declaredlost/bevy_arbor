@@ -1,23 +1,24 @@
 use bevy::prelude::{Bundle, EntityWorldMut};
 use bevy::utils::prelude::ShortName;
 
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::{Inspect, Inspection};
 
-type Insert = Box<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
+type Add = Box<dyn Fn(&mut EntityWorldMut) + Send + Sync>;
 
 /// Its child, with a bundle on the agent while it runs.
-pub(in crate::behavior) struct WithState {
+pub(in crate::behavior) struct Insert {
     name: String,
-    insert: Insert,
+    add: Add,
     remove: fn(&mut EntityWorldMut),
     child: Behavior,
 }
 
-impl WithState {
+impl Insert {
     pub(in crate::behavior) fn new<B: Bundle + Clone>(bundle: B, child: Behavior) -> Self {
         Self {
             name: ShortName::of::<B>().to_string(),
-            insert: Box::new(move |agent| {
+            add: Box::new(move |agent| {
                 agent.insert(bundle.clone());
             }),
             remove: |agent| {
@@ -28,11 +29,11 @@ impl WithState {
     }
 }
 
-impl Behave for WithState {
+impl Behave for Insert {
     fn start(&mut self, cx: &mut Context) {
         let agent = cx.agent();
         if let Ok(mut agent) = cx.world_mut().get_entity_mut(agent) {
-            (self.insert)(&mut agent);
+            (self.add)(&mut agent);
         }
     }
 
@@ -47,13 +48,14 @@ impl Behave for WithState {
             (self.remove)(&mut agent);
         }
     }
+}
 
-    fn label(&self) -> String {
-        format!("State({})", self.name)
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
+impl Inspect for Insert {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection
+            .name("Insert")
+            .param(&self.name)
+            .child(&self.child);
     }
 }
 
@@ -70,18 +72,19 @@ mod tests {
     #[test]
     fn its_bundle_is_on_the_agent_while_its_branch_runs() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high) => State(Hunting) => {
+                    when(high) => Insert(Hunting) => {
                         task(Work),
                     },
                     task(Other),
                 }
             },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
         app.tick();
         assert!(
             app.world().get::<Hunting>(npc).is_some(),
@@ -104,7 +107,7 @@ mod tests {
             &mut app,
             behavior_tree! {
                 Sequence => {
-                    State(Hunting) => { task((Work, Report::Succeed)) },
+                    Insert(Hunting) => { task((Work, Report::Succeed)) },
                     task(Other),
                 }
             },

@@ -1,10 +1,13 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::inspect::Inspect;
 
 /// Its child, refusing to be interrupted once started.
 ///
 /// Not even told, so a [`Graceful`](crate::task::Graceful) task in it doesn't
 /// wind down.
+#[derive(Inspect)]
 pub(in crate::behavior) struct Commit {
+    #[inspect(child)]
     child: Behavior,
 }
 
@@ -26,10 +29,6 @@ impl Behave for Commit {
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.child.cancel(cx);
     }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
-    }
 }
 
 #[cfg(test)]
@@ -40,7 +39,7 @@ mod tests {
     use crate::testing::*;
 
     #[test]
-    fn a_decorator_waits_for_a_committed_part_only() {
+    fn a_condition_waits_for_a_committed_part_only() {
         let mut app = app();
         let npc = agent(
             &mut app,

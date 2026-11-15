@@ -1,6 +1,7 @@
-//! The contract between AI and movement: where an agent is asked to go, its
-//! [`Destination`], and how getting there goes, its [`Travel`], with the
-//! [`Route`] it's taking, if your movement says.
+//! The contract between AI and movement: where to go, and how it goes.
+//!
+//! Where an agent is asked to go is its [`Destination`], and how getting there
+//! goes its [`Travel`], with the [`Route`] it's taking, if your movement says.
 //!
 //! AI writes the destination; your movement reads it, finds a way with any
 //! pathfinding (a navmesh, a grid, a platformer's jump graph), moves the
@@ -9,6 +10,7 @@
 use bevy::prelude::*;
 
 /// On an agent: where it's asked to go, and how near counts as there.
+///
 /// Written by a [`MoveTo`](crate::move_to::MoveTo) task as it starts, and
 /// taken off as it ends, or by you.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
@@ -50,7 +52,7 @@ impl Destination {
     }
 }
 
-/// Where a [`Destination`] is.
+/// Where a [`Destination`] is: a fixed point, or an entity wherever it goes.
 #[derive(Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Debug, PartialEq)]
 pub enum Goal {
@@ -70,9 +72,10 @@ impl Goal {
     }
 }
 
-/// On an agent: how getting to its [`Destination`] goes. Written by your
-/// movement; a [`MoveTo`](crate::move_to::MoveTo) task succeeds once it's
-/// [`Arrived`](Self::Arrived), and fails once it's
+/// On an agent: how getting to its [`Destination`] goes, as movement reports.
+///
+/// Written by your movement; a [`MoveTo`](crate::move_to::MoveTo) task
+/// succeeds once it's [`Arrived`](Self::Arrived), and fails once it's
 /// [`Unreachable`](Self::Unreachable).
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
 #[reflect(Component, Debug, PartialEq)]
@@ -85,8 +88,10 @@ pub enum Travel {
     Unreachable,
 }
 
-/// On an agent: the way it's taking to its [`Destination`], as points, if
-/// your movement says. For gizmos and debugging; nothing reads it otherwise.
+/// On an agent: the way it's taking to its [`Destination`], as points.
+///
+/// There if your movement says. For gizmos and debugging; nothing reads it
+/// otherwise.
 #[derive(Component, Reflect, Debug, Clone, PartialEq, Default)]
 #[reflect(Component, Debug, PartialEq, Default)]
 pub struct Route(pub Vec<Vec3>);

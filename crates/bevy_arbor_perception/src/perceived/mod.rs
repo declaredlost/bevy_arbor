@@ -1,12 +1,14 @@
-//! What an agent perceives and remembers by each sense, how it stands toward
-//! it, and what's triggered as that changes.
+//! What agents perceive and remember by each sense, and how they stand toward
+//! it.
+//!
+//! Also what's triggered as that changes.
 
 mod attitude;
 mod candidate;
 mod commit;
 mod events;
 mod memory;
-mod trace;
+mod stimulus;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -14,22 +16,23 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-pub use self::attitude::{Attitude, Team};
+pub use self::attitude::{Allegiance, Attitude};
 pub use self::candidate::{Candidate, Candidates};
 pub(crate) use self::commit::{commit, settle};
 pub use self::events::{Forgotten, Lost, Noticed};
 pub(crate) use self::memory::{clear, forget};
-pub use self::trace::{Trace, Traces};
+pub use self::stimulus::{Stimuli, Stimulus};
 use crate::sense::Sense;
 
-/// On an agent: what it perceives and remembers by the sense `S`, from
-/// itself and its sensors.
+/// On an agent: what it perceives and remembers by the sense `S`.
+///
+/// Sensed by the agent itself and by its sensors.
 ///
 /// Changes only when something is noticed, lost or forgotten, or its attitude
 /// changes: never as things move, or as what's remembered is sensed again. So
 /// a tree whose decorators read it sleeps in between, and one reading
 /// `Perceived<Sight>` isn't woken by a noise. When and where each thing was
-/// sensed is in its [`Traces<S>`](Traces), which comes with it. While
+/// sensed is in its [`Stimuli<S>`](Stimuli), which comes with it. While
 /// something is active (in view, for sight), read its `Transform` for where
 /// it is now.
 ///
@@ -38,15 +41,16 @@ use crate::sense::Sense;
 /// long after it was last sensed, and is then forgotten.
 #[derive(Component, Reflect)]
 #[reflect(Component, Default)]
-#[require(Traces<S>)]
+#[require(Stimuli<S>)]
 pub struct Perceived<S: Sense> {
     percepts: Vec<Percept>,
     memory: Duration,
     /// When something next fades: `None` to work it out again.
     #[reflect(ignore)]
     pub(crate) next_fade: Option<Duration>,
-    /// A sensor stopped sensing for it: what's active is looked at again,
-    /// even with no sensor looking.
+    /// A sensor stopped sensing for it: what's active is looked at again.
+    ///
+    /// That happens even with no sensor looking.
     #[reflect(ignore)]
     pub(crate) recheck: bool,
     #[reflect(ignore)]
@@ -154,8 +158,9 @@ impl<S: Sense> Perceived<S> {
     }
 }
 
-/// Something an agent perceives or remembers by one sense. When and where it
-/// was sensed is in the agent's [`Traces<S>`](Traces).
+/// Something an agent perceives or remembers by one sense.
+///
+/// When and where it was sensed is in the agent's [`Stimuli<S>`](Stimuli).
 #[derive(Reflect, Debug, Clone, PartialEq)]
 #[reflect(Debug, PartialEq)]
 pub struct Percept {
@@ -198,6 +203,7 @@ impl Percept {
     }
 
     /// Whether it's sensed now, for a sustained sense: in view, for sight.
+    ///
     /// Always `false` for a sense of moments.
     #[must_use]
     pub fn is_active(&self) -> bool {

@@ -6,8 +6,9 @@ use bevy::prelude::*;
 use super::Attitude;
 use crate::sense::Sense;
 
-/// On a sensor: what it might be sensing by `S` this tick, on its way to its
-/// agent's [`Perceived<S>`](super::Perceived).
+/// On a sensor: what it might be sensing by `S` this tick, not yet perceived.
+///
+/// It's on its way to its agent's [`Perceived<S>`](super::Perceived).
 ///
 /// Filled in [`Gather`](crate::PerceptionSystems::Gather) (by a system of your
 /// own, for a sense of yours), then a system can block candidates in
@@ -56,8 +57,10 @@ impl<S: Sense> Candidates<S> {
         self.list.iter_mut()
     }
 
-    /// Looks this tick, from `eye`: for a sustained sense, what it doesn't
-    /// sense this look it no longer senses.
+    /// Looks this tick, from `eye`.
+    ///
+    /// For a sustained sense, what it doesn't sense this look it no longer
+    /// senses.
     pub fn look_from(&mut self, eye: Vec3) {
         self.looked = true;
         self.eye = eye;
@@ -77,7 +80,8 @@ impl<S: Sense> Candidates<S> {
     }
 }
 
-/// Something a sensor might be sensing.
+/// Something a sensor might be sensing, for a system to block or give an
+/// attitude.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Candidate {
     entity: Entity,
@@ -123,7 +127,7 @@ impl Candidate {
 
     /// Whether something blocked it.
     #[must_use]
-    pub fn blocked(&self) -> bool {
+    pub fn is_blocked(&self) -> bool {
         self.blocked
     }
 
@@ -134,7 +138,7 @@ impl Candidate {
     }
 
     /// Says how the agent stands toward it, over the
-    /// [`Team`](super::Team) fallback.
+    /// [`Allegiance`](super::Allegiance) fallback.
     pub fn set_attitude(&mut self, attitude: Attitude) {
         self.attitude = Some(attitude);
     }
@@ -165,8 +169,7 @@ mod tests {
         }
     }
 
-    /// Something of the game's own: anything marked so is hostile, whatever its
-    /// team.
+    /// Something of the game's own: anything marked so is hostile, always.
     #[derive(Component)]
     struct Cursed;
 
@@ -193,7 +196,7 @@ mod tests {
             );
             let agent = app.spawn((
                 Sight::new(10.0).with_interval(Duration::ZERO),
-                Team(1),
+                Allegiance(1),
                 GlobalTransform::IDENTITY,
             ));
             let hidden = app.spawn((
@@ -204,7 +207,7 @@ mod tests {
             let cursed_ally = app.spawn((
                 Perceivable,
                 Cursed,
-                Team(1),
+                Allegiance(1),
                 GlobalTransform::from_translation(ahead(space, 4.0)),
             ));
             app.tick();
@@ -214,7 +217,7 @@ mod tests {
                     .get(cursed_ally)
                     .unwrap()
                     .is_hostile(),
-                "{space:?}: over the team fallback"
+                "{space:?}: over the allegiance fallback"
             );
         }
     }

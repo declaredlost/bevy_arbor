@@ -101,7 +101,7 @@ fn walk(
 
 fn main() {
     App::new()
-        .add_plugins((MinimalPlugins, TreePlugin::default(), NavPlugin::default()))
+        .add_plugins((MinimalPlugins, BehaviorTreePlugin::default(), NavPlugin::default()))
         .add_systems(Startup, |mut commands: Commands| {
             commands.spawn((Transform::default(), BehaviorTree::new(sentry())));
         })

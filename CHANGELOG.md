@@ -13,25 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the game repository.
   - Trees sleep between ticks, until something they wait on comes: a task's
     report, a timer, a change a typed condition would see, or a system condition that
-    has to be asked every tick.
+    has to be asked every tick. A sleeping tree isn't looked at: what trees
+    watch is indexed by component type, looked over once a tick for what
+    changed, and heard taken away by an observer of each.
+  - A woken tree asks again only the decorators whose wait came, and those
+    asking every tick (Unreal's observer aborts): the rest answer as they did,
+    and keep waiting on what they did.
   - Typed conditions: functions of the agent's components (`fn(&Target) -> bool`),
     asked again only once one of them changes.
-  - `State(bundle) => { .. }`: a bundle on the agent while its branch runs.
+  - `Insert(bundle) => { .. }`: a bundle on the agent while its branch runs.
   - Nodes run from `Behave::start`, through `tick`, to `end` (with how they
-    went, or `None` if cancelled), called by the tree. In a trace, a node
-    reads as its `label` and lists its `children`. They say what they wait
+    went, or `None` if cancelled), called by the tree. How a node, decorator or
+    condition shows in a trace is apart from that: its `Inspect`, writing its
+    name, parameters and children into an `Inspection`, as `Debug` writes into a
+    `Formatter`; `#[derive(Inspect)]` shows it as its type's name, with fields
+    marked `#[inspect(param)]`, `child` or `children`. They say what they wait
     on as they tick (`Context::wake_at`, `Context::watch`); a running node
     whose subtree said nothing is ticked every tick.
-  - Decorators: what's in `when(..)`. One at rest says so with
-    `Context::wait_on_nothing`, so its tree can sleep. Typed and system conditions
-    are decorators, combined with `!`, `&&` and `||` into a `Decorator`.
-    `Decorate` is for your own, told as its branch starts and ends;
-    `cooldown(seconds)` keeps a branch from running again for that long after
-    it ends.
+  - Decorators: what's in `when(..)`, every part of which must pass.
+    Conditions only answer: typed ones (functions or closures of the agent's
+    components), system conditions (`with(system, param)` for a parameter),
+    closures over the `Context`, or your own `Condition`, combined with `!`,
+    `&&` and `||` (outside the macro, `IntoCondition::and`, `or`, and `not`).
+    Those acting as their branch starts and ends go after a comma, never under
+    `!` or `||`, so whenever their branch runs they passed, and hear it start
+    and end: `when(has_target, cooldown(8.0))`. `cooldown(seconds)` keeps a
+    branch from running again for that long after it ends; `Decorate` is for
+    your own. One at rest says so with `Context::wait_on_nothing`, so its tree
+    can sleep.
   - System conditions and acts run from a table of their own, not Bevy's system
     registry: several times cheaper to ask.
   - `Repeat(times) => { .. }`: its child that many times, until it fails.
-    `cooldown_of::<K>(seconds)`: a cooldown shared by every branch keyed by
+    `shared_cooldown::<K>(seconds)`: a cooldown shared by every branch keyed by
     `K`, kept on the agent as `Cooling<K>`.
   - `Socket(Weapon)`: a place in a tree whose subtree is plugged in at
     runtime, by the agent's `Plugged<Weapon>`, and swapped as that is (once
@@ -41,23 +54,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `TaskCommands`: `commands.entity(task).succeed_task()`, for observers and
     systems that don't query `Task`. A task is set up and cleaned up with
     Bevy's own `On<Add<_>>` and `On<Remove<_>>` observers.
-  - `TreeTrace` keeps the tree as nodes (`TraceNode`: parent, label, notes,
-    running, held), each node's index its id; written out, it's the outline.
-- `bevy_arbor_perception`: perception, in 2D or 3D, physics-free, generic
-  over its senses. Each sense is a component (`Sight`, `Hearing`, `Touch`,
-  `Shared`, or your own, registered with `SensePlugin`), and what it senses
-  is written to the agent's `Perceived<S>`, which changes only when something
-  is noticed, lost or forgotten by that sense; when and where each was
-  sensed is in `Traces<S>` beside it, so a footstep from what an agent
-  already heard wakes only trees reading the traces. Senses can sit on sensor
-  entities (`SensorOf`), each sensing from its own transform. Sight goes
-  through a spatial index (its own grid, or yours through `SightIndex`), by
-  range, cone and `lose_range`, looks staggered across ticks; hearing from `Noise`, touch from `Touched`, and allies pass on
-  what they perceive with `Share`, by every sense, each share's listeners
-  found once. Systems of your own block and classify
-  candidates in `PerceptionSystems::Occlude` and `Classify`; `Team` gives the
-  attitude nothing else did. `Noticed<S>`, `Lost<S>` and `Forgotten<S>` are
-  triggered on the agent.
+  - `BehaviorTreeTrace` keeps the tree as nodes (`TraceNode`: parent, label,
+    notes, running, held), each node's index its id; written out, it's the
+    inspection.
+  - Benchmarks of ticking trees, `cargo bench -p bevy_arbor_bt --bench trees`:
+    awake, asleep, changing, finishing tasks, spawning. A pull request labelled
+    `bench` is benched against its base, and the change commented on it.
+- `bevy_arbor_perception`: perception, in 2D or 3D, physics-free, generic over
+  its senses. Each sense is a component (`Sight`, `Hearing`, `Touch`, `Shared`,
+  or your own, registered with `SensePlugin`), and what it senses is written to
+  the agent's `Perceived<S>`, which changes only when something is noticed, lost
+  or forgotten by that sense; when and where each was sensed is in `Stimuli<S>`
+  beside it, so a footstep from what an agent already heard wakes only trees
+  reading the stimuli. Senses can sit on sensor entities (`SensorOf`), each
+  sensing from its own transform. Sight goes through a spatial index (its own
+  grid, or yours through `SightIndex`), by range, cone and `lose_range`, looks
+  staggered across ticks; hearing from `Noise`, touch from `Touched`, and allies
+  pass on what they perceive with `Share`, by every sense, each share's
+  listeners found once. Systems of your own block and classify candidates in
+  `PerceptionSystems::Occlude` and `Classify`; `Allegiance` gives the attitude
+  nothing else did. `Noticed<S>`, `Lost<S>` and `Forgotten<S>` are triggered on
+  the agent.
 - `bevy_arbor_avian2d` and `bevy_arbor_avian3d`: perception with avian, one
   source built for each dimension. `ColliderSightPlugin` lets sight find
   what's near through avian's colliders (`PerceivableLayers`) instead of
@@ -101,7 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the `nav` feature.
 - `bevy_arbor_gizmos`: drawing with Bevy's gizmos, one `ArborGizmosPlugin`:
   what agents perceive, and, with its `eqs`, `smart` and `nav` features, how
-  queries weighed their items (a `SurveyTrace`), slots, free, claimed or
+  queries weighed their items (a `EnvQueryTrace`), slots, free, claimed or
   disabled, and where agents are going.
   In the facade through the `gizmos` feature, drawing what the parts turned
   on there have.

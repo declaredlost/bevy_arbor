@@ -1,40 +1,65 @@
-//! Decorators: `when(has_target && !calm)`, `when(within, 5.0)`.
+//! Decorators: `when(has_target && !calm)`, `when(has_target, cooldown(8.0))`.
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{BinOp, Error, Expr, Result, UnOp};
 
-/// The code building a decorator from `(decorator)` or `(system, param)`,
-/// through `bevy_arbor_bt` at `bt`.
+/// The code building a decorator from its parts, through `bevy_arbor_bt` at
+/// `bt`.
+///
+/// Each part is a condition, put together with `!`, `&&` and `||`, or a
+/// decorator acting as its branch starts and ends.
 pub(super) fn decorator_args(bt: &TokenStream, span: Span, args: &[Expr]) -> Result<TokenStream> {
-    match args {
-        [expr] => Ok(decorator(bt, expr)),
-        [system, param] => Ok(quote! { #bt::decorator::Decorator::with(#system, #param) }),
-        _ => Err(Error::new(
-            span,
-            "expected `(decorator)` or `(system, param)`",
-        )),
+    let Some((first, rest)) = args.split_first() else {
+        return Err(Error::new(span, "expected `(decorator, ..)`"));
+    };
+    let first = part(bt, first);
+    let rest = rest.iter().map(|arg| part(bt, arg));
+    Ok(quote! { #bt::decorator::Decorator::new(#first)#(.and(#rest))* })
+}
+
+/// The code building one part: a condition, or what's there as it is.
+///
+/// A condition's `!`, `&&` and `||` are read as written.
+fn part(bt: &TokenStream, expr: &Expr) -> TokenStream {
+    if logic(expr) {
+        condition(bt, expr)
+    } else {
+        quote! { #expr }
     }
 }
 
-/// The code building a decorator: `!`, `&&`, `||` and brackets read as written.
-fn decorator(bt: &TokenStream, expr: &Expr) -> TokenStream {
+/// Whether `expr` puts conditions together.
+fn logic(expr: &Expr) -> bool {
     match expr {
-        Expr::Paren(inner) => decorator(bt, &inner.expr),
-        Expr::Group(inner) => decorator(bt, &inner.expr),
+        Expr::Paren(inner) => logic(&inner.expr),
+        Expr::Group(inner) => logic(&inner.expr),
+        Expr::Unary(unary) => matches!(unary.op, UnOp::Not(_)),
+        Expr::Binary(binary) => matches!(binary.op, BinOp::And(_) | BinOp::Or(_)),
+        _ => false,
+    }
+}
+
+/// The code building a condition: `!`, `&&`, `||` and brackets read as
+/// written.
+fn condition(bt: &TokenStream, expr: &Expr) -> TokenStream {
+    let into = quote! { #bt::condition::IntoCondition };
+    match expr {
+        Expr::Paren(inner) => condition(bt, &inner.expr),
+        Expr::Group(inner) => condition(bt, &inner.expr),
         Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => {
-            let inner = decorator(bt, &unary.expr);
-            quote! { ::std::ops::Not::not(#inner) }
+            let inner = condition(bt, &unary.expr);
+            quote! { #bt::condition::not(#inner) }
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::And(_)) => {
-            let (left, right) = (decorator(bt, &binary.left), decorator(bt, &binary.right));
-            quote! { #left.and(#right) }
+            let (left, right) = (condition(bt, &binary.left), condition(bt, &binary.right));
+            quote! { #into::and(#left, #right) }
         }
         Expr::Binary(binary) if matches!(binary.op, BinOp::Or(_)) => {
-            let (left, right) = (decorator(bt, &binary.left), decorator(bt, &binary.right));
-            quote! { #left.or(#right) }
+            let (left, right) = (condition(bt, &binary.left), condition(bt, &binary.right));
+            quote! { #into::or(#left, #right) }
         }
-        _ => quote! { #bt::decorator::IntoDecorator::into_decorator(#expr) },
+        _ => quote! { #expr },
     }
 }
 
@@ -45,19 +70,28 @@ mod tests {
     use crate::tree::tests::{error, tree};
 
     #[test]
-    fn decorators_turn_into_calls() {
+    fn conditions_turn_into_calls() {
         let code = tree(quote! { Select => { when(!a && b) => act(c) } })
             .unwrap()
             .to_string();
-        assert!(code.contains("Not :: not"), "{code}");
-        assert!(code.contains(". and ("), "{code}");
+        assert!(code.contains("condition :: not"), "{code}");
+        assert!(code.contains("IntoCondition :: and"), "{code}");
     }
 
     #[test]
-    fn a_decorator_takes_a_decorator_or_a_system_and_its_param() {
+    fn parts_after_commas_are_all_needed() {
+        let code = tree(quote! { Select => { when(a || b, c, d) => act(e) } })
+            .unwrap()
+            .to_string();
+        assert!(code.contains("IntoCondition :: or"), "{code}");
+        assert_eq!(code.matches(". and (").count(), 2, "{code}");
+    }
+
+    #[test]
+    fn a_decorator_takes_at_least_one_part() {
         assert_eq!(
-            error(quote! { Select => { when(a, b, c) => act(d) } }),
-            "expected `(decorator)` or `(system, param)`"
+            error(quote! { Select => { when() => act(d) } }),
+            "expected `(decorator, ..)`"
         );
     }
 }

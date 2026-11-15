@@ -10,10 +10,12 @@ alternates between two children, so it walks a different route each time.
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
-use bevy_arbor::bt::behavior::{Behave, Child, Context};
+use bevy_arbor::bt::behavior::{Behave, Context};
 
 /// Runs one child, then the other the next time, and so on.
+#[derive(Inspect)]
 struct Alternate {
+    #[inspect(children)]
     children: [Behavior; 2],
     next: usize,
     running: usize,
@@ -31,10 +33,6 @@ impl Behave for Alternate {
 
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.children[self.running].cancel(cx);
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        self.children.iter().map(Child::new).collect()
     }
 }
 
@@ -55,7 +53,8 @@ fn patrol() -> Behavior {
 ```
 
 Any type implementing `Behave` turns into a [`Behavior`] with `.into()`. Put
-it in a tree with `@`.
+it in a tree with `@`. `#[derive(Inspect)]` is how it shows in a trace: see
+[In a trace](#in-a-trace).
 
 ## The lifecycle
 
@@ -82,37 +81,40 @@ running after the node is gone.
 
 ## In a trace
 
-In a [`TreeTrace`], a node shows as its type's name with nothing under it.
-Change that with two optional methods:
+How a node shows in a [`BehaviorTreeTrace`] is apart from what it does: it's the
+node's [`Inspect`], as `Debug` is how a type shows in `{:?}`. Every node,
+decorator and condition has one.
 
-- `label` is how it reads. `Alternate` keeps its type's name, so it doesn't
-  need one.
-- `children` lists what's under it. `Child::noted(child, "..")` writes a
-  note above a child, as `Select` writes its decorators.
+`#[derive(Inspect)]` shows it as its type's name. Mark fields to show more:
 
-Both are built only when the tree is traced. Leaving a child out of
-`children` only hides it from the trace.
+- `#[inspect(param)]` shows the field in brackets after the name: on
+  `next`, it reads `Alternate(1)`.
+- `#[inspect(child)]` puts a child under it, `#[inspect(children)]` each of a
+  list of them.
+
+For anything else, write it. The [`Inspection`] it writes into takes a name,
+parameters, and children, each with a note above it if you like, as `Select`
+writes its decorators:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-# use bevy_arbor::bt::behavior::{Behave, Child, Context};
-# struct Alternate { children: [Behavior; 2], next: usize, running: usize }
-# impl Behave for Alternate {
-# fn tick(&mut self, _: &mut Context) -> Status { Status::Running }
-# fn end(&mut self, cx: &mut Context, _: Option<Outcome>) { self.children[self.running].cancel(cx); }
-fn label(&self) -> String {
-    format!("Alternate (next: {})", self.next)
-}
+use bevy_arbor::bt::inspect::Inspection;
 
-fn children(&self) -> Vec<Child<'_>> {
-    vec![
-        Child::noted(&self.children[0], "first"),
-        Child::noted(&self.children[1], "second"),
-    ]
+# struct Alternate { children: [Behavior; 2], next: usize, running: usize }
+impl Inspect for Alternate {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection
+            .name("Alternate")
+            .param(format_args!("next: {}", self.next))
+            .noted("first", &self.children[0])
+            .noted("second", &self.children[1]);
+    }
 }
-# }
 ```
+
+It's built only when the tree is traced, never as it ticks. Leaving a child
+out only hides it from the trace.
 
 ## Sleeping
 
@@ -139,8 +141,8 @@ rules:
 - To switch away from a child that holds, it ticks the child with
   `child.tick_interrupted(cx)` until the child ends or stops holding. That's
   what `Select` and `RepeatWhile` do.
-- While `cx.interrupted()` is true, it starts nothing new. It goes on with the
-  running child, and ends when that child does.
+- While `cx.is_interrupted()` is true, it starts nothing new. It goes on with
+  the running child, and ends when that child does.
 
 A node of your own can hold too: call `cx.hold()` on each tick it doesn't
 want to be stopped. See [Interruption](interruption.md).
@@ -154,4 +156,6 @@ want to be stopped. See [Interruption](interruption.md).
 [`Behave`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/trait.Behave.html
 [`Behavior`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Behavior.html
 [`Context`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Context.html
-[`TreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeTrace.html
+[`Inspect`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/inspect/trait.Inspect.html
+[`Inspection`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/inspect/struct.Inspection.html
+[`BehaviorTreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTreeTrace.html

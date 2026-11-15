@@ -13,25 +13,29 @@ use crate::prelude::*;
 pub(crate) fn app(space: Space) -> TestApp {
     TestApp::builder()
         .plugins((
-            TreePlugin::default(),
+            BehaviorTreePlugin::default(),
             PerceptionPlugin::default().with_space(space),
-            EqsPlugin::default(),
+            EnvQueryPlugin::default(),
         ))
         .build()
 }
 
-/// An agent at the origin, on team 1, looking ahead every tick.
+/// An agent at the origin, of allegiance 1, looking ahead every tick.
 pub(crate) fn looker(app: &mut TestApp) -> Entity {
     app.spawn((
         Sight::new(20.0).with_interval(Duration::ZERO),
-        Team(1),
+        Allegiance(1),
         GlobalTransform::IDENTITY,
     ))
 }
 
-/// An enemy at `at`, on team 2.
+/// An enemy at `at`, of allegiance 2.
 pub(crate) fn enemy(app: &mut TestApp, at: Vec3) -> Entity {
-    app.spawn((Perceivable, Team(2), GlobalTransform::from_translation(at)))
+    app.spawn((
+        Perceivable,
+        Allegiance(2),
+        GlobalTransform::from_translation(at),
+    ))
 }
 
 /// Runs `query`, keyed by `Q`, for `agent` directly, and gives what it found.
@@ -40,7 +44,7 @@ pub(crate) fn survey<Q: Send + Sync + 'static>(
     agent: Entity,
     key: Q,
     query: EnvQuery,
-) -> Option<Vec<Scored>> {
+) -> Option<Vec<ScoredItem>> {
     app.app_mut().add_env_query(key, query);
     app.entity_mut(agent).insert(Survey::<Q>::default());
     app.tick();

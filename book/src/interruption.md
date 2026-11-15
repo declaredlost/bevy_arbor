@@ -41,7 +41,7 @@ A task inside `Commit` isn't even told that something wants it to stop.
 ## Graceful tasks
 
 A task with [`Graceful`] in its bundle is asked to stop instead of being
-canceled. `task.interrupted()` turns true. The task winds down, reports, and
+canceled. `task.is_interrupted()` turns true. The task winds down, reports, and
 only then does the tree move on.
 
 The guard reloads gracefully. Past halfway, it finishes the reload even when
@@ -58,12 +58,12 @@ struct Reload;
 
 const RELOAD: Duration = Duration::from_secs(2);
 
-fn reload(mut tasks: Tasks<&Reload, &mut Ammo>) {
+fn reload(mut tasks: TaskQuery<&Reload, &mut Ammo>) {
     tasks.for_each(|_, mut task, mut ammo| {
         if task.elapsed() >= RELOAD {
             ammo.0 = 6;
             task.succeed();
-        } else if task.interrupted() && task.elapsed() < RELOAD / 2 {
+        } else if task.is_interrupted() && task.elapsed() < RELOAD / 2 {
             // Not far in: give up the reload.
             task.fail();
         }

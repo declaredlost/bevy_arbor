@@ -6,7 +6,7 @@ the first and the last as components. Gizmos draw all three in the world.
 
 ## What the tree is running
 
-Insert a [`TreeTrace`] on the guard. Its tree then keeps it up to date:
+Insert a [`BehaviorTreeTrace`] on the guard. Its tree then keeps it up to date:
 
 ```rust
 # use bevy::prelude::*;
@@ -14,7 +14,7 @@ Insert a [`TreeTrace`] on the guard. Its tree then keeps it up to date:
 # #[derive(Component)] struct Guard;
 # fn guard() -> Behavior { behavior_tree! { Wait(1.0) } }
 fn spawn_guard(mut commands: Commands) {
-    commands.spawn((Guard, BehaviorTree::new(guard()), TreeTrace::default()));
+    commands.spawn((Guard, BehaviorTree::new(guard()), BehaviorTreeTrace::default()));
 }
 ```
 
@@ -26,7 +26,7 @@ guard on patrol:
 ```text
 > Forever
 >   Select
-      when (sees_intruder && cooldown(10s))
+      when sees_intruder, cooldown(10s)
         Shout
       when sees_intruder
         Select
@@ -47,7 +47,7 @@ Log it whenever it changes:
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
-fn log_trees(traces: Query<(Entity, &TreeTrace), Changed<TreeTrace>>) {
+fn log_trees(traces: Query<(Entity, &BehaviorTreeTrace), Changed<BehaviorTreeTrace>>) {
     for (agent, trace) in &traces {
         info!("{agent}:\n{trace}");
     }
@@ -70,7 +70,7 @@ it), `is_running()` and `holds()` (whether it asked not to be interrupted).
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 /// What the guard is doing: the deepest node running.
-fn doing(trace: &TreeTrace) -> Option<&str> {
+fn doing(trace: &BehaviorTreeTrace) -> Option<&str> {
     trace.running().last().map(|(_, node)| node.label())
 }
 ```
@@ -80,7 +80,7 @@ every agent in a shipped game.
 
 ## What a query weighed
 
-Insert a [`SurveyTrace`] on the guard. Each query run for it then records:
+Insert a [`EnvQueryTrace`] on the guard. Each query run for it then records:
 
 - `query`: the key's name, such as `"Cover"`.
 - `items`: every item, as a `Weighed` with its `item`, its `score` (`None` if a
@@ -90,7 +90,7 @@ Insert a [`SurveyTrace`] on the guard. Each query run for it then records:
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 /// How many points the last query dropped.
-fn dropped(trace: &SurveyTrace) -> usize {
+fn dropped(trace: &EnvQueryTrace) -> usize {
     trace.items.iter().filter(|weighed| weighed.score.is_none()).count()
 }
 ```
@@ -125,15 +125,15 @@ It draws each part that's on:
 | Part | Draws |
 |---|---|
 | Perception | Sight cones out to `range`, fainter out to `lose_range`. Hearing ranges. A line to everything in view, colored by attitude. A cross where what's remembered was last sensed. |
-| Queries | Each agent's last query, from its `SurveyTrace`. Kept items from red to green by score, dropped ones gray, the pick ringed. |
+| Queries | Each agent's last query, from its `EnvQueryTrace`. Kept items from red to green by score, dropped ones gray, the pick ringed. |
 | Smart objects | Every slot: free, claimed with a line to its agent, or disabled. |
 | Navigation | A ring round each `Destination`, as wide as how near counts as there, and each agent's `Route`. |
 
-Each part has a gizmo group of its own: [`PerceptionGizmos`], [`EqsGizmos`],
-[`SmartGizmos`] and [`NavGizmos`]. Each kind of shape has a color, or `None` to leave it out.
-Change them through Bevy's `GizmoConfigStore`, as for any gizmo group. To draw
-only the guard you're looking at, turn `draw_all` off and give it
-[`ShowPerception`]:
+Each part has a gizmo group of its own: [`PerceptionGizmos`],
+[`EnvQueryGizmos`], [`SmartObjectGizmos`] and [`NavGizmos`]. Each kind of shape
+has a color, or `None` to leave it out. Change them through Bevy's
+`GizmoConfigStore`, as for any gizmo group. To draw only the guard you're
+looking at, turn `draw_all` off and give it [`ShowPerception`]:
 
 ```rust
 # use bevy::prelude::*;
@@ -153,19 +153,20 @@ fn watch_one(
 
 ## Pitfalls
 
-- **No trace, no record.** `TreeTrace` and `SurveyTrace` are kept only where
-  you insert them. The query gizmos draw only agents with a `SurveyTrace`.
-- **The last query only.** A `SurveyTrace` holds the last query run for the
+- **No trace, no record.** `BehaviorTreeTrace` and `EnvQueryTrace` are kept only
+  where you insert them. The query gizmos draw only agents with a
+  `EnvQueryTrace`.
+- **The last query only.** A `EnvQueryTrace` holds the last query run for the
   agent. With two queries in a row, you see the second.
 - **Headless apps.** `ArborGizmosPlugin` needs Bevy's gizmos, in
   `DefaultPlugins`. Leave them out of a server or a test.
 
-[`TreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TreeTrace.html
+[`BehaviorTreeTrace`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.BehaviorTreeTrace.html
 [`TraceNode`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/tree/struct.TraceNode.html
-[`SurveyTrace`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/struct.SurveyTrace.html
+[`EnvQueryTrace`]: https://docs.rs/bevy_arbor_eqs/latest/bevy_arbor_eqs/survey/struct.EnvQueryTrace.html
 [`ArborGizmosPlugin`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/struct.ArborGizmosPlugin.html
 [`PerceptionGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/perception/struct.PerceptionGizmos.html
 [`ShowPerception`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/perception/struct.ShowPerception.html
-[`EqsGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/eqs/struct.EqsGizmos.html
-[`SmartGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/smart/struct.SmartGizmos.html
+[`EnvQueryGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/eqs/struct.EnvQueryGizmos.html
+[`SmartObjectGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/smart/struct.SmartObjectGizmos.html
 [`NavGizmos`]: https://docs.rs/bevy_arbor_gizmos/latest/bevy_arbor_gizmos/nav/struct.NavGizmos.html

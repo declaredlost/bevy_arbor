@@ -3,8 +3,7 @@ use bevy::prelude::*;
 use super::components::Task;
 use crate::behavior::Outcome;
 
-/// Reporting a task through [`Commands`]: for an observer or a system that
-/// doesn't query [`Task`].
+/// Reporting a task through `Commands`, for code that doesn't query [`Task`].
 ///
 /// As [`Task::report`] does, once the commands are applied: the first report
 /// counts, and an entity that isn't a task, or has gone, is left as it is.
@@ -71,8 +70,8 @@ mod tests {
             }
         }
         let mut app = TestApp::builder()
-            .plugins(TreePlugin::default())
-            .systems(FixedUpdate, report.after(TreeSystems))
+            .plugins(BehaviorTreePlugin::default())
+            .systems(FixedUpdate, report.after(BehaviorTreeSystems))
             .build();
         let npc = agent(&mut app, behavior_tree! { task(Work) });
         app.tick();

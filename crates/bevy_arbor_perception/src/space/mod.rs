@@ -8,13 +8,16 @@ pub(crate) use self::grid::Grid;
 use crate::sense::Facing;
 
 /// The space perception works in: what's ahead of an agent, and what distance
-/// is. One code path serves both; only these differ.
+/// is.
+///
+/// One code path serves both; only these differ.
 #[derive(Resource, Reflect, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[reflect(Resource, Debug, Default, PartialEq)]
 pub enum Space {
-    /// 2D, in the XY plane: z, which 2D uses for layering, is ignored. Ahead
-    /// is the agent's +X, so a sprite flipped by a negative x scale looks the
-    /// other way.
+    /// 2D, in the XY plane: z, which 2D uses for layering, is ignored.
+    ///
+    /// Ahead is the agent's +X, so a sprite flipped by a negative x scale
+    /// looks the other way.
     Planar,
     /// 3D. Ahead is the agent's -Z, Bevy's forward.
     #[default]
@@ -22,8 +25,10 @@ pub enum Space {
 }
 
 impl Space {
-    /// `point` in this space: in the plane, z dropped. What a sense of your
-    /// own senses from, so it measures as the built-in ones do.
+    /// `point` in this space: in the plane, z dropped.
+    ///
+    /// What a sense of your own senses from, so it measures as the built-in
+    /// ones do.
     #[must_use]
     pub fn flatten(self, point: Vec3) -> Vec3 {
         match self {
@@ -32,8 +37,9 @@ impl Space {
         }
     }
 
-    /// Which way `transform` looks, unit length, or zero if it can't tell: its
-    /// +X in the plane, its -Z in a volume.
+    /// Which way `transform` looks, unit length, or zero if it can't tell.
+    ///
+    /// Its +X in the plane, its -Z in a volume.
     #[must_use]
     pub fn ahead(self, transform: &GlobalTransform) -> Vec3 {
         let ahead = match self {
@@ -43,8 +49,9 @@ impl Space {
         self.flatten(ahead).normalize_or_zero()
     }
 
-    /// Which way a sensor looks, unit length, or zero if it can't tell: its
-    /// [`Facing`], else as its transform does. What sight looks along.
+    /// Which way a sensor looks, unit length, or zero if it can't tell.
+    ///
+    /// Its [`Facing`], else as its transform does. What sight looks along.
     #[must_use]
     pub fn looking(self, transform: &GlobalTransform, facing: Option<&Facing>) -> Vec3 {
         facing.map_or_else(

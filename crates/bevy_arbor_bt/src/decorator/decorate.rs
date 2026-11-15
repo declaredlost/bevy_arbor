@@ -1,14 +1,16 @@
-use bevy::utils::prelude::ShortName;
-
 use crate::behavior::{Context, Outcome};
+use crate::inspect::Inspect;
 
-/// A kind of decorator, as a node is a kind of
-/// [`Behave`](crate::behavior::Behave): what decides whether its branch may
-/// run, told as the branch starts and ends.
+/// A decorator acting as its branch starts and ends, as a cooldown or a claim
+/// does.
 ///
-/// The built-in ones are written against it: typed and system conditions, and
-/// [`Cooldown`](crate::decorator::Cooldown). Yours goes in `when(..)` as they
-/// do, and with them: `when(has_target && Limit::new(3))`.
+/// It decides whether its branch may run, and is told as it starts and ends.
+///
+/// It goes in `when(..)` after a comma, never under `!`, `&&` or `||`:
+/// `when(has_target, Limit::new(3))`. Whenever its branch runs, then, it was
+/// asked and passed, so it's told the branch started, and later that it ended.
+/// A decorator that only answers is a [`Condition`](super::Condition), which
+/// combines with others.
 ///
 /// It runs from [`start`](Self::start), as its branch starts, through
 /// [`passes`](Self::passes), to [`end`](Self::end), as its branch ends: the
@@ -28,6 +30,7 @@ use crate::behavior::{Context, Outcome};
 /// struct Slots(u32);
 ///
 /// /// At most `max` agents in its branch at once, counted on `pool`.
+/// #[derive(Inspect)]
 /// struct Limit {
 ///     max: u32,
 ///     pool: Entity,
@@ -56,20 +59,17 @@ use crate::behavior::{Context, Outcome};
 ///     }
 /// }
 /// ```
-pub trait Decorate: Send + Sync + 'static {
+pub trait Decorate: Inspect + Send + Sync + 'static {
     /// Its branch starts.
     fn start(&mut self, _cx: &mut Context) {}
 
-    /// Whether its branch may run. Asked before it starts, and by a `Select`
-    /// or `RepeatWhile` again each time their tree wakes, while it runs.
+    /// Whether its branch may run, asked before it starts and again while it
+    /// runs.
+    ///
+    /// While it runs, a `Select` or `RepeatWhile` asks again once what it waits
+    /// on comes.
     fn passes(&mut self, cx: &mut Context) -> bool;
 
     /// Its branch ends, with how it went, or as it's cancelled, with `None`.
     fn end(&mut self, _cx: &mut Context, _outcome: Option<Outcome>) {}
-
-    /// How it reads in a trace: its type's short name, unless it says
-    /// otherwise. Built only for a trace.
-    fn label(&self) -> String {
-        ShortName::of::<Self>().to_string()
-    }
 }

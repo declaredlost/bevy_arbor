@@ -5,7 +5,9 @@
 extern crate self as bevy_arbor_bt;
 
 pub mod behavior;
+pub mod condition;
 pub mod decorator;
+pub mod inspect;
 mod plugin;
 pub mod prelude;
 pub mod task;
@@ -15,4 +17,4 @@ pub mod tree;
 
 pub use bevy_arbor_macros::behavior_tree;
 
-pub use self::plugin::{TreePlugin, TreeSystems};
+pub use self::plugin::{BehaviorTreePlugin, BehaviorTreeSystems};

@@ -6,7 +6,7 @@ use super::{Sense, SensorOf, agent};
 use crate::perceived::Candidates;
 use crate::space::Space;
 
-/// On an agent or a sensor: what it can hear.
+/// On an agent or a sensor: what it can hear, each noise sensed as a moment.
 ///
 /// It hears a [`Noise`] within `range` times the noise's loudness.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
@@ -130,7 +130,7 @@ mod tests {
             app.write(Noise::new(loud, behind(space, 15.0)).with_loudness(2.0));
             app.tick();
             let perceived = perceived::<Hearing>(&app, agent);
-            let heard = traces::<Hearing>(&app, agent).get(near).unwrap();
+            let heard = stimuli::<Hearing>(&app, agent).get(near).unwrap();
             assert_eq!(
                 heard.position,
                 space.flatten(ahead(space, 8.0)),
@@ -172,11 +172,11 @@ mod tests {
             let steps = source(&mut app);
             app.write(Noise::new(steps, ahead(space, 8.0)));
             app.tick();
-            let first = traces::<Hearing>(&app, agent).get(steps).unwrap();
+            let first = stimuli::<Hearing>(&app, agent).get(steps).unwrap();
             app.tick();
             app.write(Noise::new(steps, ahead(space, 4.0)));
             app.tick();
-            let second = traces::<Hearing>(&app, agent).get(steps).unwrap();
+            let second = stimuli::<Hearing>(&app, agent).get(steps).unwrap();
             assert!(second.at > first.at, "{space:?}");
             assert_eq!(
                 second.position,
@@ -198,25 +198,25 @@ mod tests {
         }
     }
 
-    /// How often the agents' `Perceived<Hearing>` and `Traces<Hearing>`
+    /// How often the agents' `Perceived<Hearing>` and `Stimuli<Hearing>`
     /// changed.
     #[derive(Resource, Default)]
     struct HearingChanges {
         perceived: usize,
-        traces: usize,
+        stimuli: usize,
     }
 
     fn count(
         perceived: Query<(), Changed<Perceived<Hearing>>>,
-        traces: Query<(), Changed<Traces<Hearing>>>,
+        stimuli: Query<(), Changed<Stimuli<Hearing>>>,
         mut changes: ResMut<HearingChanges>,
     ) {
         changes.perceived += perceived.iter().count();
-        changes.traces += traces.iter().count();
+        changes.stimuli += stimuli.iter().count();
     }
 
     #[test]
-    fn hearing_again_what_it_remembers_changes_only_its_traces() {
+    fn hearing_again_what_it_remembers_changes_only_its_stimuli() {
         for space in SPACES {
             let mut app = app(space);
             app.app_mut()
@@ -227,7 +227,7 @@ mod tests {
             app.write(Noise::new(steps, ahead(space, 8.0)));
             app.tick();
             let heard = app.world().resource::<HearingChanges>();
-            let (changed, traced) = (heard.perceived, heard.traces);
+            let (changed, recorded) = (heard.perceived, heard.stimuli);
             for step in 1..=3 {
                 let step = f32::from(u8::try_from(step).unwrap());
                 app.write(Noise::new(steps, ahead(space, 8.0 - step)));
@@ -235,9 +235,13 @@ mod tests {
             }
             let heard = app.world().resource::<HearingChanges>();
             assert_eq!(heard.perceived, changed, "{space:?}: a tree sleeps on");
-            assert_eq!(heard.traces, traced + 3, "{space:?}: each step a trace");
             assert_eq!(
-                traces::<Hearing>(&app, agent).get(steps).unwrap().position,
+                heard.stimuli,
+                recorded + 3,
+                "{space:?}: each step a stimulus"
+            );
+            assert_eq!(
+                stimuli::<Hearing>(&app, agent).get(steps).unwrap().position,
                 space.flatten(ahead(space, 5.0)),
                 "{space:?}"
             );

@@ -5,8 +5,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
-/// The path to `bevy_arbor_bt` where a macro is used: the crate itself, or
-/// else the `bt` module of the `bevy_arbor` facade, however each is named.
+/// The path to `bevy_arbor_bt` where a macro is used, however it's named.
+///
+/// The crate itself, or else the `bt` module of the `bevy_arbor` facade.
 pub(crate) fn bt() -> TokenStream {
     part(
         crate_name("bevy_arbor_bt").ok(),
@@ -16,8 +17,9 @@ pub(crate) fn bt() -> TokenStream {
     )
 }
 
-/// The path to a part: the crate `name`, as `own` finds it, or else the module
-/// `module` of the facade, as `facade` finds it.
+/// The path to a part: the crate `name`, or else the facade's `module`.
+///
+/// The crate as `own` finds it, or the module as `facade` finds the facade.
 ///
 /// `::name` in the part itself, which names itself so. Where neither is found,
 /// as in a crate using them through another's re-export,

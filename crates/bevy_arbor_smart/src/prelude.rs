@@ -1,7 +1,7 @@
 //! What using smart objects takes: `use bevy_arbor_smart::prelude::*`.
 
 #[doc(no_inline)]
-pub use crate::SmartPlugin;
+pub use crate::SmartObjectPlugin;
 #[doc(no_inline)]
 pub use crate::claim::{Claim, ClaimedBy, Claims, claim};
 #[doc(no_inline)]

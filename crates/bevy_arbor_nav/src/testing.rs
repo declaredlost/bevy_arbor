@@ -30,9 +30,9 @@ pub(crate) fn alarmed(_: &Alarmed) -> bool {
 pub(crate) fn app() -> TestApp {
     TestApp::builder()
         .plugins((
-            TreePlugin::default(),
+            BehaviorTreePlugin::default(),
             PerceptionPlugin::default(),
-            EqsPlugin::default(),
+            EnvQueryPlugin::default(),
             NavPlugin::default(),
         ))
         .with(|app| {

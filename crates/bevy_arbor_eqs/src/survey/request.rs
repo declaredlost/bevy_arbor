@@ -8,7 +8,8 @@ use bevy::utils::prelude::ShortName;
 
 use super::registry::{Pending, Request};
 
-/// A request to run the query keyed by `Q` for an agent.
+/// A request to run the query keyed by `Q` for an agent, as a task or on the
+/// agent.
 ///
 /// In a tree, a task: `task(Survey::of(Cover))`, run for the task's agent,
 /// succeeding if it found anything and failing if not. On an agent of its
@@ -16,7 +17,7 @@ use super::registry::{Pending, Request};
 /// it found goes on the agent as a [`Found<Q>`](super::Found).
 ///
 /// Queries run after trees tick, as many each tick as the
-/// [`EqsBudget`](crate::EqsBudget) allows, oldest first.
+/// [`EnvQueryBudget`](crate::EnvQueryBudget) allows, oldest first.
 ///
 /// One asking for a key never added with
 /// [`add_env_query`](super::EnvQueryApp::add_env_query) is reported, and
@@ -27,8 +28,7 @@ pub struct Survey<Q: Send + Sync + 'static> {
     key: PhantomData<fn() -> Q>,
 }
 
-/// Queues a survey as it's asked for, whenever that is: before its query is
-/// added, too.
+/// Queues a survey as it's asked for, even before its query is added.
 fn queue<Q: Send + Sync + 'static>(mut world: DeferredWorld, context: HookContext) {
     if let Some(mut pending) = world.get_resource_mut::<Pending>() {
         pending.0.push_back(Request::of::<Q>(context.entity));

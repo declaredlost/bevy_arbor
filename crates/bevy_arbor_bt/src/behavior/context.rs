@@ -4,7 +4,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use crate::behavior::system::Systems;
-use crate::tree::Plan;
+use crate::tree::{NODE, Owner, Owners, Plan};
 
 /// What a context made outside a tree's tick reads for whether it's gone.
 static STAYS: AtomicBool = AtomicBool::new(false);
@@ -13,53 +13,158 @@ static STAYS: AtomicBool = AtomicBool::new(false);
 pub struct Context<'a> {
     world: &'a mut World,
     agent: Entity,
-    held: bool,
-    interrupted: bool,
-    /// Set once the tree being ticked is taken away or replaced.
-    gone: &'a AtomicBool,
-    /// The clock, read once for every tree ticked in a run.
-    clock: Option<Duration>,
+    /// The tree's clock, read once for every tree ticked in a run.
+    now: Duration,
     /// The systems decorators and acts run, out of the world while trees tick.
     systems: Option<&'a mut Systems>,
-    /// What the tree waits on, as its nodes say.
+    /// Set once the tree being ticked is taken away or replaced.
+    gone: &'a AtomicBool,
+    /// Whether what's ticking asked not to be stopped.
+    held: bool,
+    /// Whether what's above wants what's ticking stopped.
+    interrupted: bool,
+    /// What the tree waited on, and what it waits on now.
+    waits: Waits<'a>,
+}
+
+/// What a tree's tick waited on, who's asked now, and what it waits on next.
+///
+/// A tree's tick keeps it for its nodes and decorator parts to say what they
+/// wait on, each as its own.
+pub(crate) struct Waits<'a> {
+    /// What its last tick waited on: `None` if it's new or restarted, and
+    /// asks everything.
+    before: Option<&'a Plan>,
+    /// Who its wait came for.
+    fired: Owners,
+    /// What it waits on now, as its nodes say.
     plan: Plan,
-    /// How many times anything has said what it waits on, this tick: whether
-    /// a node or decorator said anything is whether this moved while it ran.
+    /// The decorator parts whose answers stood, so wait on what they did.
+    kept: Owners,
+    /// Who's being asked: a decorator part, or a node.
+    owner: Owner,
+    /// How many times anything has said what it waits on, this tick.
+    ///
+    /// Whether a node or decorator said anything is whether this moved while it
+    /// ran.
     said: u64,
+    /// How many times the tree's been ticked, this one included.
+    tick: u64,
+    /// The last id given a decorator part.
+    ids: Owner,
+}
+
+impl<'a> Waits<'a> {
+    /// A tree's tick, having waited on `before`, its wait come for `fired`.
+    ///
+    /// It's the tree's `tick`th, its last part's id `ids`; what it waits on
+    /// next goes into `plan`, an empty one whose room is reused.
+    pub(crate) fn new(
+        before: Option<&'a Plan>,
+        fired: Owners,
+        tick: u64,
+        ids: Owner,
+        plan: Plan,
+    ) -> Self {
+        Self {
+            before,
+            fired,
+            plan,
+            kept: Owners::EMPTY,
+            owner: NODE,
+            said: 0,
+            tick,
+            ids,
+        }
+    }
+
+    /// Outside a tree's tick, as it's canceled: asks everything.
+    fn none() -> Self {
+        Self::new(None, Owners::EMPTY, 0, NODE, Plan::default())
+    }
 }
 
 impl<'a> Context<'a> {
     /// A context for canceling, outside a tree's tick.
     pub(crate) fn new(world: &'a mut World, agent: Entity) -> Self {
-        Self::ticking(world, agent, &STAYS, None, None)
+        let now = world
+            .get_resource::<Time>()
+            .map(Time::elapsed)
+            .unwrap_or_default();
+        Self::ticking(world, agent, &STAYS, now, None, Waits::none())
     }
 
-    /// A context for ticking `agent`'s tree, `gone` set if it goes meanwhile:
-    /// at `clock`, or with none, reading it when asked, and running `systems`,
-    /// or with none, the world's.
+    /// A context for ticking `agent`'s tree, `gone` set if it goes meanwhile.
+    ///
+    /// It's at `now`, and runs `systems`, or with none, the world's.
     pub(crate) fn ticking(
         world: &'a mut World,
         agent: Entity,
         gone: &'a AtomicBool,
-        clock: Option<Duration>,
+        now: Duration,
         systems: Option<&'a mut Systems>,
+        waits: Waits<'a>,
     ) -> Self {
         Self {
             world,
             agent,
+            now,
+            systems,
+            gone,
             held: false,
             interrupted: false,
-            gone,
-            clock,
-            systems,
-            plan: Plan::default(),
-            said: 0,
+            waits,
         }
     }
 
-    /// What the tree waits on, as its nodes said.
-    pub(crate) fn finish(self) -> Plan {
-        self.plan
+    /// What the tree waits on, as its nodes said, and the last id given a
+    /// decorator part.
+    pub(crate) fn finish(self) -> (Plan, Owner) {
+        let Waits {
+            before,
+            mut plan,
+            kept,
+            ids,
+            ..
+        } = self.waits;
+        if let Some(before) = before {
+            plan.keep(before, kept);
+        }
+        (plan, ids)
+    }
+
+    /// An id for a decorator part, its own in its tree.
+    pub(crate) fn new_id(&mut self) -> Owner {
+        self.waits.ids += 1;
+        self.waits.ids
+    }
+
+    /// How many times the tree has been ticked, this one included.
+    pub(crate) fn tick_count(&self) -> u64 {
+        self.waits.tick
+    }
+
+    /// Whether what `owner` waited on came, or the tree asks everything.
+    ///
+    /// A tree asks everything when it's new or restarted.
+    pub(crate) fn woken(&self, owner: Owner) -> bool {
+        self.waits.before.is_none() || self.waits.fired.contains(owner)
+    }
+
+    /// Runs `ask` as `owner`: what it says it waits on is its own.
+    pub(crate) fn asking<T>(&mut self, owner: Owner, ask: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = std::mem::replace(&mut self.waits.owner, owner);
+        let result = ask(self);
+        self.waits.owner = outer;
+        result
+    }
+
+    /// Carries over what `owner` waited on last tick, so it waits on the same.
+    ///
+    /// It isn't asked again, its answer standing.
+    pub(crate) fn keep(&mut self, owner: Owner) {
+        self.waits.said += 1;
+        self.waits.kept.insert(owner);
     }
 
     /// The world, and the systems decorators and acts run, if they're out of
@@ -89,46 +194,53 @@ impl<'a> Context<'a> {
     #[must_use]
     ///
     /// Zero without Bevy's `Time`, which `TimePlugin` adds: timers then never
-    /// run out, and `TreePlugin` warns about it.
+    /// run out, and `BehaviorTreePlugin` warns about it.
     pub fn now(&self) -> Duration {
-        self.clock
-            .or_else(|| self.world.get_resource::<Time>().map(Time::elapsed))
-            .unwrap_or_default()
+        self.now
     }
 
-    /// Asks for the tree to be ticked again once its clock gets to `at`: what a
-    /// timer does, so the tree can sleep until then.
+    /// Asks for the tree to be ticked again once its clock gets to `at`.
+    ///
+    /// What a timer does, so the tree can sleep until then.
     pub fn wake_at(&mut self, at: Duration) {
-        self.said += 1;
-        self.plan.wake_at(at);
+        self.waits.said += 1;
+        self.waits.plan.wake_at(self.waits.owner, at);
     }
 
     /// Asks for the tree to be ticked again once `T` on `entity` changes, comes
-    /// or goes: what a node waiting on a component does, so the tree can sleep
-    /// until then.
+    /// or goes.
+    ///
+    /// What a node waiting on a component does, so the tree can sleep until
+    /// then.
     pub fn watch<T: Component>(&mut self, entity: Entity) {
-        self.said += 1;
-        self.plan.watch::<T>(self.world, entity);
+        self.waits.said += 1;
+        self.waits
+            .plan
+            .watch::<T>(self.waits.owner, self.world, entity);
     }
 
-    /// Asks for the tree to be ticked again next tick, whatever happens: what
-    /// a node that has to look every tick does. A running node, or a decorator
-    /// asked, that says nothing it waits on is asked again next tick anyway.
+    /// Asks for the tree to be ticked again next tick, whatever happens.
+    ///
+    /// What a node that has to look every tick does. A running node, or a
+    /// decorator asked, that says nothing it waits on is asked again next tick
+    /// anyway.
     pub fn poll(&mut self) {
-        self.said += 1;
-        self.plan.poll();
+        self.waits.said += 1;
+        self.waits.plan.poll(self.waits.owner);
     }
 
-    /// Says nothing needs waking for it: nothing it reads changes but by its
-    /// own branch starting or ending. A decorator saying nothing else is
-    /// otherwise asked every tick; one at rest, as an idle cooldown, says this.
+    /// Says nothing needs waking for it, as nothing it reads changes by itself.
+    ///
+    /// Its own branch starting or ending is all that changes what it reads. A
+    /// decorator saying nothing else is otherwise asked every tick; one at
+    /// rest, as an idle cooldown, says this.
     pub fn wait_on_nothing(&mut self) {
-        self.said += 1;
+        self.waits.said += 1;
     }
 
     /// How many times anything has said what it waits on so far.
     pub(crate) fn said(&self) -> u64 {
-        self.said
+        self.waits.said
     }
 
     /// Asks not to be stopped by a `Select` or `RepeatWhile`, for this tick.
@@ -142,13 +254,15 @@ impl<'a> Context<'a> {
         self.held = true;
     }
 
-    /// Whether what's above wants this stopped, and it's only still ticking
-    /// because something in it holds. Wind down, and stop holding.
+    /// Whether what's above wants this stopped, while something in it holds.
+    ///
+    /// It's only still ticking because of that hold. Wind down, and stop
+    /// holding.
     ///
     /// Don't start anything new meanwhile: a node over children goes on with
     /// the one running, and once it ends, ends too, as the built-in ones do.
     #[must_use]
-    pub fn interrupted(&self) -> bool {
+    pub fn is_interrupted(&self) -> bool {
         self.interrupted
     }
 
@@ -162,7 +276,8 @@ impl<'a> Context<'a> {
         self.interrupted_as(false, tick)
     }
 
-    /// Runs `tick` with [`interrupted`](Self::interrupted) as `interrupted`.
+    /// Runs `tick` with [`is_interrupted`](Self::is_interrupted) as
+    /// `interrupted`.
     fn interrupted_as<T>(&mut self, interrupted: bool, tick: impl FnOnce(&mut Self) -> T) -> T {
         let outer = std::mem::replace(&mut self.interrupted, interrupted);
         let result = tick(self);

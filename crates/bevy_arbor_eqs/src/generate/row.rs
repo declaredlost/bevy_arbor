@@ -4,10 +4,11 @@ use bevy::prelude::*;
 
 use super::{Generate, MOST_STEPS, steps};
 use crate::anchor::{Locate, Located};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
-/// Points on a line through an anchor, the way it looks: behind it and ahead,
-/// at most 101, spread further apart than asked if need be. An anchor looking
+/// Points on a line through an anchor, the way it looks: behind it and ahead.
+///
+/// At most 101, spread further apart than asked if need be. An anchor looking
 /// nowhere has none.
 ///
 /// In a side view, an agent looks along the ground: its row is the ground
@@ -47,7 +48,7 @@ impl Row {
 }
 
 impl Generate for Row {
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.along);
         let (steps, spacing) = steps(self.extent, self.spacing).unwrap_or_else(|spread| {
             warn_once!(
@@ -67,7 +68,7 @@ impl Generate for Row {
             for step in -steps..=steps {
                 #[expect(clippy::cast_precision_loss, reason = "a step count")]
                 let out_by = step as f32 * spacing;
-                out.push(Item::Point(position + ahead * out_by));
+                out.push(EnvQueryItem::place(position + ahead * out_by));
             }
         }
     }

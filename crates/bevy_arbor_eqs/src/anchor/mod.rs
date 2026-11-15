@@ -1,6 +1,7 @@
-//! Anchors: where generators and tests measure from.
+//! Anchors: where generators and tests measure from: none, one or several
+//! places.
 //!
-//! [`Agent`], a fixed point [`At`], a fixed entity [`Thing`], what the agent
+//! [`Querier`], a fixed point [`At`], a fixed entity [`Thing`], what the agent
 //! perceives as hostile ([`Hostiles`]), or a [`Locate`] of your own.
 
 mod fixed;
@@ -8,13 +9,15 @@ mod hostiles;
 
 use bevy::prelude::*;
 
-pub use self::fixed::{Agent, At, Thing};
+pub use self::fixed::{At, Querier, Thing};
 pub use self::hostiles::Hostiles;
-use crate::query::QueryContext;
+use crate::query::EnvQueryContext;
 
-/// A place an anchor is at, which way it looks there (zero where it doesn't),
-/// and the thing it is, if it's a thing: what a ray from it mustn't be
-/// blocked by.
+/// A place an anchor is at, which way it looks there, and the thing it is, if
+/// any.
+///
+/// Which way is zero where it doesn't look. The thing is what a ray from it
+/// mustn't be blocked by.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Located {
     /// Where.
@@ -25,12 +28,13 @@ pub struct Located {
     pub entity: Option<Entity>,
 }
 
-/// A kind of anchor: where a generator or test measures from, as an agent's
-/// query sees it. None, one, or several places: a test against several takes
-/// the nearest.
+/// A kind of anchor: where a generator or test measures from, for an agent's
+/// query.
+///
+/// None, one, or several places: a test against several takes the nearest.
 pub trait Locate: Send + Sync + 'static {
     /// Where it is, for the agent of `cx`: pushed onto `out`.
-    fn locate(&self, cx: &QueryContext, out: &mut Vec<Located>);
+    fn locate(&self, cx: &EnvQueryContext, out: &mut Vec<Located>);
 }
 
 #[cfg(test)]
@@ -39,11 +43,11 @@ mod tests {
     use bevy_harness::TestApp;
 
     use super::*;
-    use crate::query::QueryContext;
+    use crate::query::EnvQueryContext;
     use crate::testing::*;
 
     fn located(app: &TestApp, agent: Entity, anchor: &dyn Locate) -> Vec<Vec3> {
-        let cx = QueryContext::new(app.world(), agent, Space::Volume, 1);
+        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
         let mut out = Vec::new();
         anchor.locate(&cx, &mut out);
         out.into_iter().map(|located| located.position).collect()
@@ -55,7 +59,7 @@ mod tests {
         let agent = app.spawn(GlobalTransform::from_xyz(1.0, 0.0, 2.0));
         let thing = app.spawn(GlobalTransform::from_xyz(5.0, 0.0, 0.0));
         app.tick();
-        assert_eq!(located(&app, agent, &Agent), [Vec3::new(1.0, 0.0, 2.0)]);
+        assert_eq!(located(&app, agent, &Querier), [Vec3::new(1.0, 0.0, 2.0)]);
         assert_eq!(located(&app, agent, &At(Vec3::X)), [Vec3::X]);
         assert_eq!(
             located(&app, agent, &Thing(thing)),

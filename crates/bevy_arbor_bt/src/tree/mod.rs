@@ -1,4 +1,4 @@
-//! The tree on an agent, and the system ticking them all.
+//! The tree on an agent, the system ticking them all, and what wakes them.
 
 mod components;
 mod events;
@@ -6,8 +6,10 @@ mod systems;
 mod trace;
 mod wake;
 
-pub use self::components::{BehaviorTree, TreePaused};
-pub use self::events::TreeFinished;
+pub(crate) use self::components::unpaused;
+pub use self::components::{BehaviorTree, BehaviorTreePaused};
+pub use self::events::BehaviorTreeFinished;
 pub(crate) use self::systems::{check_ticks, tick};
-pub use self::trace::{TraceNode, TreeTrace};
-pub(crate) use self::wake::Plan;
+pub(crate) use self::trace::write_node;
+pub use self::trace::{BehaviorTreeTrace, TraceNode};
+pub(crate) use self::wake::{NODE, Owner, Owners, Plan, Wakes, task_removed};

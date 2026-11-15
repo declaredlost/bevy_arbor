@@ -1,7 +1,7 @@
 # Occlusion and attitude
 
-So far the guard sees through walls, and it takes anyone on another team for
-an enemy. This chapter fixes both. Walls block its sight, and you decide who
+So far the guard sees through walls, and it takes anyone of another allegiance
+for an enemy. This chapter fixes both. Walls block its sight, and you decide who
 it's hostile to.
 
 Perception doesn't depend on a physics engine. What blocks sight and who's
@@ -115,7 +115,7 @@ use bevy_arbor::avian2d::sight::SightPoints;
 commands.spawn((
     Intruder,
     Perceivable,
-    Team(2),
+    Allegiance(2),
     SightPoints(vec![Vec3::new(0.0, 0.8, 0.0), Vec3::ZERO, Vec3::new(0.0, -0.8, 0.0)]),
     Transform::from_xyz(8.0, 0.0, 0.0),
 ));
@@ -235,20 +235,20 @@ one blocking is enough.
 Every percept has an [`Attitude`]: hostile, neutral or friendly. The guard's
 conditions use it through `is_hostile`.
 
-By default it comes from [`Team`]:
+By default it comes from [`Allegiance`]:
 
 | The guard | The other | Attitude |
 |---|---|---|
-| `Team(1)` | `Team(1)` | Friendly |
-| `Team(1)` | `Team(2)` | Hostile |
-| Either has no team | | Neutral |
+| `Allegiance(1)` | `Allegiance(1)` | Friendly |
+| `Allegiance(1)` | `Allegiance(2)` | Hostile |
+| Either has no allegiance | | Neutral |
 
-That's why the guard has `Team(1)` and the intruder `Team(2)`.
+That's why the guard has `Allegiance(1)` and the intruder `Allegiance(2)`.
 
 ### Attitude of your own
 
-A system in `PerceptionSystems::Classify` can set the attitude instead. What
-it sets stands over the team. Here, a disguised intruder passes as a friend:
+A system in `PerceptionSystems::Classify` can set the attitude instead. What it
+sets stands over the allegiance. Here, a disguised intruder passes as a friend:
 
 ```rust
 # use bevy::prelude::*;
@@ -299,4 +299,4 @@ the guard's tree wakes and sees an enemy.
 [`PerceptionSystems`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/enum.PerceptionSystems.html
 [`Candidates<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Candidates.html
 [`Attitude`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/enum.Attitude.html
-[`Team`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Team.html
+[`Allegiance`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Allegiance.html

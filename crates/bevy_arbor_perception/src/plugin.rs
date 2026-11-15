@@ -1,25 +1,29 @@
 use bevy::ecs::schedule::{InternedScheduleLabel, ScheduleLabel};
 use bevy::prelude::*;
 
-use crate::perceived::{Attitude, Team};
+use crate::perceived::{Allegiance, Attitude};
 use crate::sense::{
     self, Facing, Hearing, Noise, Perceivable, PerceptionSchedule, SensePlugin, SensorOf, Sensors,
     Share, Shared, Sight, Touch, Touched,
 };
 use crate::space::{Grid, Space};
 
-/// The stages perception runs in, in order. Add a system of your own to one to
-/// take part: a raycast in `Occlude`, an attitude in `Classify`.
+/// The stages perception runs in, in order, for systems of your own to join.
+///
+/// Add a system to one to take part: a raycast in `Occlude`, an attitude in
+/// `Classify`.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PerceptionSystems {
     /// Agents look, and noises, touches and reports come in: candidates.
     Gather,
     /// Candidates something's in the way of are blocked. Nothing built in.
     Occlude,
-    /// Candidates are given their attitude. Nothing built in: what's left gets
-    /// the [`Team`] fallback.
+    /// Candidates are given their attitude, by systems of your own: none built
+    /// in.
+    ///
+    /// What's left gets the [`Allegiance`] fallback.
     Classify,
-    /// What's left is written to each agent's
+    /// What's left goes to each agent's
     /// [`Perceived<S>`](crate::perceived::Perceived), and what's faded is
     /// forgotten.
     Commit,
@@ -77,7 +81,7 @@ impl Plugin for PerceptionPlugin {
             .register_type::<Facing>()
             .register_type::<SensorOf>()
             .register_type::<Sensors>()
-            .register_type::<Team>()
+            .register_type::<Allegiance>()
             .register_type::<Attitude>()
             .register_type::<Sight>()
             .register_type::<Hearing>()

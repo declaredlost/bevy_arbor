@@ -1,28 +1,31 @@
-use crate::behavior::{Behave, Behavior, Child, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
 use crate::decorator::Decorator;
+use crate::inspect::{Inspect, Inspection};
 
 /// Its child over and over, while its decorator passes.
 pub(in crate::behavior) struct RepeatWhile {
     decorator: Decorator,
     child: Behavior,
+    /// That its decorator was told it started, as it first passed.
+    started: bool,
 }
 
 impl RepeatWhile {
     pub(in crate::behavior) fn new(decorator: Decorator, child: Behavior) -> Self {
-        Self { decorator, child }
+        Self {
+            decorator,
+            child,
+            started: false,
+        }
     }
 }
 
 impl Behave for RepeatWhile {
-    fn start(&mut self, cx: &mut Context) {
-        self.decorator.start(cx);
-    }
-
     fn tick(&mut self, cx: &mut Context) -> Status {
         if !self.decorator.passes(cx) {
-            if self.child.holds() {
+            if self.child.is_holding() {
                 let status = self.child.tick_interrupted(cx);
-                if status == Status::Running && self.child.holds() {
+                if status == Status::Running && self.child.is_holding() {
                     return Status::Running;
                 }
                 // Ended winding down: as it ended.
@@ -33,12 +36,17 @@ impl Behave for RepeatWhile {
             return Status::Success;
         }
         // Asked to stop, it doesn't start its child again.
-        if cx.interrupted() && !self.child.is_running() {
+        if cx.is_interrupted() && !self.child.is_running() {
             return Status::Success;
+        }
+        // Told it's starting once it's let in: never if it never passed.
+        if !self.started {
+            self.started = true;
+            self.decorator.start(cx);
         }
         match self.child.tick(cx) {
             Status::Failure => Status::Failure,
-            Status::Success if cx.interrupted() => Status::Success,
+            Status::Success if cx.is_interrupted() => Status::Success,
             Status::Success => {
                 // It starts its child again next tick.
                 cx.poll();
@@ -50,15 +58,17 @@ impl Behave for RepeatWhile {
 
     fn end(&mut self, cx: &mut Context, outcome: Option<Outcome>) {
         self.child.cancel(cx);
-        self.decorator.end(cx, outcome);
+        if std::mem::take(&mut self.started) {
+            self.decorator.end(cx, outcome);
+        }
     }
+}
 
-    fn label(&self) -> String {
-        format!("RepeatWhile {}", self.decorator.label())
-    }
-
-    fn children(&self) -> Vec<Child<'_>> {
-        vec![Child::new(&self.child)]
+impl Inspect for RepeatWhile {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection
+            .name(format_args!("RepeatWhile {}", self.decorator.label()))
+            .child(&self.child);
     }
 }
 
@@ -70,15 +80,16 @@ mod tests {
     use crate::testing::*;
 
     #[test]
-    fn it_repeats_while_the_decorator_passes_then_cancels_and_succeeds() {
+    fn it_repeats_while_its_condition_passes_then_cancels_and_succeeds() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! {
                 RepeatWhile(high) => { task((Work, Report::Succeed)) }
             },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
         app.ticks(5);
         assert_eq!(outcome(&app, npc), None);
         assert_eq!(app.count::<With<Work>>(), 1);
@@ -90,13 +101,26 @@ mod tests {
     }
 
     #[test]
-    fn it_fails_if_its_child_does() {
+    fn its_decorator_is_told_it_started_only_once_it_passed() {
         let mut app = app();
         let npc = agent(
             &mut app,
-            behavior_tree! { RepeatWhile(high) => { act(refuse) } },
+            behavior_tree! { RepeatWhile(high, Counted) => { task(Work) } },
         );
-        set(&mut app, npc, true, false);
+        app.tick();
+        assert_eq!(inside(&app), 0, "never let in");
+        assert_eq!(outcome(&app, npc), Some(true));
+    }
+
+    #[test]
+    fn it_fails_if_its_child_does() {
+        let mut app = app();
+        let npc = with_flags(
+            &mut app,
+            behavior_tree! { RepeatWhile(high) => { act(refuse) } },
+            true,
+            false,
+        );
         app.tick();
         assert_eq!(outcome(&app, npc), Some(false));
     }
@@ -104,11 +128,12 @@ mod tests {
     #[test]
     fn a_child_failing_as_it_winds_down_fails_it() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! { RepeatWhile(high) => { task((Work, Graceful)) } },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
         app.tick();
         set(&mut app, npc, false, false);
         app.tick();

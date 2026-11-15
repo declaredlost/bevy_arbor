@@ -1,7 +1,9 @@
-//! Drawing where agents are going: each agent's [`Destination`], ringed by
-//! how near counts as there, and the [`Route`] its movement says it's
-//! taking. A color of `None` leaves that out. Turn it off altogether through
-//! Bevy's `GizmoConfigStore`, as any gizmo group.
+//! Drawing where agents are going: each agent's [`Destination`], and its
+//! [`Route`].
+//!
+//! The destination is ringed by how near counts as there; the route is the
+//! one its movement says it's taking. A color of `None` leaves that out. Turn
+//! it off altogether through Bevy's `GizmoConfigStore`, as any gizmo group.
 
 use bevy::color::palettes::css;
 use bevy::prelude::*;

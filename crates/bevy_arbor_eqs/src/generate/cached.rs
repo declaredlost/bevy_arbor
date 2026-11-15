@@ -4,15 +4,16 @@ use bevy::ecs::query::{QueryFilter, ReadOnlyQueryData};
 use bevy::ecs::world::WorldId;
 use bevy::prelude::*;
 
-/// A Bevy query a generator keeps between runs, for the world it runs in:
-/// made once, not each run, and brought up to date with what's been spawned
+/// A Bevy query a generator keeps between runs, for the world it runs in.
+///
+/// Made once, not each run, and brought up to date with what's been spawned
 /// since. A generator of things with a component, as [`Nearby`](super::Nearby)
 /// is, holds one.
 ///
 /// ```
 /// # use bevy::prelude::*;
 /// # use bevy_arbor_eqs::generate::{CachedQuery, Generate};
-/// # use bevy_arbor_eqs::query::{Item, QueryContext};
+/// # use bevy_arbor_eqs::query::{EnvQueryItem, EnvQueryContext};
 /// #[derive(Component)]
 /// struct Crate;
 ///
@@ -21,11 +22,11 @@ use bevy::prelude::*;
 /// struct Crates(CachedQuery<(Entity, &'static GlobalTransform), With<Crate>>);
 ///
 /// impl Generate for Crates {
-///     fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+///     fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
 ///         self.0.with(cx.world(), |crates| {
 ///             for (entity, transform) in &crates {
 ///                 let position = cx.space().flatten(transform.translation());
-///                 out.push(Item::Entity { entity, position });
+///                 out.push(EnvQueryItem::thing(entity, position));
 ///             }
 ///         });
 ///     }
@@ -44,9 +45,10 @@ impl<D: ReadOnlyQueryData + 'static, F: QueryFilter + 'static> Default for Cache
 }
 
 impl<D: ReadOnlyQueryData + 'static, F: QueryFilter + 'static> CachedQuery<D, F> {
-    /// Runs `run` with the query over `world`, and what it gives back. `None`
-    /// while something it asks for isn't known to the world yet: no entity
-    /// could match.
+    /// Runs `run` with the query over `world`, and what it gives back.
+    ///
+    /// `None` while something it asks for isn't known to the world yet: no
+    /// entity could match.
     pub fn with<R>(
         &self,
         world: &World,

@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 
-/// Draws every part enabled: what agents perceive, and, with their features,
-/// how queries weighed their items, smart objects' slots, and where agents
-/// are going.
+/// Draws every part enabled: what agents perceive, and what their features
+/// add.
+///
+/// With them, how queries weighed their items, smart objects' slots, and
+/// where agents are going.
 ///
 /// Not in `ArborPlugins`, as it needs a renderer: Bevy's `GizmoPlugin`, in
 /// `DefaultPlugins`. Each part's drawing is a gizmo group of its own,

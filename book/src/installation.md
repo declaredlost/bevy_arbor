@@ -56,8 +56,8 @@ fn main() {
 ```
 
 To change a plugin, use `set`, as with Bevy's own plugin groups. To run
-trees in another schedule, set [`TreePlugin::new`]:
-`ArborPlugins.with_space(Space::Planar).set(TreePlugin::new(Update))`.
+trees in another schedule, set [`BehaviorTreePlugin::new`]:
+`ArborPlugins.with_space(Space::Planar).set(BehaviorTreePlugin::new(Update))`.
 `with_space` sets `PerceptionPlugin`, so to change perception's schedule as
 well, set that one with both:
 `ArborPlugins.set(PerceptionPlugin::new(Update).with_space(Space::Planar))`.
@@ -76,7 +76,7 @@ that order.
 
 - **Time.** Trees need Bevy's `TimePlugin` for waits, timeouts and
   cooldowns. `DefaultPlugins` and `MinimalPlugins` both include it.
-  `TreePlugin` warns if it's missing.
+  `BehaviorTreePlugin` warns if it's missing.
 - **Gizmos.** `ArborGizmosPlugin` isn't in `ArborPlugins`, because it needs a
   renderer. Add it yourself. [Debugging](debugging.md) shows how.
 - **Both avian features.** A game is 2D or 3D: turn on one. With `avian2d`
@@ -88,4 +88,4 @@ that order.
 
 [`ArborPlugins`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/struct.ArborPlugins.html
 [`ArborSystemsPlugin`]: https://docs.rs/bevy_arbor/latest/bevy_arbor/struct.ArborSystemsPlugin.html
-[`TreePlugin::new`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/struct.TreePlugin.html#method.new
+[`BehaviorTreePlugin::new`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/struct.BehaviorTreePlugin.html#method.new

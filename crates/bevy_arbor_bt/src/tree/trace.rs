@@ -3,9 +3,10 @@ use std::fmt;
 use bevy::prelude::*;
 
 use crate::behavior::Behavior;
+use crate::inspect::{Inspect, Inspection};
 
-/// Keeps its agent's tree as it last ticked: each node, what's written above
-/// it, and whether it's running.
+/// Keeps its agent's tree as it last ticked: each node, its notes, what's
+/// running.
 ///
 /// For an inspector, or a test. Each node's index is its id, the same tick to
 /// tick while the tree keeps its shape; its parent comes before it. Written
@@ -22,31 +23,19 @@ use crate::behavior::Behavior;
 /// a string a node, so only for debugging.
 #[derive(Component, Reflect, Debug, Clone, Default, PartialEq, Eq)]
 #[reflect(Component, Debug, Default, PartialEq)]
-pub struct TreeTrace {
+pub struct BehaviorTreeTrace {
     nodes: Vec<TraceNode>,
 }
 
-impl TreeTrace {
+impl BehaviorTreeTrace {
     /// `root`'s tree, as it is now.
     pub(crate) fn of(root: &Behavior) -> Self {
-        let mut trace = Self { nodes: Vec::new() };
-        trace.walk(root, None, None);
-        trace
-    }
-
-    /// Adds `node` under `parent`, with `above` written above it, then its
-    /// children.
-    fn walk(&mut self, node: &Behavior, parent: Option<usize>, above: Option<String>) {
-        let index = self.nodes.len();
-        self.nodes.push(TraceNode {
-            parent,
-            label: node.label(),
-            notes: above.into_iter().collect(),
-            running: node.is_running(),
-            held: node.holds(),
-        });
-        for child in node.children() {
-            self.walk(child.node, Some(index), child.note);
+        Self {
+            nodes: {
+                let mut nodes = Vec::new();
+                write_node(&mut nodes, None, None, root);
+                nodes
+            },
         }
     }
 
@@ -71,7 +60,29 @@ impl TreeTrace {
     }
 }
 
-impl fmt::Display for TreeTrace {
+/// Writes `node` into `nodes`, under `parent`, noted with `above`, then what's
+/// under it.
+pub(crate) fn write_node(
+    nodes: &mut Vec<TraceNode>,
+    parent: Option<usize>,
+    above: Option<String>,
+    node: &Behavior,
+) {
+    let at = nodes.len();
+    nodes.push(TraceNode {
+        parent,
+        label: String::new(),
+        notes: above.into_iter().collect(),
+        running: node.is_running(),
+        held: node.is_holding(),
+    });
+    let mut inspection = Inspection::new(Some((&mut *nodes, at)));
+    node.inspect(&mut inspection);
+    let label = inspection.finish();
+    nodes[at].label = label;
+}
+
+impl fmt::Display for BehaviorTreeTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // How deep each is written: a child with notes goes a step deeper,
         // its notes in between.
@@ -90,7 +101,8 @@ impl fmt::Display for TreeTrace {
     }
 }
 
-/// One node of a [`TreeTrace`].
+/// One node of a [`BehaviorTreeTrace`]: its label, notes and parent, and
+/// whether it runs.
 #[derive(Reflect, Debug, Clone, PartialEq, Eq)]
 #[reflect(Debug, PartialEq)]
 pub struct TraceNode {
@@ -129,7 +141,7 @@ impl TraceNode {
     /// Whether it asked not to be stopped: see
     /// [`Context::hold`](crate::behavior::Context::hold).
     #[must_use]
-    pub fn holds(&self) -> bool {
+    pub fn is_holding(&self) -> bool {
         self.held
     }
 }
@@ -139,19 +151,20 @@ mod tests {
     use bevy::prelude::*;
     use bevy_harness::TestApp;
 
+    use crate::behavior::{Behave, Context};
     use crate::prelude::*;
     use crate::testing::*;
 
     fn traced(app: &mut TestApp, tree: Behavior) -> Entity {
         app.spawn((
             Flags::default(),
-            TreeTrace::default(),
+            BehaviorTreeTrace::default(),
             BehaviorTree::new(tree),
         ))
     }
 
-    fn trace(app: &TestApp, npc: Entity) -> &TreeTrace {
-        app.world().get::<TreeTrace>(npc).unwrap()
+    fn trace(app: &TestApp, npc: Entity) -> &BehaviorTreeTrace {
+        app.world().get::<BehaviorTreeTrace>(npc).unwrap()
     }
 
     #[test]
@@ -200,7 +213,7 @@ mod tests {
         app.tick();
         let running: Vec<_> = trace(&app, npc)
             .running()
-            .map(|(id, node)| (id, node.label(), node.holds()))
+            .map(|(id, node)| (id, node.label(), node.is_holding()))
             .collect();
         assert_eq!(
             running,
@@ -243,7 +256,7 @@ mod tests {
         let changed = |app: &TestApp| {
             app.world()
                 .entity(npc)
-                .get_ref::<TreeTrace>()
+                .get_ref::<BehaviorTreeTrace>()
                 .unwrap()
                 .last_changed()
         };
@@ -253,5 +266,45 @@ mod tests {
         set(&mut app, npc, true, false);
         app.tick();
         assert_ne!(changed(&app), first, "what's running changed");
+    }
+
+    /// Runs its first child, showing both, and how many times it ran.
+    #[derive(Inspect)]
+    struct Shown {
+        #[inspect(param)]
+        runs: u32,
+        #[inspect(children)]
+        children: Vec<Behavior>,
+    }
+
+    impl Behave for Shown {
+        fn tick(&mut self, cx: &mut Context) -> Status {
+            self.children[0].tick(cx)
+        }
+
+        fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
+            for child in &mut self.children {
+                child.cancel(cx);
+            }
+        }
+    }
+
+    #[test]
+    fn a_derived_inspect_shows_the_name_the_params_and_the_children() {
+        let mut app = app();
+        let npc = traced(
+            &mut app,
+            behavior_tree! {
+                @ Shown {
+                    runs: 2,
+                    children: vec![Behavior::task(Work), Behavior::task(Other)],
+                }
+            },
+        );
+        app.tick();
+        assert_eq!(
+            trace(&app, npc).to_string(),
+            "> Shown(2)\n>   Work\n    Other\n"
+        );
     }
 }

@@ -31,16 +31,16 @@ pub(crate) fn rest() -> Behavior {
 pub(crate) fn app() -> TestApp {
     TestApp::builder()
         .plugins((
-            TreePlugin::default(),
+            BehaviorTreePlugin::default(),
             PerceptionPlugin::default(),
-            EqsPlugin::default(),
-            SmartPlugin,
+            EnvQueryPlugin::default(),
+            SmartObjectPlugin,
         ))
         .with(|app| {
             app.add_env_query(
                 Seat,
-                EnvQuery::new(FreeSlots::<Sit>::within(Agent, 20.0))
-                    .score(Distance::to(Agent), Score::lower()),
+                EnvQuery::new(FreeSlots::<Sit>::within(Querier, 20.0))
+                    .score(Distance::to(Querier), Score::lower()),
             );
         })
         .build()
@@ -63,14 +63,16 @@ pub(crate) fn bench(app: &mut TestApp, seats: &[Vec3]) -> Vec<Entity> {
 }
 
 /// An agent at the origin that finds a seat, claims it, goes there and uses
-/// it, over and over.
+/// it.
+///
+/// It does so over and over.
 pub(crate) fn sitter(app: &mut TestApp) -> Entity {
     app.spawn((
         GlobalTransform::IDENTITY,
         BehaviorTree::new(behavior_tree! {
             Forever => {
                 Select => {
-                    when(found::<Seat> && claim::<Seat>()) => Sequence => {
+                    when(found::<Seat>, claim::<Seat>()) => Sequence => {
                         task(GoThere),
                         Socket(Using),
                     },

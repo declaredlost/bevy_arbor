@@ -1,14 +1,13 @@
 use std::fmt;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 
-use bevy::ecs::change_detection::Tick;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 
 use super::systems::Ticking;
-use super::wake::Plan;
+use super::trace::BehaviorTreeTrace;
+use super::wake::{NODE, Owner, Plan, Wakes};
 use crate::behavior::{Behavior, Context, Outcome};
 
 /// An agent's behavior tree: what it runs, and how it ended, once it has.
@@ -20,15 +19,29 @@ use crate::behavior::{Behavior, Context, Outcome};
 /// decorator that has to be asked every tick, a timer, or a change to a
 /// component a typed condition reads or to a task's report.
 #[derive(Component)]
-#[component(on_discard = discard)]
+#[component(on_insert = inserted, on_discard = discard)]
 pub struct BehaviorTree {
     /// Out of here only while it ticks.
     pub(super) root: Option<Behavior>,
-    pub(super) outcome: Option<Outcome>,
-    /// What its last tick waited on.
-    pub(super) plan: Plan,
+    pub(super) state: TreeState,
+    /// The run of the trees it was last ticked in.
+    pub(super) ran: u64,
+    /// How many times it's been ticked.
+    pub(super) ticks: u64,
+    /// The last id given one of its decorator parts.
+    pub(super) ids: Owner,
+}
+
+/// Where a tree is.
+#[derive(Default)]
+pub(super) enum TreeState {
     /// Never ticked yet, or restarted: ticked whatever it waited on.
-    pub(super) fresh: bool,
+    #[default]
+    Fresh,
+    /// Running, asleep until what its last tick waited on comes.
+    Asleep(Plan),
+    /// Ended, as it went.
+    Finished(Outcome),
 }
 
 impl BehaviorTree {
@@ -37,37 +50,41 @@ impl BehaviorTree {
     pub fn new(root: Behavior) -> Self {
         Self {
             root: Some(root),
-            outcome: None,
-            plan: Plan::default(),
-            fresh: true,
+            state: TreeState::Fresh,
+            ran: 0,
+            ticks: 0,
+            ids: NODE,
         }
     }
 
     /// How the tree ended, once it has. One under `Forever` never does.
     #[must_use]
     pub fn outcome(&self) -> Option<Outcome> {
-        self.outcome
-    }
-
-    /// Starts a finished tree again from the top, on its next tick. One still
-    /// running is left as it is.
-    pub fn restart(&mut self) {
-        if self.outcome.take().is_some() {
-            self.fresh = true;
+        match self.state {
+            TreeState::Finished(outcome) => Some(outcome),
+            TreeState::Fresh | TreeState::Asleep(_) => None,
         }
     }
 
-    /// Whether it's to be ticked: still going, and woken, as of the tree's
-    /// `clock` and the change tick `now`.
-    pub(super) fn due(&self, world: &World, clock: Option<Duration>, now: Tick) -> bool {
-        self.outcome.is_none() && (self.fresh || self.plan.due(world, clock, now))
+    /// Starts a finished tree again from the top, on its next tick.
+    ///
+    /// One still running is left as it is.
+    pub fn restart(&mut self) {
+        if let TreeState::Finished(_) = self.state {
+            self.state = TreeState::Fresh;
+        }
+    }
+
+    /// Whether it's yet to be ticked, new or restarted.
+    pub(super) fn is_fresh(&self) -> bool {
+        matches!(self.state, TreeState::Fresh)
     }
 }
 
 impl fmt::Display for BehaviorTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.root {
-            Some(root) => super::trace::TreeTrace::of(root).fmt(f),
+            Some(root) => BehaviorTreeTrace::of(root).fmt(f),
             None => Ok(()),
         }
     }
@@ -76,14 +93,27 @@ impl fmt::Display for BehaviorTree {
 /// Holds an agent's tree where it is, until it's taken away again.
 ///
 /// No decorators asked, nothing started, its task not ticked by
-/// [`Tasks`](crate::task::Tasks). Time goes on, so a `Wait` or `Timeout` may be
-/// over when it's taken away. One put on by a tree ticked before it, in the
-/// same tick, already holds it.
+/// [`TaskQuery`](crate::task::TaskQuery). Time goes on, so a `Wait` or
+/// `Timeout` may be over when it's taken away. One put on by a tree ticked
+/// before it, in the same tick, already holds it.
 #[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component, Debug, Default)]
-pub struct TreePaused;
+pub struct BehaviorTreePaused;
 
-/// Cancels what a tree that's going is running.
+/// Ticks a tree new on its agent next tick.
+fn inserted(mut world: DeferredWorld, context: HookContext) {
+    if let Some(mut wakes) = world.get_resource_mut::<Wakes>() {
+        wakes.wake(context.entity);
+    }
+}
+
+/// Looks at an unpaused tree next tick: it sees what changed while it was
+/// paused.
+pub(crate) fn unpaused(removed: On<Remove<BehaviorTreePaused>>, mut wakes: ResMut<Wakes>) {
+    wakes.wake(removed.entity);
+}
+
+/// Cancels what a tree that's going is running, and forgets what it waited on.
 ///
 /// One going as it ticks is canceled once its tick stops, which this tells
 /// it to.
@@ -92,7 +122,14 @@ fn discard(mut world: DeferredWorld, context: HookContext) {
     let Some(mut tree) = world.get_mut::<BehaviorTree>(agent) else {
         return;
     };
-    let Some(mut root) = tree.root.take() else {
+    let state = std::mem::take(&mut tree.state);
+    let root = tree.root.take();
+    if let TreeState::Asleep(plan) = &state
+        && let Some(mut wakes) = world.get_resource_mut::<Wakes>()
+    {
+        wakes.forget(agent, plan);
+    }
+    let Some(mut root) = root else {
         // Its root is only out while it ticks.
         if let Some(ticking) = world.get_resource::<Ticking>() {
             ticking.0.store(true, Ordering::Relaxed);
@@ -233,7 +270,7 @@ mod tests {
 
     fn pause_other(In(agent): In<Entity>, pauses: Query<&Pauses>, mut commands: Commands) -> bool {
         if let Ok(other) = pauses.get(agent) {
-            commands.entity(other.0).insert(TreePaused);
+            commands.entity(other.0).insert(BehaviorTreePaused);
         }
         true
     }
@@ -263,13 +300,13 @@ mod tests {
             },
         );
         app.tick();
-        app.entity_mut(npc).insert(TreePaused);
+        app.entity_mut(npc).insert(BehaviorTreePaused);
         set(&mut app, npc, true, false);
         app.ticks(3);
         assert_eq!(app.count::<With<Other>>(), 1, "not canceled");
         assert_eq!(app.count::<With<Work>>(), 0, "not started");
 
-        app.entity_mut(npc).remove::<TreePaused>();
+        app.entity_mut(npc).remove::<BehaviorTreePaused>();
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 1);
     }
@@ -277,19 +314,20 @@ mod tests {
     #[test]
     fn tree_finished_is_triggered_once_on_the_agent() {
         #[derive(Resource, Default)]
-        struct Seen(Vec<TreeFinished>);
+        struct Seen(Vec<BehaviorTreeFinished>);
         let mut app = app();
         app.app_mut().init_resource::<Seen>();
-        app.app_mut()
-            .add_observer(|finished: On<TreeFinished>, mut seen: ResMut<Seen>| {
+        app.app_mut().add_observer(
+            |finished: On<BehaviorTreeFinished>, mut seen: ResMut<Seen>| {
                 seen.0.push(*finished);
-            });
+            },
+        );
         let npc = agent(&mut app, behavior_tree! { act(refuse) });
         app.ticks(3);
         let seen = &app.world().resource::<Seen>().0;
         assert_eq!(
             seen,
-            &[TreeFinished {
+            &[BehaviorTreeFinished {
                 entity: npc,
                 outcome: Outcome::Failure
             }]

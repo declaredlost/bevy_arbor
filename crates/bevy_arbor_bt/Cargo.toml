@@ -31,10 +31,13 @@ bevy = { workspace = true, features = ["std", "bevy_log"] }
 [dev-dependencies]
 bevy_harness = { workspace = true }
 
-# What decorators cost: `cargo run --release -p bevy_arbor_bt --example load`.
-[[example]]
-name = "load"
-test = false
+# Benchmarks
+criterion = { workspace = true, features = [] }
+
+# What ticking trees costs: `cargo bench -p bevy_arbor_bt --bench trees`.
+[[bench]]
+name = "trees"
+harness = false
 
 [lints]
 workspace = true

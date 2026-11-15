@@ -7,9 +7,12 @@ use bevy::utils::prelude::ShortName;
 
 use super::decorate::Decorate;
 use crate::behavior::{Context, Outcome};
+use crate::inspect::{Inspect, Inspection, seconds};
 
-/// A decorator keeping its branch from running again until `length` after it
-/// last ended, however it ended: `when(has_target && cooldown(8.0))`.
+/// A decorator keeping its branch from running again for `length` after it
+/// ends.
+///
+/// It cools however its branch ended: `when(has_target, cooldown(8.0))`.
 ///
 /// Its tree sleeps while it cools, and is woken as it's done: a `Select` then
 /// switches back to its branch as it would to any decorator passing again. Each
@@ -40,7 +43,7 @@ impl Cooldown {
     }
 }
 
-/// A [`Cooldown`] of `seconds`: none, if it's 0 or less.
+/// A [`Cooldown`] of `seconds`, for one branch: none, if it's 0 or less.
 #[must_use]
 pub fn cooldown(seconds: f32) -> Cooldown {
     Cooldown::new(Duration::try_from_secs_f32(seconds).unwrap_or(Duration::ZERO))
@@ -66,16 +69,19 @@ impl Decorate for Cooldown {
     fn end(&mut self, cx: &mut Context, _outcome: Option<Outcome>) {
         self.until = Some(cx.now().saturating_add(self.length));
     }
+}
 
-    fn label(&self) -> String {
-        format!("cooldown({}s)", self.length.as_secs_f32())
+impl Inspect for Cooldown {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name("cooldown").param(seconds(self.length));
     }
 }
 
-/// On an agent: when its shared cooldown `K` is over, by the clock its tree
-/// ticks on. Written by every [`cooldown_of::<K>`](cooldown_of) as its branch
-/// ends, and read by all of them; insert one yourself to start it from
-/// elsewhere, as a stun or a disarm might.
+/// On an agent: when its shared cooldown `K` is over, by its tree's clock.
+///
+/// Written by every `shared_cooldown::<K>` as its branch ends, and read by all
+/// of them; insert one yourself to start it from elsewhere, as a stun or a
+/// disarm might.
 #[derive(Component)]
 pub struct Cooling<K: Send + Sync + 'static> {
     until: Duration,
@@ -85,7 +91,7 @@ pub struct Cooling<K: Send + Sync + 'static> {
 impl<K: Send + Sync + 'static> Cooling<K> {
     /// Cooling until `until`, by the clock trees tick on.
     #[must_use]
-    pub fn until(until: Duration) -> Self {
+    pub fn new(until: Duration) -> Self {
         Self {
             until,
             key: PhantomData,
@@ -94,7 +100,7 @@ impl<K: Send + Sync + 'static> Cooling<K> {
 
     /// When it's over.
     #[must_use]
-    pub fn over_at(&self) -> Duration {
+    pub fn until(&self) -> Duration {
         self.until
     }
 }
@@ -107,18 +113,20 @@ impl<K: Send + Sync + 'static> fmt::Debug for Cooling<K> {
     }
 }
 
-/// A decorator sharing its cooldown with every other one keyed by `K` on the
-/// agent. Made by [`cooldown_of`].
+/// A decorator sharing its cooldown with every one keyed by `K` on the agent.
+///
+/// Made by [`shared_cooldown`].
 pub struct SharedCooldown<K: Send + Sync + 'static> {
     length: Duration,
     key: PhantomData<fn() -> K>,
 }
 
-/// A cooldown of `seconds` shared by every branch keyed by `K`, on each agent:
-/// `when(cooldown_of::<Grenades>(8.0))` on the fire bomb and the frag
+/// A cooldown of `seconds` shared by every branch keyed by `K`, on each agent.
+///
+/// `when(shared_cooldown::<Grenades>(8.0))` on the fire bomb and the frag
 /// grenade alike, so throwing either cools both. None, if it's 0 or less.
 #[must_use]
-pub fn cooldown_of<K: Send + Sync + 'static>(seconds: f32) -> SharedCooldown<K> {
+pub fn shared_cooldown<K: Send + Sync + 'static>(seconds: f32) -> SharedCooldown<K> {
     SharedCooldown {
         length: Duration::try_from_secs_f32(seconds).unwrap_or(Duration::ZERO),
         key: PhantomData,
@@ -130,7 +138,7 @@ impl<K: Send + Sync + 'static> Decorate for SharedCooldown<K> {
         let agent = cx.agent();
         // Another branch, or anything else, starting it wakes the tree.
         cx.watch::<Cooling<K>>(agent);
-        let Some(until) = cx.world().get::<Cooling<K>>(agent).map(Cooling::over_at) else {
+        let Some(until) = cx.world().get::<Cooling<K>>(agent).map(Cooling::until) else {
             return true;
         };
         if cx.now() >= until {
@@ -151,26 +159,27 @@ impl<K: Send + Sync + 'static> Decorate for SharedCooldown<K> {
             .get::<Cooling<K>>()
             .is_none_or(|cooling| cooling.until < until)
         {
-            entity.insert(Cooling::<K>::until(until));
+            entity.insert(Cooling::<K>::new(until));
         }
     }
+}
 
-    fn label(&self) -> String {
-        format!(
-            "cooldown_of::<{}>({}s)",
-            ShortName::of::<K>(),
-            self.length.as_secs_f32()
-        )
+impl<K: Send + Sync + 'static> Inspect for SharedCooldown<K> {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection
+            .name(format_args!("shared_cooldown::<{}>", ShortName::of::<K>()))
+            .param(seconds(self.length));
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use bevy::prelude::*;
 
-    use super::{Cooling, cooldown, cooldown_of};
+    use super::{Cooling, cooldown, shared_cooldown};
     use crate::prelude::*;
     use crate::testing::*;
 
@@ -178,7 +187,7 @@ mod tests {
         behavior_tree! {
             Forever => {
                 Select => {
-                    when(high && cooldown(1.0)) => task((Work, Report::Succeed)),
+                    when(high, cooldown(1.0)) => task((Work, Report::Succeed)),
                     task(Other),
                 }
             }
@@ -188,8 +197,7 @@ mod tests {
     #[test]
     fn its_branch_waits_out_the_cooldown_then_runs_again() {
         let mut app = app();
-        let npc = agent(&mut app, grenade_or_shoot());
-        set(&mut app, npc, true, false);
+        with_flags(&mut app, grenade_or_shoot(), true, false);
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 1, "thrown");
         app.tick();
@@ -205,16 +213,17 @@ mod tests {
     #[test]
     fn it_cools_after_a_failure_too() {
         let mut app = app();
-        let npc = agent(
+        with_flags(
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high && cooldown(1.0)) => task((Work, Report::Fail)),
+                    when(high, cooldown(1.0)) => task((Work, Report::Fail)),
                     task(Other),
                 }
             },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
         app.ticks(3);
         assert_eq!(works_started(&app), 1, "failed, and cooling");
         assert_eq!(app.count::<With<Other>>(), 1);
@@ -223,18 +232,39 @@ mod tests {
     }
 
     #[test]
-    fn it_cools_after_its_branch_is_cancelled_too() {
+    fn a_tree_asleep_under_typed_conditions_wakes_as_a_failure_s_cooldown_ends() {
         let mut app = app();
-        let npc = agent(
+        with_flags(
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(high && cooldown(1.0)) => task(Work),
+                    when(is_high, cooldown(1.0)) => task((Work, Report::Fail)),
                     task(Other),
                 }
             },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
+        app.ticks(3);
+        assert_eq!(works_started(&app), 1, "failed, and cooling");
+        app.secs(1.1);
+        assert_eq!(works_started(&app), 2, "woken as it cooled");
+    }
+
+    #[test]
+    fn it_cools_after_its_branch_is_cancelled_too() {
+        let mut app = app();
+        let npc = with_flags(
+            &mut app,
+            behavior_tree! {
+                Select => {
+                    when(high, cooldown(1.0)) => task(Work),
+                    task(Other),
+                }
+            },
+            true,
+            false,
+        );
         app.tick();
         set(&mut app, npc, false, false);
         app.tick();
@@ -280,19 +310,20 @@ mod tests {
     #[test]
     fn a_shared_cooldown_cools_every_branch_keyed_alike() {
         let mut app = app();
-        let npc = agent(
+        let npc = with_flags(
             &mut app,
             behavior_tree! {
                 Forever => {
                     Select => {
-                        when(high && cooldown_of::<Grenades>(1.0)) => act(count),
-                        when(cooldown_of::<Grenades>(1.0)) => task((Work, Report::Succeed)),
+                        when(high, shared_cooldown::<Grenades>(1.0)) => act(count),
+                        when(shared_cooldown::<Grenades>(1.0)) => task((Work, Report::Succeed)),
                         task(Other),
                     }
                 }
             },
+            true,
+            false,
         );
-        set(&mut app, npc, true, false);
         app.tick();
         let thrown = acts(&app);
         assert!(thrown > 0, "the first thrown");
@@ -312,14 +343,14 @@ mod tests {
             behavior_tree! {
                 Forever => {
                     Select => {
-                        when(cooldown_of::<Grenades>(1.0)) => act(count),
+                        when(shared_cooldown::<Grenades>(1.0)) => act(count),
                         Wait(100.0),
                     }
                 }
             },
         );
         app.entity_mut(npc)
-            .insert(Cooling::<Grenades>::until(Duration::from_secs(1)));
+            .insert(Cooling::<Grenades>::new(Duration::from_secs(1)));
         app.tick();
         assert_eq!(acts(&app), 0, "cooling, though nothing in the tree ended");
         app.secs(1.1);
@@ -333,7 +364,7 @@ mod tests {
             &mut app,
             behavior_tree! {
                 Select => {
-                    when(cooldown_of::<Grenades>(1.0)) => task(Work),
+                    when(shared_cooldown::<Grenades>(1.0)) => task(Work),
                     Wait(100.0),
                 }
             },
@@ -343,21 +374,21 @@ mod tests {
         // Started from elsewhere, longer: the branch is cancelled, and ending
         // it would cool for a second only.
         app.entity_mut(npc)
-            .insert(Cooling::<Grenades>::until(Duration::from_secs(5)));
+            .insert(Cooling::<Grenades>::new(Duration::from_secs(5)));
         app.tick();
         assert_eq!(app.count::<With<Work>>(), 0, "cancelled");
-        let until = app.world().get::<Cooling<Grenades>>(npc).unwrap().over_at();
+        let until = app.world().get::<Cooling<Grenades>>(npc).unwrap().until();
         assert_eq!(until, Duration::from_secs(5), "kept the longer");
     }
 
     /// How often `asked` has been asked.
-    static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    static ASKED: AtomicUsize = AtomicUsize::new(0);
 
     #[derive(Component)]
     struct Here;
 
     fn asked(_: &Here) -> bool {
-        ASKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        ASKED.fetch_add(1, Ordering::Relaxed);
         true
     }
 
@@ -367,14 +398,10 @@ mod tests {
         app.spawn((
             Here,
             BehaviorTree::new(behavior_tree! {
-                Select => { when(asked && cooldown(1.0)) => Wait(100.0) }
+                Select => { when(asked, cooldown(1.0)) => Wait(100.0) }
             }),
         ));
         app.ticks(10);
-        assert_eq!(
-            ASKED.load(std::sync::atomic::Ordering::Relaxed),
-            1,
-            "asked once, then asleep"
-        );
+        assert_eq!(ASKED.load(Ordering::Relaxed), 1, "asked once, then asleep");
     }
 }

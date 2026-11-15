@@ -15,9 +15,11 @@ use crate::avian::prelude::*;
 use crate::dim;
 use crate::plugin::{check_space, schedule};
 
-/// Blocks what's out of sight: a ray from where each sensor looked to each of
-/// its candidates for `S`, in [`PerceptionSystems::Occlude`]. What the ray hits
-/// first on the way, if it isn't the candidate itself, blocks it.
+/// Blocks what's out of sight, by raycast, in [`PerceptionSystems::Occlude`].
+///
+/// A ray goes from where each sensor looked to each of its candidates for `S`.
+/// What the ray hits first on the way, if it isn't the candidate itself,
+/// blocks it.
 ///
 /// What blocks it is what's on [`Occluders`]' layers, or a sensor's own
 /// [`SensorOccluders`]: avian's `CollisionLayers`. The agent's and the
@@ -62,6 +64,7 @@ impl<S: Sense> Plugin for LineOfSightPlugin<S> {
 }
 
 /// What blocks sight: the layers whose colliders a ray from a sensor stops at.
+///
 /// Every layer, unless set; a sensor's [`SensorOccluders`] says otherwise for
 /// it.
 #[derive(Resource, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,14 +78,17 @@ impl Default for Occluders {
 }
 
 /// On a sensor (or an agent sensing itself): what blocks its sight, over
-/// [`Occluders`]. Eyes that see through glass leave its layer out.
+/// [`Occluders`].
+///
+/// Eyes that see through glass leave its layer out.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
 #[reflect(Component, Debug, PartialEq)]
 pub struct SensorOccluders(pub LayerMask);
 
-/// On something that can be seen: the points on it a sensor can see it by,
-/// in its own space (a head, a chest, feet). Seen if any is in sight; without
-/// them, seen by its middle.
+/// On something that can be seen: the points on it a sensor can see it by.
+///
+/// They're in its own space: a head, a chest, feet. Seen if any is in sight;
+/// without them, seen by its middle.
 #[derive(Component, Reflect, Debug, Clone, Default, PartialEq)]
 #[reflect(Component, Debug, Default, PartialEq)]
 pub struct SightPoints(pub Vec<Vec3>);
@@ -105,9 +111,11 @@ pub(crate) fn under(
     })
 }
 
-/// Whether `hit`, a collider, is `thing`'s own: on it or below it, or on the
-/// body it's on (a rigid body above it). What a ray to `thing` hits of its
-/// own doesn't block it.
+/// Whether `hit`, a collider, is `thing`'s own, and so doesn't block a ray to
+/// it.
+///
+/// Its own is on it or below it, or on the body it's on (a rigid body above
+/// it).
 pub(crate) fn owns(
     colliders: &Query<&ColliderOf>,
     parents: &Query<&ChildOf>,

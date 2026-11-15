@@ -1,5 +1,6 @@
-//! Trees and perception together: a tree sleeps on what its agent perceives,
-//! and wakes as that changes, by the sense its decorators read.
+//! Trees and perception together: a tree sleeps on what its agent perceives.
+//!
+//! It wakes as that changes, by the sense its decorators read.
 #![cfg(all(feature = "bt", feature = "perception"))]
 
 use std::f32::consts::PI;
@@ -35,7 +36,7 @@ fn a_tree_sleeps_on_what_its_agent_sees_and_wakes_as_that_changes() {
             .with_half_angle(PI)
             .with_interval(Duration::ZERO),
         Hearing::new(30.0),
-        Team(1),
+        Allegiance(1),
         GlobalTransform::IDENTITY,
         BehaviorTree::new(behavior_tree! {
             Forever => {
@@ -48,7 +49,7 @@ fn a_tree_sleeps_on_what_its_agent_sees_and_wakes_as_that_changes() {
     ));
     let enemy = app.spawn((
         Perceivable,
-        Team(2),
+        Allegiance(2),
         GlobalTransform::from_xyz(0.0, 0.0, -20.0),
     ));
     app.tick();

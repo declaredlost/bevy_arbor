@@ -66,9 +66,9 @@ fn setup(app: &mut App) {
     app.add_env_query(
         Cover,
         // Points on rings round the agent.
-        EnvQuery::new(Donut::around(Agent).radius(3.0, 9.0).rings(3).points(16))
+        EnvQuery::new(Donut::around(Querier).radius(3.0, 9.0).rings(3).points(16))
             // Near the agent, and far from what's hostile.
-            .score(Distance::to(Agent), Score::lower())
+            .score(Distance::to(Querier), Score::lower())
             .score(
                 Distance::to(Hostiles::<Sight>::remembered()),
                 Score::higher().weight(0.5),

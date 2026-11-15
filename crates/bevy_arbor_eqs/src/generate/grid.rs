@@ -5,10 +5,11 @@ use bevy_arbor_perception::Space;
 
 use super::{Generate, MOST_STEPS, steps};
 use crate::anchor::{Locate, Located};
-use crate::query::{Item, QueryContext};
+use crate::query::{EnvQueryContext, EnvQueryItem};
 
-/// Points on a square grid round an anchor, in the plane things stand on: at
-/// most 101 each way, spread further apart than asked if need be.
+/// Points on a square grid round an anchor, in the plane things stand on.
+///
+/// At most 101 each way, spread further apart than asked if need be.
 #[derive(Clone)]
 pub struct Grid {
     around: Arc<dyn Locate>,
@@ -42,7 +43,7 @@ impl Grid {
 }
 
 impl Generate for Grid {
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.around);
         let (steps, spacing) = steps(self.extent, self.spacing).unwrap_or_else(|spread| {
             warn_once!(
@@ -61,7 +62,7 @@ impl Generate for Grid {
                         Space::Planar => Vec3::new(a, b, 0.0),
                         Space::Volume => Vec3::new(a, 0.0, b),
                     };
-                    out.push(Item::Point(position + offset));
+                    out.push(EnvQueryItem::place(position + offset));
                 }
             }
         }

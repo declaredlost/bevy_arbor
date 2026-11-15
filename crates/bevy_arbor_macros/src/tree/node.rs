@@ -18,7 +18,7 @@ pub(super) enum Node {
     Commit,
     RepeatWhile,
     Timeout,
-    State,
+    Insert,
     Socket,
     Wait,
     Task,
@@ -43,7 +43,7 @@ impl Node {
         Self::Commit,
         Self::RepeatWhile,
         Self::Timeout,
-        Self::State,
+        Self::Insert,
         Self::Socket,
         Self::Wait,
         Self::Task,
@@ -73,7 +73,7 @@ impl Node {
             Self::Commit => "Commit",
             Self::RepeatWhile => "RepeatWhile",
             Self::Timeout => "Timeout",
-            Self::State => "State",
+            Self::Insert => "Insert",
             Self::Socket => "Socket",
             Self::Wait => "Wait",
             Self::Task => "task",
@@ -86,9 +86,9 @@ impl Node {
         match self {
             Self::Random => Some("roll"),
             Self::Repeat => Some("times"),
-            Self::RepeatWhile => Some("decorator"),
+            Self::RepeatWhile => Some("decorator, .."),
             Self::Timeout | Self::Wait => Some("length"),
-            Self::State | Self::Task => Some("bundle"),
+            Self::Insert | Self::Task => Some("bundle"),
             Self::Socket => Some("key"),
             Self::Act => Some("system"),
             _ => None,
@@ -145,8 +145,8 @@ mod tests {
         assert_eq!(
             Node::unknown("Parallel"),
             "no node called `Parallel`: there's Forever, Repeat(times), Select, Fallback, Sequence, All, Any, \
-             Race, Scored, Random(roll), Invert, Succeed, Commit, RepeatWhile(decorator), \
-             Timeout(length), State(bundle), Socket(key), Wait(length), task(bundle), act(system), or @ expr"
+             Race, Scored, Random(roll), Invert, Succeed, Commit, RepeatWhile(decorator, ..), \
+             Timeout(length), Insert(bundle), Socket(key), Wait(length), task(bundle), act(system), or @ expr"
         );
     }
 }

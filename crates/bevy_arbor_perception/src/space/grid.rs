@@ -3,9 +3,11 @@ use bevy::prelude::*;
 
 use super::Space;
 
-/// Everything that can be seen, by where it is: cells as large as a typical
-/// sight, rebuilt on the ticks a sensor looks, so a look only goes through
-/// the cells around it.
+/// Everything that can be seen, by where it is, in cells as large as a typical
+/// sight.
+///
+/// It's rebuilt on the ticks a sensor looks, so a look only goes through the
+/// cells around it.
 ///
 /// Rebuilding costs about 10 ns a thing; at 2,000 agents, looking through it
 /// is several times faster than going through everything.
@@ -49,9 +51,10 @@ impl Grid {
         }
     }
 
-    /// What's in the cells within `radius` of `point`: a superset of what's
-    /// within `radius`, for the caller to measure. Nothing, if nothing can be
-    /// seen.
+    /// What's in the cells within `radius` of `point`, for the caller to
+    /// measure.
+    ///
+    /// A superset of what's within `radius`. Nothing, if nothing can be seen.
     pub(crate) fn near(&self, point: Vec3, radius: f32) -> impl Iterator<Item = (Entity, Vec3)> {
         let (size, space) = (self.size, self.space);
         let live = size > 0.0;

@@ -47,6 +47,9 @@ four of the agent's components, and returns `bool`.
 - It's asked again only when one of those components changes, comes or goes.
   Until then, the tree can sleep. See [Sleeping](sleeping.md).
 - If the agent lacks a component it takes as `&T`, it doesn't pass.
+- A closure is one too, so it can capture what varies. A function making one
+  returns `impl Condition`, built with `.into_condition()`:
+  `(move |ammo: &Ammo| ammo.0 >= least).into_condition()`.
 - It reads only the agent. For anything else, use a system condition, or keep
   what you need on the agent with a system of your own.
 
@@ -78,15 +81,15 @@ fn within(
 # fn tree() -> Behavior {
 behavior_tree! {
     Select => {
-        when(within, 6.0) => task(Shoot),
+        when(with(within, 6.0)) => task(Shoot),
         task(Chase),
     }
 }
 # }
 ```
 
-- A parameter goes after the system: `when(within, 6.0)`. The system gets it
-  in `In` with the agent.
+- A parameter goes in with `with`: `when(with(within, 6.0))`. The system gets
+  it in `In` with the agent.
 - A system condition is asked every tick, because it could read anything.
   While one could matter, the tree doesn't sleep.
 - It can't take `ResMut` or a `&mut` query, as with a Bevy run condition.
@@ -99,9 +102,18 @@ behavior_tree! {
   was last asked about any agent, not this one.
 - `act(system, param)` takes a parameter the same way.
 
+## Conditions of your own
+
+A closure taking the [`Context`] is a condition too, for one that needs no
+system and no type of its own: `when(|cx: &mut Context| ..)`. It reads the
+world through `cx.world()`. A type of your own implements [`Condition`].
+Either way, say what it waits on, with `cx.watch::<T>(entity)` or
+`cx.wake_at(time)`, and the tree sleeps until then. One that says nothing is
+asked every tick.
+
 ## Combining
 
-Decorators combine with `&&`, `||` and `!`:
+Conditions combine with `&&`, `||` and `!`:
 
 ```rust
 # use bevy::prelude::*;
@@ -119,9 +131,9 @@ behavior_tree! {
 # }
 ```
 
-A system condition with a parameter can't go straight into `&&`. Build it
-with `Decorator::with`, then combine with `.and(..)` and `.or(..)`:
-`when(Decorator::with(within, 6.0).and(sees_intruder))`.
+`with(within, 6.0) && sees_intruder` combines like any other. Outside the
+macro, conditions combine with [`IntoCondition`]'s `and` and `or`, and `not`.
+They aren't in the prelude, since Bevy's run conditions have those names.
 
 ## Cooldowns
 
@@ -138,7 +150,7 @@ it last ended. The guard calls for help at most every ten seconds:
 behavior_tree! {
     Forever => {
         Select => {
-            when(sees_intruder && cooldown(10.0)) => task(Shout),
+            when(sees_intruder, cooldown(10.0)) => task(Shout),
             when(sees_intruder) => task(Chase),
         }
     }
@@ -146,15 +158,18 @@ behavior_tree! {
 # }
 ```
 
+- It goes after a comma: every part of `when(..)` must pass. A cooldown acts
+  as its branch ends, so it can't go under `!` or `||`, where it might not
+  have been asked, or have passed, when the branch started. That doesn't
+  compile.
 - It cools however the branch ended: success, failure or cancellation.
 - The tree sleeps while it cools, and wakes when it's done.
 - Each agent cools on its own.
-- It's told when its branch ends, even when `&&` or `||` skipped asking it.
 
 ### Shared cooldowns
 
-`cooldown_of::<K>(seconds)` shares one cooldown between every branch keyed by
-`K` on the agent. Running one cools them all. The cooldown is the
+`shared_cooldown::<K>(seconds)` shares one cooldown between every branch keyed
+by `K` on the agent. Running one cools them all. The cooldown is the
 [`Cooling<K>`] component on the agent. Insert one yourself to start it from
 elsewhere. Here, a guard that hears another's alarm doesn't raise its own:
 
@@ -171,22 +186,24 @@ struct Alarm;
 # fn tree() -> Behavior {
 behavior_tree! {
     Select => {
-        when(sees_intruder && cooldown_of::<Alarm>(10.0)) => task(Shout),
+        when(sees_intruder, shared_cooldown::<Alarm>(10.0)) => task(Shout),
     }
 }
 # }
 fn alarm_heard(time: Res<Time>, guards: Query<Entity, With<Guard>>, mut commands: Commands) {
     let over = time.elapsed() + Duration::from_secs(10);
     for guard in &guards {
-        commands.entity(guard).insert(Cooling::<Alarm>::until(over));
+        commands.entity(guard).insert(Cooling::<Alarm>::new(over));
     }
 }
 ```
 
 ## Decorators of your own
 
-A decorator of your own implements [`Decorate`]. `passes` answers. `start`
-and `end` hear its branch start and end, if it keeps anything.
+A decorator that acts as its branch starts and ends, as a cooldown does,
+implements [`Decorate`]. `passes` answers. `start` and `end` hear its branch
+start and end. It goes after a comma, as a cooldown does, so whenever its
+branch runs, it passed, and it hears both.
 
 At most two guards may chase at once. They count chasers on a shared entity:
 
@@ -201,6 +218,7 @@ use bevy_arbor::bt::decorator::Decorate;
 struct Chasers(u32);
 
 /// At most `max` agents in its branch, counted on `pool`.
+#[derive(Inspect)]
 struct Limit {
     max: u32,
     pool: Entity,
@@ -229,7 +247,7 @@ impl Decorate for Limit {
 }
 ```
 
-Then `when(sees_intruder && Limit { max: 2, pool })` lets two guards in.
+Then `when(sees_intruder, Limit { max: 2, pool })` lets two guards in.
 
 Say what the decorator waits on each time it's asked:
 
@@ -245,7 +263,10 @@ A decorator that says nothing is asked every tick.
 - A component written every frame wakes every typed condition reading it.
   Write with `set_if_neq`. See [Sleeping](sleeping.md).
 - A system condition can't capture variables. Pass what varies as its
-  parameter.
+  parameter, with `with`: `when(with(within, 6.0))`.
 
 [`Cooling<K>`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/struct.Cooling.html
 [`Decorate`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/decorator/trait.Decorate.html
+[`Condition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/condition/trait.Condition.html
+[`IntoCondition`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/condition/trait.IntoCondition.html
+[`Context`]: https://docs.rs/bevy_arbor_bt/latest/bevy_arbor_bt/behavior/struct.Context.html

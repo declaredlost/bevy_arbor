@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bevy::utils::prelude::ShortName;
 use bevy_arbor_bt::behavior::{Context, Outcome, Plugged};
 use bevy_arbor_bt::decorator::Decorate;
+use bevy_arbor_bt::inspect::{Inspect, Inspection};
 use bevy_arbor_eqs::survey::Found;
 
 use crate::slot::{SlotDisabled, SlotOf, Using};
@@ -29,8 +30,9 @@ impl ClaimedBy {
     }
 }
 
-/// On an agent: the slots it holds, kept by [`ClaimedBy`]: where to go, for a
-/// task taking it there.
+/// On an agent: the slots it holds, kept by [`ClaimedBy`]: where to go.
+///
+/// Read by a task taking it there.
 #[derive(Component, Reflect, Debug, Default)]
 #[reflect(Component, Debug)]
 #[relationship_target(relationship = ClaimedBy)]
@@ -43,22 +45,28 @@ impl Claims {
     }
 }
 
-/// A decorator claiming the slot the query keyed by `Q` found for the agent,
-/// for as long as its branch runs. Made by [`claim`].
+/// A decorator claiming the slot the query keyed by `Q` found, while it runs.
+///
+/// It holds it for as long as its branch runs. Made by [`claim`].
 pub struct Claim<Q: Send + Sync + 'static> {
     /// The slot it holds, while its branch runs.
     held: Option<Entity>,
-    /// Whether it claimed the slot itself, so gives it up as its branch ends:
-    /// not if the agent held it already, by another branch.
+    /// Whether it claimed the slot itself, so gives it up as its branch ends.
+    ///
+    /// It didn't if the agent held it already, by another branch.
     claimed: bool,
     /// What the slot plugged into the agent, and what the agent had plugged
-    /// in before, set aside to put back as the branch ends.
+    /// in before.
+    ///
+    /// What it had is set aside to put back as the branch ends.
     swapped: Option<(Plugged<Using>, Option<Plugged<Using>>)>,
     key: PhantomData<fn() -> Q>,
 }
 
-/// A decorator claiming the slot the query keyed by `Q` found, for as long as
-/// its branch runs: `when(found::<Bench> && claim::<Bench>()) => ..`.
+/// Claims the slot the query keyed by `Q` found for the agent, as a decorator.
+///
+/// `when(found::<Bench>, claim::<Bench>()) => ..` holds it for as long as its
+/// branch runs.
 ///
 /// It passes while that slot is free, or already the agent's, and isn't
 /// disabled; once claimed, while it's still the agent's. So a slot taken by
@@ -71,9 +79,18 @@ pub struct Claim<Q: Send + Sync + 'static> {
 /// and what the agent had plugged in before is put back. A slot the agent
 /// already held, by another branch, stays held.
 ///
-/// A branch tells every decorator in its condition it's starting, even one
-/// under `!` or on the side of `||` that wasn't asked: so under `||`, each
-/// side whose slot can be claimed claims it, and under `!` nothing is.
+/// It acts as its branch starts and ends, so goes after a comma, never under
+/// `!` or `||`: there, it might not have been asked, or passed, as its branch
+/// started, and take a slot it didn't let its branch in for.
+///
+/// ```compile_fail
+/// # use bevy::prelude::*;
+/// # use bevy_arbor_bt::prelude::*;
+/// # use bevy_arbor_smart::prelude::*;
+/// # struct Bench;
+/// # #[derive(Component, Clone)] struct Idle;
+/// let tree = behavior_tree! { Select => { when(!claim::<Bench>()) => task(Idle) } };
+/// ```
 #[must_use]
 pub fn claim<Q: Send + Sync + 'static>() -> Claim<Q> {
     Claim {
@@ -94,7 +111,9 @@ impl<Q: Send + Sync + 'static> Claim<Q> {
 }
 
 /// Whether `agent` can claim `slot`: a slot, not disabled, and free or its
-/// own already. Held already, only its own.
+/// own already.
+///
+/// Held already, only its own.
 fn claimable(world: &World, slot: Entity, agent: Entity, held: bool) -> bool {
     let Ok(slot) = world.get_entity(slot) else {
         return false;
@@ -128,7 +147,8 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
         let Some(slot) = Self::found(cx) else {
             return;
         };
-        // Started without passing, under `!` or `||`: nothing to hold.
+        // Taken since it was asked, by another branch of this tree: nothing
+        // to hold.
         if !claimable(cx.world(), slot, agent, false) {
             return;
         }
@@ -188,9 +208,11 @@ impl<Q: Send + Sync + 'static> Decorate for Claim<Q> {
             };
         }
     }
+}
 
-    fn label(&self) -> String {
-        format!("claim::<{}>", ShortName::of::<Q>())
+impl<Q: Send + Sync + 'static> Inspect for Claim<Q> {
+    fn inspect(&self, inspection: &mut Inspection<'_>) {
+        inspection.name(format_args!("claim::<{}>", ShortName::of::<Q>()));
     }
 }
 
@@ -359,39 +381,6 @@ mod tests {
     }
 
     #[test]
-    fn not_claiming_takes_no_one_elses_seat() {
-        let mut app = app();
-        let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
-        let owner = app.spawn(GlobalTransform::IDENTITY);
-        let other = app.spawn((
-            GlobalTransform::IDENTITY,
-            BehaviorTree::new(behavior_tree! {
-                Sequence => {
-                    task(Survey::of(Seat)),
-                    task(GoThere),
-                    Select => { when(!claim::<Seat>()) => task(Idle) },
-                }
-            }),
-        ));
-        app.ticks(2);
-        // Found free, then taken while it walks.
-        app.entity_mut(seats[0]).insert(ClaimedBy(owner));
-        arrive(&mut app);
-        app.ticks(2);
-        assert_eq!(app.count::<With<Idle>>(), 1, "taken, so `!claim` passes");
-        assert_eq!(
-            app.world().get::<ClaimedBy>(seats[0]).map(ClaimedBy::agent),
-            Some(owner),
-            "still the owner's"
-        );
-        assert_eq!(held(&app, other), None);
-        assert!(
-            app.world().get::<Plugged<Using>>(other).is_none(),
-            "nor what it brings"
-        );
-    }
-
-    #[test]
     fn a_seat_taken_from_its_agent_cancels_and_unplugs() {
         let mut app = app();
         let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
@@ -414,7 +403,7 @@ mod tests {
         let mut app = app();
         app.app_mut().add_env_query(
             AnySeat,
-            EnvQuery::new(FreeSlots::<Sit>::within(Agent, 20.0)),
+            EnvQuery::new(FreeSlots::<Sit>::within(Querier, 20.0)),
         );
         let seats = bench(&mut app, &[Vec3::new(5.0, 0.0, 0.0)]);
         let agent = app.spawn((

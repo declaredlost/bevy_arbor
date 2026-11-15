@@ -8,8 +8,9 @@ use super::{Sense, SensorOf, agent};
 use crate::perceived::Candidates;
 use crate::space::{Grid, Space};
 
-/// On an agent or a sensor: what it can see. A sustained sense: what's in
-/// view stays in view, until it's lost.
+/// On an agent or a sensor: what it can see, as a sustained sense.
+///
+/// What's in view stays in view, until it's lost.
 ///
 /// It looks every `interval`, at a moment of its own, so looks spread across
 /// ticks. What's in `range`, within `half_angle` of ahead, it notices;
@@ -44,8 +45,9 @@ impl Default for Sight {
 }
 
 impl Sight {
-    /// Seeing as far as `range`, losing sight there too, over the front half,
-    /// from the agent's origin, five looks a second.
+    /// Seeing as far as `range`, losing sight there too, over the front half.
+    ///
+    /// From the agent's origin, five looks a second.
     #[must_use]
     pub fn new(range: f32) -> Self {
         Self {
@@ -91,7 +93,7 @@ impl Sight {
     }
 }
 
-/// On anything that can be seen.
+/// On anything that can be seen: sight finds only what's marked with it.
 #[derive(Component, Reflect, Debug, Clone, Copy, Default)]
 #[reflect(Component, Debug, Default)]
 pub struct Perceivable;
@@ -105,9 +107,10 @@ pub struct Perceivable;
 #[reflect(Component, Debug, PartialEq)]
 pub struct Facing(pub Dir3);
 
-/// Puts everything perceivable in the grid, on the ticks a sensor looks:
-/// cells as large as a typical sight, the median, so one sensor seeing very
-/// far doesn't make every look go through huge cells.
+/// Puts everything perceivable in the grid, on the ticks a sensor looks.
+///
+/// Cells are as large as a typical sight, the median, so one sensor seeing
+/// very far doesn't make every look go through huge cells.
 pub(crate) fn build_grid(
     time: Res<Time>,
     mut grid: ResMut<Grid>,
@@ -142,8 +145,10 @@ pub(crate) fn build_grid(
     );
 }
 
-/// How sight finds what's near a sensor: perception's own grid unless
-/// another is set with
+/// How sight finds what's near a sensor: perception's own grid, unless one is
+/// set.
+///
+/// Another is set with
 /// [`set_sight_index`](crate::sense::SightIndexApp::set_sight_index), as the
 /// avian crates set avian's colliders.
 pub trait SightIndex: Send + Sync + 'static {
@@ -151,7 +156,9 @@ pub trait SightIndex: Send + Sync + 'static {
     type Param: ReadOnlySystemParam;
 
     /// Calls `found` with each [`Perceivable`] thing within `radius` of
-    /// `point`, and where it is in perception's [`Space`]. More is fine:
+    /// `point`.
+    ///
+    /// Each comes with where it is in perception's [`Space`]. More is fine:
     /// sight measures each against its range and cone.
     fn near(
         param: &SystemParamItem<Self::Param>,
@@ -161,8 +168,9 @@ pub trait SightIndex: Send + Sync + 'static {
     );
 }
 
-/// Perception's own index: a grid of everything perceivable, rebuilt on the
-/// ticks a sensor looks.
+/// Perception's own index: a grid of everything perceivable.
+///
+/// It's rebuilt on the ticks a sensor looks.
 pub(crate) struct GridIndex;
 
 impl SightIndex for GridIndex {
@@ -180,8 +188,10 @@ impl SightIndex for GridIndex {
     }
 }
 
-/// Each sensor due to look, looks: what's in range and in its cone, of what
-/// the index `I` finds near it, becomes a candidate.
+/// Each sensor due to look, looks: what's in range and in its cone is a
+/// candidate.
+///
+/// It looks through what the index `I` finds near it.
 pub(crate) fn look<I: SightIndex>(
     time: Res<Time>,
     space: Res<Space>,
@@ -241,8 +251,9 @@ pub(crate) fn look<I: SightIndex>(
         });
 }
 
-/// When `sensor` first looks, within `interval` of starting: looks spread
-/// across ticks, the same way each run.
+/// When `sensor` first looks, within `interval` of starting.
+///
+/// Looks spread across ticks, the same way each run.
 fn stagger(sensor: Entity, interval: Duration) -> Duration {
     let hash = sensor.to_bits().wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 48;
     let fraction = f32::from(u16::try_from(hash).unwrap_or(0)) / 65_536.0;
@@ -326,8 +337,8 @@ mod tests {
             let percept = perceived::<Sight>(&app, agent).get(target).unwrap();
             assert!(!percept.is_active(), "{space:?}: lost");
             let lost_at = Space::flatten(space, ahead(space, 20.0));
-            let trace = traces::<Sight>(&app, agent).get(target).unwrap();
-            assert_eq!(trace.position, lost_at, "{space:?}");
+            let stimulus = stimuli::<Sight>(&app, agent).get(target).unwrap();
+            assert_eq!(stimulus.position, lost_at, "{space:?}");
         }
     }
 
@@ -413,7 +424,7 @@ mod tests {
             let percept = perceived::<Sight>(&app, agent).get(target).unwrap();
             assert!(!percept.is_active(), "{space:?}");
             assert_eq!(
-                traces::<Sight>(&app, agent).get(target).unwrap().position,
+                stimuli::<Sight>(&app, agent).get(target).unwrap().position,
                 Space::flatten(space, ahead(space, 5.0)),
                 "{space:?}"
             );

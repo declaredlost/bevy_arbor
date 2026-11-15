@@ -3,14 +3,16 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use bevy_arbor_eqs::anchor::{Locate, Located};
 use bevy_arbor_eqs::generate::{CachedQuery, Generate};
-use bevy_arbor_eqs::query::{Item, QueryContext};
+use bevy_arbor_eqs::query::{EnvQueryContext, EnvQueryItem};
 
 use crate::claim::ClaimedBy;
 use crate::slot::{SlotDisabled, SlotOf};
 
 /// The slots offering `A` within `range` of an anchor that the agent could
-/// claim: free or its own already, and not disabled. Each is a thing item, at
-/// its slot.
+/// claim.
+///
+/// Free or its own already, and not disabled. Each is a thing item, at its
+/// slot.
 ///
 /// It looks through every slot offering `A`, so keep `A` to an activity, not a
 /// marker every slot has.
@@ -21,8 +23,8 @@ use crate::slot::{SlotDisabled, SlotOf};
 /// # use bevy_arbor_smart::prelude::*;
 /// # #[derive(Component)] struct Sit;
 /// // The nearest free seat.
-/// let seat = EnvQuery::new(FreeSlots::<Sit>::within(Agent, 15.0))
-///     .score(Distance::to(Agent), Score::lower());
+/// let seat = EnvQuery::new(FreeSlots::<Sit>::within(Querier, 15.0))
+///     .score(Distance::to(Querier), Score::lower());
 /// ```
 pub struct FreeSlots<A: Component> {
     around: Arc<dyn Locate>,
@@ -45,7 +47,7 @@ impl<A: Component> FreeSlots<A> {
 }
 
 impl<A: Component> Generate for FreeSlots<A> {
-    fn generate(&self, cx: &QueryContext, out: &mut Vec<Item>) {
+    fn generate(&self, cx: &EnvQueryContext, out: &mut Vec<EnvQueryItem>) {
         let anchors = cx.locate(&self.around);
         if anchors.is_empty() {
             return;
@@ -61,10 +63,7 @@ impl<A: Component> Generate for FreeSlots<A> {
                     .iter()
                     .any(|Located { position: at, .. }| at.distance(position) <= self.range);
                 if near {
-                    out.push(Item::Entity {
-                        entity: slot,
-                        position,
-                    });
+                    out.push(EnvQueryItem::thing(slot, position));
                 }
             }
         });
@@ -74,9 +73,9 @@ impl<A: Component> Generate for FreeSlots<A> {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevy_arbor_eqs::anchor::Agent;
+    use bevy_arbor_eqs::anchor::Querier;
     use bevy_arbor_eqs::generate::Generate;
-    use bevy_arbor_eqs::query::{Item, QueryContext};
+    use bevy_arbor_eqs::query::EnvQueryContext;
     use bevy_arbor_perception::Space;
 
     use super::FreeSlots;
@@ -103,10 +102,10 @@ mod tests {
         app.entity_mut(seats[3]).insert(SlotDisabled);
         let bench = app.world().get::<SlotOf>(seats[0]).unwrap().object();
         app.spawn((SlotOf(bench), GlobalTransform::from_xyz(1.0, 0.0, 0.0)));
-        let cx = QueryContext::new(app.world(), agent, Space::Volume, 1);
+        let cx = EnvQueryContext::new(app.world(), agent, Space::Volume, 1);
         let mut items = Vec::new();
-        FreeSlots::<Sit>::within(Agent, 10.0).generate(&cx, &mut items);
-        let mut found: Vec<Entity> = items.iter().filter_map(Item::entity).collect();
+        FreeSlots::<Sit>::within(Querier, 10.0).generate(&cx, &mut items);
+        let mut found: Vec<Entity> = items.iter().filter_map(|item| item.entity).collect();
         found.sort();
         let mut expected = vec![seats[0], seats[2]];
         expected.sort();

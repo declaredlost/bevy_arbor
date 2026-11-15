@@ -1,14 +1,17 @@
 use super::Behavior;
-use crate::behavior::{Child, Context, Status};
+use crate::behavior::{Context, Status};
 use crate::decorator::{Decorator, IntoDecorator};
+use crate::inspect::Inspection;
 
 /// A branch of a `Select` or `Fallback`: a node, and the decorator it runs
 /// under.
 pub struct Branch {
     decorator: Option<Decorator>,
     node: Behavior,
-    /// That it failed, and stays out of a `Select` until its decorator stops
-    /// passing or the `Select` restarts.
+    /// That it failed, and stays out of the `Select` it's in for the time
+    /// being.
+    ///
+    /// It stays out until its decorator stops passing or the `Select` restarts.
     pub(in crate::behavior) failed: bool,
 }
 
@@ -24,7 +27,7 @@ impl Branch {
 
     /// Runs `node` unless a branch before it can.
     #[must_use]
-    pub fn always(node: Behavior) -> Self {
+    pub fn otherwise(node: Behavior) -> Self {
         Self {
             decorator: None,
             node,
@@ -40,8 +43,9 @@ impl Branch {
         }
     }
 
-    /// Ticks its node, asked to stop if `interrupted`: its decorator is told as
-    /// the node starts and ends.
+    /// Ticks its node, asked to stop if `interrupted`, and tells its decorator.
+    ///
+    /// The decorator is told as the node starts and ends.
     pub(in crate::behavior) fn tick(&mut self, cx: &mut Context, interrupted: bool) -> Status {
         // Its tree gone, nothing more of it runs, and nothing's told: the
         // tree's cancel ends what was running, once.
@@ -78,19 +82,28 @@ impl Branch {
     }
 
     /// Whether its node holds.
-    pub(in crate::behavior) fn holds(&self) -> bool {
-        self.node.holds()
+    pub(in crate::behavior) fn is_holding(&self) -> bool {
+        self.node.is_holding()
     }
+}
 
-    /// Its node, as a child of what it's a branch of: noted with its
-    /// decorator, if it has one.
-    pub(in crate::behavior) fn child(&self) -> Child<'_> {
-        match &self.decorator {
-            Some(decorator) => {
-                let failed = if self.failed { " (failed)" } else { "" };
-                Child::noted(&self.node, format!("when {}{failed}", decorator.label()))
+impl Inspection<'_> {
+    /// `branches`, under it: each noted with its decorator, if it has one.
+    pub(crate) fn branches(&mut self, branches: &[Branch]) -> &mut Self {
+        for branch in branches {
+            match &branch.decorator {
+                Some(decorator) => {
+                    let failed = if branch.failed { " (failed)" } else { "" };
+                    self.noted(
+                        format_args!("when {}{failed}", decorator.label()),
+                        &branch.node,
+                    );
+                }
+                None => {
+                    self.child(&branch.node);
+                }
             }
-            None => Child::new(&self.node),
         }
+        self
     }
 }

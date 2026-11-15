@@ -6,7 +6,9 @@ use crate::dim;
 
 plugin_group! {
     /// Sight finding what's near through avian's colliders, line of sight,
-    /// and touch from contacts.
+    /// and touch.
+    ///
+    /// Touch is felt from contacts.
     #[derive(Default)]
     pub struct AvianPerceptionPlugins {
         crate::sight:::ColliderSightPlugin,
@@ -16,12 +18,16 @@ plugin_group! {
 }
 
 /// Set once perception's space has been checked against this crate's
-/// dimension, so it's warned about once, however many plugins check.
+/// dimension.
+///
+/// So it's warned about once, however many plugins check.
 #[derive(Resource)]
 struct SpaceChecked;
 
 /// Warns, once, if perception works in another space than this crate's
-/// dimension: 3D perception over 2D physics finds nothing where it should.
+/// dimension.
+///
+/// 3D perception over 2D physics finds nothing where it should.
 pub(crate) fn check_space(app: &mut App) {
     if app.world().contains_resource::<SpaceChecked>() {
         return;

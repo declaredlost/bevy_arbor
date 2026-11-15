@@ -1,5 +1,6 @@
-//! The systems conditions, acts, scores and rolls run: each kept once, by its
-//! type, in a table of the world's.
+//! The systems conditions, acts, scores and rolls run, each kept once by type.
+//!
+//! They're kept in a table of the world's.
 
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
@@ -118,8 +119,9 @@ impl<O: 'static> Check<O> {
     }
 }
 
-/// A kept system, its input built from the agent: what [`Check`] holds,
-/// without the input's type.
+/// A kept system, its input built from the agent: what [`Check`] holds.
+///
+/// It leaves out the input's type.
 trait Run<O>: Send + Sync {
     /// Runs it for `agent`, keeping it in `systems` on its first run.
     fn run(&mut self, world: &mut World, systems: &mut Systems, agent: Entity) -> Result<O, Ran>;
@@ -133,9 +135,10 @@ enum Ran {
     Skipped(String),
 }
 
-/// `system`, kept in a table the first time it runs, and found there by its
-/// place after. `make` is how it's built, kept as a function so the system's
-/// marker type isn't part of this.
+/// `system`, kept in a table as it first runs, found there by its place after.
+///
+/// `make` is how it's built, kept as a function so the system's marker type
+/// isn't part of this.
 struct Kept<S, F, T: 'static, O: 'static> {
     system: S,
     input: F,
@@ -184,8 +187,10 @@ where
 /// Where the next table's number comes from.
 static TABLES: AtomicU64 = AtomicU64::new(0);
 
-/// Every system trees run, by its type: one each, shared by every tree, node
-/// and agent, with its `Local`s and change ticks.
+/// Every system trees run, by its type: one each, shared by every tree and
+/// node.
+///
+/// Each is shared by every agent too, with its `Local`s and change ticks.
 ///
 /// Kept here rather than registered with the world: running a registered
 /// system finds it on its entity twice, which costs more than most systems
@@ -234,8 +239,9 @@ impl Systems {
         slot.downcast_mut()
     }
 
-    /// Keeps every system's change ticks from getting too old, as a schedule
-    /// does for its own.
+    /// Keeps every kept system's change ticks from getting too old.
+    ///
+    /// A schedule does the same for its own.
     pub(crate) fn check_ticks(&mut self, check: CheckChangeTicks) {
         for slot in &mut self.slots {
             slot.check_ticks(check);
@@ -284,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn a_decorator_on_a_missing_resource_goes_to_the_error_handler() {
+    fn a_condition_on_a_missing_resource_goes_to_the_error_handler() {
         let mut app = app();
         app.app_mut()
             .insert_resource(FallbackErrorHandler(count_missing));

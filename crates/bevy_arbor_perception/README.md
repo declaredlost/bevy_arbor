@@ -24,7 +24,7 @@ component per sense.
   [`Share`]. Senses of your own join through [`SensePlugin`].
 - What an agent senses is written to it as [`Perceived<S>`], one per sense,
   with what's active and what's remembered for a while after, and when and
-  where each was sensed as [`Traces<S>`].
+  where each was sensed as [`Stimuli<S>`].
 - `Perceived<S>` changes only when something is noticed, lost or forgotten, so
   a behavior tree reading it sleeps in between, even as what it already heard
   is heard again. [`Noticed`], [`Lost`] and
@@ -67,11 +67,11 @@ fn spawn(mut commands: Commands) {
     // A guard that sees 12 units ahead, and keeps seeing out to 15.
     commands.spawn((
         Sight::new(12.0).with_lose_range(15.0),
-        Team(1),
+        Allegiance(1),
         Transform::default(),
     ));
-    // Something it can see, on another team.
-    commands.spawn((Perceivable, Team(2), Transform::from_xyz(8.0, 0.0, 0.0)));
+    // Something it can see, of another allegiance.
+    commands.spawn((Perceivable, Allegiance(2), Transform::from_xyz(8.0, 0.0, 0.0)));
 }
 
 fn main() {
@@ -113,7 +113,7 @@ or [MIT license](https://github.com/declaredlost/bevy_arbor/blob/main/LICENSE-MI
 [`Share`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.Share.html
 [`SensePlugin`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/sense/struct.SensePlugin.html
 [`Perceived<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Perceived.html
-[`Traces<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Traces.html
+[`Stimuli<S>`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Stimuli.html
 [`Noticed`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Noticed.html
 [`Lost`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Lost.html
 [`Forgotten`]: https://docs.rs/bevy_arbor_perception/latest/bevy_arbor_perception/perceived/struct.Forgotten.html

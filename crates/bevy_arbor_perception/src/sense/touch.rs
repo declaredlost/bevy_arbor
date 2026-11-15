@@ -17,8 +17,9 @@ impl Sense for Touch {
     const MEMORY: Duration = Duration::from_secs(5);
 }
 
-/// `by` touched `agent`: a hit, a bump. Write it as a message, for an agent
-/// with [`Touch`] to feel, where `by` is.
+/// `by` touched `agent`: a hit, a bump, for an agent with [`Touch`] to feel.
+///
+/// Write it as a message. It's felt where `by` is.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Touched {
     /// Who was touched.
@@ -65,21 +66,21 @@ mod tests {
     fn a_touch_is_felt_where_what_touched_is() {
         for space in SPACES {
             let mut app = app(space);
-            let agent = app.spawn((Touch, Team(1), GlobalTransform::IDENTITY));
+            let agent = app.spawn((Touch, Allegiance(1), GlobalTransform::IDENTITY));
             let by = app.spawn((
-                Team(2),
+                Allegiance(2),
                 GlobalTransform::from_translation(behind(space, 1.0)),
             ));
             app.write(Touched { agent, by });
             app.tick();
             let percept = perceived::<Touch>(&app, agent).get(by).unwrap();
-            let felt = traces::<Touch>(&app, agent).get(by).unwrap();
+            let felt = stimuli::<Touch>(&app, agent).get(by).unwrap();
             assert_eq!(
                 felt.position,
                 space.flatten(behind(space, 1.0)),
                 "{space:?}"
             );
-            assert!(percept.is_hostile(), "{space:?}: by team");
+            assert!(percept.is_hostile(), "{space:?}: by allegiance");
             assert!(!percept.is_active(), "{space:?}");
         }
     }
