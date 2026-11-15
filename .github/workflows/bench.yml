@@ -5,6 +5,9 @@ name: Bench
 # A `bench-base: <ref>` line in the pull request's description compares
 # against that ref instead of the base branch. A base without the benches is
 # benched with the pull request's own, which only use what both have.
+#
+# The base builds in a target directory of its own: in the head's, cargo takes
+# the base's build as the head's, and both runs measure the same code.
 
 on:
   pull_request:
@@ -90,10 +93,14 @@ jobs:
           EOF
           fi
           cd ../base
-          cargo bench -p bevy_arbor_bt --bench trees -- --save-baseline base
+          CARGO_TARGET_DIR="$PWD/target" \
+            cargo bench -p bevy_arbor_bt --bench trees -- --save-baseline base
 
       - name: Bench the head
         run: |
+          # The base's saved baseline, where the head's run looks for it.
+          mkdir -p target
+          cp -r ../base/target/criterion target/
           cargo bench -p bevy_arbor_bt --bench trees -- --baseline-lenient base | tee head.txt
 
       - name: Report
