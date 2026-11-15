@@ -2,9 +2,9 @@
 
 [package]
 name = "bevy_arbor"
-description = "AI for Bevy, one crate per part: behavior trees, with more to come"
+description = "AI for Bevy: reactive behavior trees, perception, environment queries, smart objects and navigation"
 readme = "./README.md"
-keywords = ["bevy", "ai", "behavior-tree", "game"]
+keywords = ["bevy", "ai", "behavior-tree", "perception", "game"]
 categories = ["game-development"]
 
 version = { workspace = true }
@@ -28,7 +28,8 @@ bt = ["dep:bevy_arbor_bt"]
 # Perception: `bevy_arbor_perception`, as `bevy_arbor::perception`
 perception = ["dep:bevy_arbor_perception"]
 # Environment queries: `bevy_arbor_eqs`, as `bevy_arbor::eqs`, with the
-# avian crates' `LineOfSight` where those are on
+# avian crates' tests (`LineOfSight`, `Clearance`, `OccluderDistance`) where
+# those are on
 eqs = [
     "bt",
     "perception",
@@ -43,15 +44,10 @@ smart = ["eqs", "dep:bevy_arbor_smart", "bevy_arbor_gizmos?/smart"]
 # Navigation: `bevy_arbor_nav`, as `bevy_arbor::nav`, with `MoveTo::found` and
 # `PathDistance` where `eqs` is on
 nav = ["bt", "dep:bevy_arbor_nav", "bevy_arbor_gizmos?/nav"]
-# Drawing what agents perceive, queries weighed and slots: `bevy_arbor_gizmos`,
-# as `bevy_arbor::gizmos`, with what `eqs` and `smart` draw where those are on
-gizmos = [
-    "perception",
-    "dep:bevy_arbor_gizmos",
-    "bevy_arbor_gizmos?/eqs",
-    "bevy_arbor_gizmos?/smart",
-    "bevy_arbor_gizmos?/nav",
-]
+# Drawing what agents perceive: `bevy_arbor_gizmos`, as `bevy_arbor::gizmos`,
+# with what `eqs`, `smart` and `nav` draw where those are on (they turn on
+# its features of the same name)
+gizmos = ["perception", "dep:bevy_arbor_gizmos"]
 # Perception with avian2d: `bevy_arbor_avian2d`, as `bevy_arbor::avian2d`
 avian2d = ["perception", "dep:bevy_arbor_avian2d"]
 # Perception with avian3d: `bevy_arbor_avian3d`, as `bevy_arbor::avian3d`
