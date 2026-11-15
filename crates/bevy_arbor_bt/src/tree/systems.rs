@@ -11,7 +11,7 @@ use super::events::BehaviorTreeFinished;
 use super::trace::BehaviorTreeTrace;
 use super::wake::{Owner, Owners, Plan, Wakes};
 use crate::behavior::system::Systems;
-use crate::behavior::{Behavior, Context, Status, Woken};
+use crate::behavior::{Behavior, Context, Status, Waits};
 use crate::task::Task;
 
 /// Set as the tree being ticked goes: by the tree's hook, read by its nodes.
@@ -53,6 +53,7 @@ pub(crate) fn tick(
         fired: Owners::EMPTY,
         traces: world.component_id::<BehaviorTreeTrace>(),
         next: &mut next,
+        spare: Plan::default(),
     };
     for agent in agents.drain(..) {
         tick_tree(world, agent, &mut run);
@@ -81,6 +82,8 @@ struct Run<'a> {
     traces: Option<ComponentId>,
     /// Trees asking to be looked at next run.
     next: &'a mut Vec<Entity>,
+    /// An empty plan, its room kept from a tree's last: the next tree's.
+    spare: Plan,
 }
 
 /// Ticks `agent`'s tree, if it's due and hasn't been this run.
@@ -122,13 +125,21 @@ fn tick_tree(world: &mut World, agent: Entity, run: &mut Run<'_>) {
         TreeState::Fresh | TreeState::Finished(_) => None,
     };
     run.gone.store(false, Ordering::Relaxed);
-    let woken = Woken {
-        fired: run.fired,
-        before: before.as_ref(),
+    let waits = Waits::new(
+        before.as_ref(),
+        run.fired,
         tick,
         ids,
-    };
-    let mut cx = Context::ticking(world, agent, &run.gone, run.clock, Some(run.systems), woken);
+        std::mem::take(&mut run.spare),
+    );
+    let mut cx = Context::ticking(
+        world,
+        agent,
+        &run.gone,
+        run.clock.unwrap_or_default(),
+        Some(run.systems),
+        waits,
+    );
     let status = root.tick(&mut cx);
     let (plan, ids) = cx.finish();
     put_back(world, agent, run, root, status, before, plan, ids);
@@ -148,9 +159,28 @@ fn put_back(
     plan: Plan,
     ids: Owner,
 ) {
+    restore(world, agent, run, root, status, before.as_ref(), plan, ids);
+    // What it slept on, emptied, is the next tree's plan.
+    if let Some(mut before) = before {
+        before.clear();
+        run.spare = before;
+    }
+}
+
+/// Puts `agent`'s tree back, as [`put_back`] says, having slept on `before`.
+fn restore(
+    world: &mut World,
+    agent: Entity,
+    run: &mut Run<'_>,
+    root: Behavior,
+    status: Status,
+    before: Option<&Plan>,
+    plan: Plan,
+    ids: Owner,
+) {
     // Most often it waits on just what it did: then it's put to sleep as it's
     // put back, with nothing in the index to change.
-    let same = status.outcome().is_none() && Wakes::same(before.as_ref(), &plan);
+    let same = status.outcome().is_none() && Wakes::same(before, &plan);
     let mut root = Some(root);
     let mut plan = Some(plan);
     // Back where it was, unless it went as it ticked.
@@ -173,7 +203,7 @@ fn put_back(
     let Some(traced) = traced else {
         // Gone as it ticked: what it slept on before, it no longer waits
         // on, and what it ran is cancelled.
-        if let Some(before) = &before {
+        if let Some(before) = before {
             world.resource_mut::<Wakes>().forget(agent, before);
         }
         if let Some(mut root) = root {
@@ -184,13 +214,13 @@ fn put_back(
     if let Some(plan) = plan {
         let state = if let Some(outcome) = status.outcome() {
             let mut wakes = world.resource_mut::<Wakes>();
-            if let Some(before) = &before {
+            if let Some(before) = before {
                 wakes.forget(agent, before);
             }
             wakes.finished(agent);
             TreeState::Finished(outcome)
         } else {
-            Wakes::sleep(world, agent, before.as_ref(), &plan, run.next);
+            Wakes::sleep(world, agent, before, &plan, run.next);
             TreeState::Asleep(plan)
         };
         if let Some(mut tree) = world.get_mut::<BehaviorTree>(agent) {

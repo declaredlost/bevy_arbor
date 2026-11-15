@@ -229,12 +229,11 @@ impl Plan {
         }
     }
 
-    /// Room for as much as `before` waited on.
-    pub(crate) fn sized_as(before: Option<&Self>) -> Self {
-        Self {
-            watches: Vec::with_capacity(before.map_or(0, |before| before.watches.len())),
-            ..Self::default()
-        }
+    /// Empties it, keeping its room: for the next tree's plan.
+    pub(crate) fn clear(&mut self) {
+        self.polls.clear();
+        self.timers.clear();
+        self.watches.clear();
     }
 
     /// Whether any of it has come, putting in `fired` who it came for.
@@ -343,13 +342,16 @@ impl Index {
     fn of<T: Component>(world: &mut World) -> Self {
         // A task's going is heard by its own hook: no observer of each one.
         let tasks = TypeId::of::<T>() == TypeId::of::<Task>();
-        if !tasks {
+        let scan: Box<dyn Scan> = if tasks {
+            Box::new(TaskScanner(QueryState::new(world)))
+        } else {
             world.add_observer(removed::<T>);
-        }
+            Box::new(Scanner::<T>(QueryState::new(world)))
+        };
         Self {
             watchers: EntityHashMap::default(),
             tasks,
-            scan: Box::new(Scanner::<T>(QueryState::new(world))),
+            scan,
         }
     }
 }
@@ -451,11 +453,32 @@ trait Scan: Send + Sync {
         &mut self,
         world: &World,
         watchers: &EntityHashMap<Watchers>,
-        tasks: bool,
         since: Tick,
         now: Tick,
         due: &mut Vec<Entity>,
     );
+}
+
+/// The [`Scan`] of [`Task`]: each changed one's agent, by its [`TaskOf`].
+///
+/// Read as the storage is passed through, not looked up for each.
+struct TaskScanner(QueryState<(Ref<'static, Task>, &'static TaskOf)>);
+
+impl Scan for TaskScanner {
+    fn changed(
+        &mut self,
+        world: &World,
+        _watchers: &EntityHashMap<Watchers>,
+        since: Tick,
+        now: Tick,
+        due: &mut Vec<Entity>,
+    ) {
+        for (task, of) in self.0.iter(world) {
+            if task.last_changed().is_newer_than(since, now) {
+                due.push(of.agent());
+            }
+        }
+    }
 }
 
 /// The [`Scan`] of `T`.
@@ -466,22 +489,11 @@ impl<T: Component> Scan for Scanner<T> {
         &mut self,
         world: &World,
         watchers: &EntityHashMap<Watchers>,
-        tasks: bool,
         since: Tick,
         now: Tick,
         due: &mut Vec<Entity>,
     ) {
         let all = self.0.iter(world);
-        if tasks {
-            for (task, value) in all {
-                if value.last_changed().is_newer_than(since, now)
-                    && let Some(of) = world.get::<TaskOf>(task)
-                {
-                    due.push(of.agent());
-                }
-            }
-            return;
-        }
         // Few watched among many: each looked up. Else the storage passed
         // through once, which costs far less an entity.
         if watchers.len().saturating_mul(8) < all.len() {
@@ -521,9 +533,7 @@ impl Wakes {
         // waking it again.
         let since = std::mem::replace(&mut self.looked, Tick::new(now.get().wrapping_sub(1)));
         for index in self.indexes.values_mut() {
-            index
-                .scan
-                .changed(world, &index.watchers, index.tasks, since, now, due);
+            index.scan.changed(world, &index.watchers, since, now, due);
         }
         for (kind, entity) in self.removed.drain(..) {
             if let Some(watching) = self

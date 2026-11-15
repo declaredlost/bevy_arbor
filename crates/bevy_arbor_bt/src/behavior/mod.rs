@@ -23,7 +23,7 @@ pub use self::branch::Branch;
 pub use self::composite::ScoredBranch;
 use self::composite::{Fallback, Mode, Parallel, Random, Scored, Select, Sequence};
 pub use self::context::Context;
-pub(crate) use self::context::Woken;
+pub(crate) use self::context::Waits;
 use self::leaf::{Act, Spawn, Wait};
 use self::modifier::{
     Commit, Forever, Insert, Invert, Repeat, RepeatWhile, Socket, Succeed, Timeout,
