@@ -9,10 +9,11 @@ mod logic;
 mod system;
 mod typed;
 
+use bevy::utils::prelude::ShortName;
+
 pub(crate) use self::logic::poll_if_silent;
 pub use self::logic::{Conditions, IntoConditions, all, any, unless};
-pub use self::system::{ConditionSystem, with};
-pub use self::typed::{AgentFn, ConditionParam, TypedCondition};
+pub use self::typed::{AgentFn, ConditionParam};
 use crate::behavior::Context;
 use crate::inspect::{Inspect, Inspection};
 
@@ -121,7 +122,7 @@ pub trait Condition: Inspect + Send + Sync + 'static {
 /// agents left in it, and `Changed` or `Added` filters what changed since it
 /// was last asked about any agent, not this one. Being cached, it can't
 /// capture anything; one that does doesn't compile. What varies goes in as a
-/// parameter, with [`with`]:
+/// parameter, with [`with`](crate::behavior::with):
 ///
 /// ```compile_fail
 /// # use bevy::prelude::*;
@@ -136,11 +137,8 @@ pub trait Condition: Inspect + Send + Sync + 'static {
     note = "one acting as its branch starts or ends, as a cooldown or a claim, goes after a comma: `when(has_target, cooldown(8.0))`"
 )]
 pub trait IntoCondition<M>: Sized {
-    /// The condition it is.
-    type Condition: Condition;
-
     /// It, as a condition.
-    fn into_condition(self) -> Self::Condition;
+    fn into_condition(self) -> impl Condition;
 }
 
 /// A closure taking the [`Context`] is a condition of your own, as a
@@ -157,21 +155,24 @@ where
     }
 }
 
-/// A closure taking the [`Context`] shows as `condition`: it has no name of
-/// its own.
+/// A function taking the [`Context`] shows as its name; a closure, which has
+/// none, as `condition`.
 impl<F> Inspect for F
 where
     F: FnMut(&mut Context) -> bool + Send + Sync + 'static,
 {
     fn inspect(&self, inspection: &mut Inspection<'_>) {
-        inspection.name("condition");
+        let name = std::any::type_name::<F>();
+        if name.contains("{{closure}}") {
+            inspection.name("condition");
+        } else {
+            inspection.name(ShortName(name));
+        }
     }
 }
 
 impl<C: Condition> IntoCondition<()> for C {
-    type Condition = C;
-
-    fn into_condition(self) -> C {
+    fn into_condition(self) -> impl Condition {
         self
     }
 }
@@ -184,7 +185,7 @@ mod tests {
     use bevy::prelude::*;
 
     use crate::behavior::Context;
-    use crate::condition::{Condition, IntoCondition, with};
+    use crate::condition::{Condition, IntoCondition};
     use crate::prelude::*;
     use crate::testing::*;
 
@@ -348,6 +349,34 @@ mod tests {
                 .get::<Level>(other)
                 .is_some_and(|level| level.0 > 2)
         }
+    }
+
+    /// Whether the agent has a `Level`: a function taking the context.
+    fn levelled(cx: &mut Context) -> bool {
+        cx.watch::<Level>(cx.agent());
+        cx.world().get::<Level>(cx.agent()).is_some()
+    }
+
+    #[test]
+    fn a_function_taking_the_context_shows_as_its_name_and_a_closure_as_condition() {
+        let mut app = app();
+        let npc = app.spawn((
+            BehaviorTreeTrace::default(),
+            BehaviorTree::new(behavior_tree! {
+                Select => {
+                    when(levelled) => task(Work),
+                    when(|_: &mut Context| true) => task(Other),
+                }
+            }),
+        ));
+        app.tick();
+        let trace = app
+            .world()
+            .get::<BehaviorTreeTrace>(npc)
+            .unwrap()
+            .to_string();
+        assert!(trace.contains("when levelled"), "{trace}");
+        assert!(trace.contains("when condition"), "{trace}");
     }
 
     #[test]

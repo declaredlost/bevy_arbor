@@ -137,28 +137,11 @@ fn tick_tree(world: &mut World, agent: Entity, run: &mut Run<'_>) {
         agent,
         &run.gone,
         run.clock.unwrap_or_default(),
-        Some(run.systems),
+        run.systems,
         waits,
     );
     let status = root.tick(&mut cx);
     let (plan, ids) = cx.finish();
-    put_back(world, agent, run, root, status, before, plan, ids);
-}
-
-/// Puts `agent`'s tree back after its tick, with how it went.
-///
-/// It sleeps on what it waits on now, having slept on `before`: or what it ran
-/// is canceled, if it went as it ticked.
-fn put_back(
-    world: &mut World,
-    agent: Entity,
-    run: &mut Run<'_>,
-    root: Behavior,
-    status: Status,
-    before: Option<Plan>,
-    plan: Plan,
-    ids: Owner,
-) {
     restore(world, agent, run, root, status, before.as_ref(), plan, ids);
     // What it slept on, emptied, is the next tree's plan.
     if let Some(mut before) = before {
@@ -167,7 +150,10 @@ fn put_back(
     }
 }
 
-/// Puts `agent`'s tree back, as [`put_back`] says, having slept on `before`.
+/// Puts `agent`'s tree back after its tick, with how it went.
+///
+/// It sleeps on what it waits on now, having slept on `before`: or what it ran
+/// is canceled, if it went as it ticked.
 fn restore(
     world: &mut World,
     agent: Entity,
@@ -207,7 +193,7 @@ fn restore(
             world.resource_mut::<Wakes>().forget(agent, before);
         }
         if let Some(mut root) = root {
-            root.cancel(&mut Context::new(world, agent));
+            root.cancel(&mut Context::new(world, agent, run.systems));
         }
         return;
     };

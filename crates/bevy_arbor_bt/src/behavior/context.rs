@@ -15,8 +15,8 @@ pub struct Context<'a> {
     agent: Entity,
     /// The tree's clock, read once for every tree ticked in a run.
     now: Duration,
-    /// The systems decorators and acts run, out of the world while trees tick.
-    systems: Option<&'a mut Systems>,
+    /// The systems decorators and acts run, out of the world meanwhile.
+    systems: &'a mut Systems,
     /// Set once the tree being ticked is taken away or replaced.
     gone: &'a AtomicBool,
     /// Whether what's ticking asked not to be stopped.
@@ -85,24 +85,24 @@ impl<'a> Waits<'a> {
 }
 
 impl<'a> Context<'a> {
-    /// A context for canceling, outside a tree's tick.
-    pub(crate) fn new(world: &'a mut World, agent: Entity) -> Self {
+    /// A context for canceling, outside a tree's tick, running `systems`.
+    pub(crate) fn new(world: &'a mut World, agent: Entity, systems: &'a mut Systems) -> Self {
         let now = world
             .get_resource::<Time>()
             .map(Time::elapsed)
             .unwrap_or_default();
-        Self::ticking(world, agent, &STAYS, now, None, Waits::none())
+        Self::ticking(world, agent, &STAYS, now, systems, Waits::none())
     }
 
     /// A context for ticking `agent`'s tree, `gone` set if it goes meanwhile.
     ///
-    /// It's at `now`, and runs `systems`, or with none, the world's.
+    /// It's at `now`, and runs `systems`.
     pub(crate) fn ticking(
         world: &'a mut World,
         agent: Entity,
         gone: &'a AtomicBool,
         now: Duration,
-        systems: Option<&'a mut Systems>,
+        systems: &'a mut Systems,
         waits: Waits<'a>,
     ) -> Self {
         Self {
@@ -167,10 +167,9 @@ impl<'a> Context<'a> {
         self.waits.kept.insert(owner);
     }
 
-    /// The world, and the systems decorators and acts run, if they're out of
-    /// it.
-    pub(crate) fn world_and_systems(&mut self) -> (&mut World, Option<&mut Systems>) {
-        (self.world, self.systems.as_deref_mut())
+    /// The world, and the systems decorators and acts run, out of it.
+    pub(crate) fn world_and_systems(&mut self) -> (&mut World, &mut Systems) {
+        (self.world, self.systems)
     }
 
     /// The entity whose tree this is.

@@ -63,7 +63,7 @@ A trace changes only when the tree does, so this logs only what's new.
 - `running()` is the running nodes with their ids, root down.
 - `get(id)` is one node.
 
-Each [`TraceNode`] has `label()`, `parent()`, `notes()` (what's written above
+Each [`TraceNode`] has `label()`, `parent()`, `note()` (what's written above
 it), `is_running()` and `holds()` (whether it asked not to be interrupted).
 
 ```rust

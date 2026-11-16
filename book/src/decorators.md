@@ -100,7 +100,8 @@ behavior_tree! {
   are shared too, so keep per-agent state on the agent.
 - For the same reason, a `Changed` filter in it sees what changed since it
   was last asked about any agent, not this one.
-- `act(system, param)` takes a parameter the same way.
+- `act(with(system, param))` and `score(with(system, param))` take a parameter
+  the same way.
 
 ## Conditions of your own
 

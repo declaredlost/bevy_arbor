@@ -1,4 +1,4 @@
-use crate::behavior::{Behave, Branch, Context, Outcome, Status};
+use crate::behavior::{Behave, Branch, Context, Outcome, Status, WindDown};
 use crate::inspect::{Inspect, Inspection};
 
 /// The first branch whose decorator passes, asking again each tick.
@@ -85,11 +85,8 @@ impl Behave for Select {
                 let running = &mut self.branches[active];
                 // One holding goes on until it can stop: however it ends
                 // then, it's what wanted it stopped that's next.
-                if running.is_holding() {
-                    let status = running.tick(cx, true);
-                    if status == Status::Running && running.is_holding() {
-                        return Status::Running;
-                    }
+                if running.wind_down(cx) == WindDown::Holding {
+                    return Status::Running;
                 }
                 running.cancel(cx);
                 self.active = None;

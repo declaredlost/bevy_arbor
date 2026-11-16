@@ -13,26 +13,39 @@ mod status;
 pub(crate) mod system;
 
 use std::borrow::Cow;
-use std::fmt::Debug;
 use std::time::Duration;
 
 use bevy::prelude::*;
 
 pub use self::behave::Behave;
 pub use self::branch::Branch;
-pub use self::composite::ScoredBranch;
-use self::composite::{Fallback, Mode, Parallel, Random, Scored, Select, Sequence};
+use self::composite::{Fallback, Mode, Parallel, Random, Roll, Scored, Select, Sequence};
+pub use self::composite::{IntoScore, Score, ScoredBranch};
 pub use self::context::Context;
 pub(crate) use self::context::Waits;
-use self::leaf::{Act, Spawn, Wait};
+pub use self::leaf::IntoAct;
+use self::leaf::{Spawn, Wait};
 use self::modifier::{
     Commit, Forever, Insert, Invert, Repeat, RepeatWhile, Socket, Succeed, Timeout,
 };
 pub use self::modifier::{Plugged, plugged};
 pub use self::status::{Outcome, Status};
+pub use self::system::{WithParam, with};
 use crate::behavior::system::Check;
 use crate::decorator::IntoDecorator;
 use crate::inspect::{Inspect, Inspection};
+
+/// Where a node winding down stands: from [`Behavior::wind_down`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindDown {
+    /// It still holds: wait, and switch away on a later tick.
+    Holding,
+    /// It ended as it wound down, as it went: switch away.
+    Ended(Outcome),
+    /// It's free to stop, not holding, or no longer: cancel it, and switch
+    /// away.
+    Free,
+}
 
 /// A part of a tree: built by the macro, these functions, or any `Behave`.
 ///
@@ -147,8 +160,9 @@ impl Behavior {
 
     /// Tries `branches` from the highest score down, until one succeeds.
     ///
-    /// They're scored once as it starts. A score system takes the agent, and
-    /// may change things. A NaN score counts as no score: it goes last.
+    /// They're scored once as it starts, each by its [`Score`]: a score
+    /// system, which may change things, or a function of the agent's
+    /// components. A NaN score counts as no score: it goes last.
     #[must_use]
     pub fn scored(branches: Vec<ScoredBranch>) -> Self {
         Scored::new(branches).into()
@@ -156,13 +170,27 @@ impl Behavior {
 
     /// Tries `children` in a random order, until one of them succeeds.
     ///
-    /// `roll` is where the randomness comes from, so it's yours: a system
-    /// taking the agent and returning a number from 0 up to 1.
-    pub fn random<S, M>(roll: S, children: Vec<Behavior>) -> Self
+    /// Each agent shuffles with a generator of its own, seeded from the agent's
+    /// entity: the same from run to run only if entities are. For a replay,
+    /// [`random_rolled`](Self::random_rolled) with your own seeded generator.
+    /// `Random` in the macro.
+    #[must_use]
+    pub fn random(children: Vec<Behavior>) -> Self {
+        Random::new(Roll::Own(None), children).into()
+    }
+
+    /// Tries `children` in a random order rolled by `roll`, until one
+    /// succeeds.
+    ///
+    /// `roll` is a system taking the agent and returning a number from 0 up to
+    /// 1: for randomness of your own, as a game's seeded generator for a
+    /// replay.
+    /// `Random(roll)` in the macro.
+    pub fn random_rolled<S, M>(roll: S, children: Vec<Behavior>) -> Self
     where
         S: IntoSystem<In<Entity>, f32, M> + Copy + Send + Sync + 'static,
     {
-        Random::new(Check::new(roll), children).into()
+        Random::new(Roll::System(Check::new(roll)), children).into()
     }
 
     /// `child`, its result reversed.
@@ -252,26 +280,14 @@ impl Behavior {
         Spawn::new(name.into(), bundle).into()
     }
 
-    /// Runs `system` once on the agent: what it returns is the result.
+    /// Runs a system once on the agent: what it returns is the result.
     ///
-    /// It can return a `Result<bool>` to use `?`: an error fails, and goes to
-    /// Bevy's error handler. Cached like a system condition, its `Local`s are
-    /// every agent's.
-    pub fn act<S, M>(system: S) -> Self
-    where
-        S: IntoSystem<In<Entity>, bool, M> + Copy + Send + Sync + 'static,
-    {
-        Act::new(Check::new(system)).into()
-    }
-
-    /// Runs `system` once on the agent and `param`: what it returns is the
-    /// result.
-    pub fn act_with<S, P, M>(system: S, param: P) -> Self
-    where
-        S: IntoSystem<In<(Entity, P)>, bool, M> + Copy + Send + Sync + 'static,
-        P: Clone + Debug + Send + Sync + 'static,
-    {
-        Act::new(Check::with(system, param)).into()
+    /// A system taking `In<Entity>`, or [`with(system, param)`](with) for one
+    /// taking a parameter too. It can return a `Result<bool>` to use `?`: an
+    /// error fails, and goes to Bevy's error handler. Cached like a system
+    /// condition, its `Local`s are every agent's.
+    pub fn act<M>(act: impl IntoAct<M>) -> Self {
+        act.into_act()
     }
 
     /// Runs it a tick.
@@ -309,6 +325,23 @@ impl Behavior {
     /// `RepeatWhile` do.
     pub fn tick_interrupted(&mut self, cx: &mut Context) -> Status {
         cx.interrupting(|cx| self.tick(cx))
+    }
+
+    /// Winds it down, for a node about to switch away from it: while it holds,
+    /// it's ticked asked to stop.
+    ///
+    /// What `Select`, `RepeatWhile` and `Socket` do. See [`WindDown`] for
+    /// what to do next.
+    pub fn wind_down(&mut self, cx: &mut Context) -> WindDown {
+        if !self.held {
+            return WindDown::Free;
+        }
+        match self.tick_interrupted(cx) {
+            Status::Running if self.held => WindDown::Holding,
+            Status::Running => WindDown::Free,
+            Status::Success => WindDown::Ended(Outcome::Success),
+            Status::Failure => WindDown::Ended(Outcome::Failure),
+        }
     }
 
     /// Keeps it holding through a tick it isn't ticked, for a node that skips

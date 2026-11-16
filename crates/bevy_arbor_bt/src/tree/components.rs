@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use super::systems::Ticking;
 use super::trace::BehaviorTreeTrace;
 use super::wake::{NODE, Owner, Plan, Wakes};
+use crate::behavior::system::Systems;
 use crate::behavior::{Behavior, Context, Outcome};
 
 /// An agent's behavior tree: what it runs, and how it ended, once it has.
@@ -137,7 +138,11 @@ fn discard(mut world: DeferredWorld, context: HookContext) {
         return;
     };
     world.commands().queue(move |world: &mut World| {
-        root.cancel(&mut Context::new(world, agent));
+        // The world's own systems, unless they're out for a tick: then
+        // others, for the cancel.
+        let mut systems = world.remove_resource::<Systems>().unwrap_or_default();
+        root.cancel(&mut Context::new(world, agent, &mut systems));
+        world.insert_resource(systems);
     });
 }
 

@@ -63,8 +63,8 @@ Composites have several children:
 |---|---|
 | `Select => { .. }` | Runs the first branch whose decorator passes, and switches when that changes |
 | `Fallback => { .. }` | Like `Select`, but never interrupts what it started |
-| `Scored => { .. }` | Tries branches from the highest `score(system)` down, until one succeeds |
-| `Random(roll) => { .. }` | Tries children in a random order, until one succeeds |
+| `Scored => { .. }` | Tries branches from the highest `score(..)` down, until one succeeds |
+| `Random => { .. }` | Tries children in a random order, until one succeeds |
 | `Sequence => { .. }` | Runs children in turn, until one fails |
 | `All => { .. }` | Runs children together. Fails at the first failure, succeeds once all succeed |
 | `Any => { .. }` | Runs children together. Succeeds at the first success, fails once all fail |
@@ -136,33 +136,31 @@ When a parallel node settles, it cancels the children still running.
 ## Scored and Random
 
 `Scored` asks a score for each branch as it starts, and tries them from the
-highest down. A score is a system that takes the agent and returns an `f32`.
-`Random` shuffles its children with rolls from a system of yours, so you
-choose the randomness:
+highest down. A score is a function of the agent's components returning an
+`f32`, like a typed condition, or a system that takes the agent and returns
+one, for anything else. `Random` shuffles its children:
 
 ```rust
 # use bevy::prelude::*;
 # use bevy_arbor::prelude::*;
 # #[derive(Component, Clone)] struct Patrol { from: f32, to: f32 }
 # #[derive(Component, Clone)] struct Search;
-fn suspicion(In(_guard): In<Entity>) -> f32 {
-    0.3
+#[derive(Component)]
+struct Suspicion(f32);
+
+fn suspicion(suspicion: &Suspicion) -> f32 {
+    suspicion.0
 }
 
-fn boredom(In(_guard): In<Entity>) -> f32 {
-    0.6
-}
-
-fn roll(In(_guard): In<Entity>) -> f32 {
-    // A number from 0 up to 1, from your random source.
-    0.5
+fn boredom(In(_guard): In<Entity>, time: Res<Time>) -> f32 {
+    (time.elapsed_secs() / 60.0).min(1.0)
 }
 
 # fn tree() -> Behavior {
 behavior_tree! {
     Scored => {
         score(suspicion) => task(Search),
-        score(boredom) => Random(roll) => {
+        score(boredom) => Random => {
             task(Patrol { from: -10.0, to: 0.0 }),
             task(Patrol { from: 0.0, to: 10.0 }),
         },
@@ -171,9 +169,14 @@ behavior_tree! {
 # }
 ```
 
-- A score or roll can return `Result<f32>`, so you can use `?`. An error goes
+- A score system can return `Result<f32>`, so you can use `?`. An error goes
   to Bevy's error handler.
-- A branch whose score is an error or NaN goes last.
+- A branch whose score is an error, NaN, or reads a component the agent
+  hasn't got goes last.
+- `Random` shuffles with a generator of its own, seeded from the agent.
+  `Random(roll)` takes the rolls from a system of yours instead, returning a
+  number from 0 up to 1, for your game's own random source: a seeded one, for
+  a replay.
 
 ## Without the macro
 

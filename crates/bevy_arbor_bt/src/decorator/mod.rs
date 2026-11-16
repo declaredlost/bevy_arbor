@@ -146,18 +146,6 @@ impl Part {
 }
 
 impl Decorator {
-    /// A decorator of `part`.
-    pub fn new<M>(part: impl IntoDecorator<M>) -> Self {
-        part.into_decorator()
-    }
-
-    /// This, and `other` too: both must pass.
-    #[must_use]
-    pub fn and<M>(mut self, other: impl IntoDecorator<M>) -> Self {
-        self.parts.extend(other.into_decorator().parts);
-        self
-    }
-
     /// How it reads in a trace: its parts' labels. Built only for a trace.
     pub(crate) fn label(&self) -> String {
         let labels: Vec<String> = self

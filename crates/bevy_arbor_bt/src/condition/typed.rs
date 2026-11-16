@@ -49,13 +49,13 @@ impl<T: Component> ConditionParam for Option<&'static T> {
     }
 }
 
-/// A function of the agent's components, taking `P`: what a typed condition
-/// calls.
+/// A function of the agent's components, taking `P` and returning `O`: what a
+/// typed condition or score calls.
 #[doc(hidden)]
-pub trait AgentFn<P>: Send + Sync + 'static {
+pub trait AgentFn<P, O>: Send + Sync + 'static {
     /// It, called with what it takes off `agent`: `None` if a component it
     /// needs isn't there.
-    fn call(&self, agent: EntityRef<'_>) -> Option<bool>;
+    fn call(&self, agent: EntityRef<'_>) -> Option<O>;
 
     /// Asks for the tree to be woken once what it takes changes.
     fn watch(cx: &mut Context);
@@ -64,16 +64,16 @@ pub trait AgentFn<P>: Send + Sync + 'static {
 /// [`AgentFn`] for functions of `params` components.
 macro_rules! agent_fn {
     ($($param:ident),*) => {
-        impl<F, $($param),*> AgentFn<($($param,)*)> for F
+        impl<F, O, $($param),*> AgentFn<($($param,)*), O> for F
         where
-            F: Fn($($param),+) -> bool
-                + for<'a> Fn($($param::Item<'a>),+) -> bool
+            F: Fn($($param),+) -> O
+                + for<'a> Fn($($param::Item<'a>),+) -> O
                 + Send
                 + Sync
                 + 'static,
             $($param: ConditionParam),+
         {
-            fn call(&self, agent: EntityRef<'_>) -> Option<bool> {
+            fn call(&self, agent: EntityRef<'_>) -> Option<O> {
                 let ($(Some($param),)+) = ($($param::fetch(agent),)+) else {
                     return None;
                 };
@@ -91,12 +91,12 @@ all_tuples!(agent_fn, 1, 4, P);
 
 /// A function of the agent's components, as a condition: asked once they
 /// change.
-pub struct TypedCondition<F, P> {
+struct TypedCondition<F, P> {
     function: F,
     params: PhantomData<fn() -> P>,
 }
 
-impl<F: AgentFn<P>, P: 'static> Condition for TypedCondition<F, P> {
+impl<F: AgentFn<P, bool>, P: 'static> Condition for TypedCondition<F, P> {
     fn passes(&mut self, cx: &mut Context) -> bool {
         F::watch(cx);
         let agent = cx.world().get_entity(cx.agent()).ok();
@@ -112,10 +112,8 @@ impl<F, P> Inspect for TypedCondition<F, P> {
     }
 }
 
-impl<F: AgentFn<P>, P: 'static> IntoCondition<fn(P) -> bool> for F {
-    type Condition = TypedCondition<F, P>;
-
-    fn into_condition(self) -> TypedCondition<F, P> {
+impl<F: AgentFn<P, bool>, P: 'static> IntoCondition<fn(P) -> bool> for F {
+    fn into_condition(self) -> impl Condition {
         TypedCondition {
             function: self,
             params: PhantomData,

@@ -58,8 +58,9 @@ impl Expand {
             (Node::All, [], Some(body)) => self.list(name, "all", &[], body),
             (Node::Any, [], Some(body)) => self.list(name, "any", &[], body),
             (Node::Race, [], Some(body)) => self.list(name, "race", &[], body),
+            (Node::Random, [], Some(body)) => self.list(name, "random", &[], body),
             (Node::Random, [roll], Some(body)) => {
-                self.list(name, "random", &[quote! { #roll }], body)
+                self.list(name, "random_rolled", &[quote! { #roll }], body)
             }
             (Node::Select, [], Some(body)) => {
                 self.branches(name, "select", Branches::Decorated, body)
@@ -78,9 +79,6 @@ impl Expand {
                 Ok(quote! { #behavior::task_named(#label, #bundle) })
             }
             (Node::Act, [system], None) => Ok(quote! { #behavior::act(#system) }),
-            (Node::Act, [system, param], None) => {
-                Ok(quote! { #behavior::act_with(#system, #param) })
-            }
             _ => Err(Error::new(
                 name.span(),
                 format!("expected {}", node.usage()),
@@ -251,7 +249,7 @@ mod tests {
                     when(decorator) => Sequence => { task("Named", A), task(B), Wait(1.0), },
                     when(!a && (b || c)) => @ part(),
                     when(with(within, 5.0), cooldown(1.0)) => Commit => { act(system) },
-                    Timeout(2.0) => { act(system, 1) },
+                    Timeout(2.0) => { act(with(system, 1)) },
                     All => { @ part(), @[ parts ] },
                     Any => { Invert => { act(system) }, Succeed => { act(system) } },
                     Race => { act(a), act(b) },
@@ -261,6 +259,7 @@ mod tests {
                     Socket(Weapon),
                     Fallback => { when(a) => act(b), act(c) },
                     Scored => { score(a) => act(b), act(c) },
+                    Random => { act(a) },
                     Random(roll) => { act(a) },
                     Repeat(3) => { act(a) },
                     @[ branches ],
@@ -285,10 +284,7 @@ mod tests {
             error(quote! { task }),
             "expected `task(bundle)` or `task(name, bundle)`"
         );
-        assert_eq!(
-            error(quote! { act(a, b, c) }),
-            "expected `act(system)` or `act(system, param)`"
-        );
+        assert_eq!(error(quote! { act(a, b, c) }), "expected `act(system)`");
         assert_eq!(error(quote! { Select }), "expected `Select => { .. }`");
         assert_eq!(
             error(quote! { Timeout => { act(a) } }),

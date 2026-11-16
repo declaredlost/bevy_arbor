@@ -1,4 +1,4 @@
-use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status, WindDown};
 use crate::decorator::Decorator;
 use crate::inspect::{Inspect, Inspection};
 
@@ -23,17 +23,11 @@ impl RepeatWhile {
 impl Behave for RepeatWhile {
     fn tick(&mut self, cx: &mut Context) -> Status {
         if !self.decorator.passes(cx) {
-            if self.child.is_holding() {
-                let status = self.child.tick_interrupted(cx);
-                if status == Status::Running && self.child.is_holding() {
-                    return Status::Running;
-                }
-                // Ended winding down: as it ended.
-                if status != Status::Running {
-                    return status;
-                }
-            }
-            return Status::Success;
+            return match self.child.wind_down(cx) {
+                WindDown::Holding => Status::Running,
+                WindDown::Ended(outcome) => outcome.into(),
+                WindDown::Free => Status::Success,
+            };
         }
         // Asked to stop, it doesn't start its child again.
         if cx.is_interrupted() && !self.child.is_running() {

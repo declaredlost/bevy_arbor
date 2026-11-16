@@ -10,8 +10,8 @@ mod sequence;
 
 pub(super) use self::fallback::Fallback;
 pub(super) use self::parallel::{Mode, Parallel};
-pub(super) use self::random::Random;
+pub(super) use self::random::{Random, Roll};
 pub(super) use self::scored::Scored;
-pub use self::scored::ScoredBranch;
+pub use self::scored::{IntoScore, Score, ScoredBranch};
 pub(super) use self::select::Select;
 pub(super) use self::sequence::Sequence;
