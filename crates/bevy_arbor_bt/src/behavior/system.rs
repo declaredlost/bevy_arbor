@@ -4,6 +4,7 @@
 
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bevy::ecs::change_detection::CheckChangeTicks;
@@ -14,6 +15,25 @@ use bevy::prelude::*;
 use bevy::utils::prelude::{DebugName, ShortName};
 
 use crate::behavior::Context;
+
+/// A system and the parameter it takes beside the agent: `with(within, 6.0)`.
+///
+/// It's a condition, an act or a score, as the system is one: as many of them
+/// as you like, from one function. The system takes `In<(Entity, P)>`.
+pub struct WithParam<S, P> {
+    pub(crate) system: S,
+    pub(crate) param: P,
+}
+
+/// `system`, taking `param` beside the agent: `when(with(within, 6.0))`,
+/// `act(with(fire, 3))`, `score(with(distance_to, home))`.
+pub fn with<S, P>(system: S, param: P) -> WithParam<S, P> {
+    WithParam { system, param }
+}
+
+/// What marks a [`WithParam`]'s conversions.
+#[doc(hidden)]
+pub struct Param<M>(PhantomData<M>);
 
 /// A system asked about an agent: returning its answer, or a `Result` of it.
 ///
@@ -90,16 +110,7 @@ impl<O: 'static> Check<O> {
         }
         let agent = cx.agent();
         let (world, systems) = cx.world_and_systems();
-        let ran = if let Some(systems) = systems {
-            self.system.run(world, systems, agent)
-        } else {
-            // Outside a tick: the world's own, taken out for the run.
-            let mut systems = world.remove_resource::<Systems>().unwrap_or_default();
-            let ran = self.system.run(world, &mut systems, agent);
-            world.insert_resource(systems);
-            ran
-        };
-        match ran {
+        match self.system.run(world, systems, agent) {
             Ok(value) => Some(value),
             Err(Ran::Failed(error)) => {
                 // Asked by its tree, not a schedule: the last change is the

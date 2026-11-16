@@ -17,12 +17,10 @@ use crate::inspect::{Inspect, Inspection, seconds};
 /// Its tree sleeps while it cools, and is woken as it's done: a `Select` then
 /// switches back to its branch as it would to any decorator passing again. Each
 /// agent cools on its own.
-#[derive(Reflect, Debug, Clone, PartialEq)]
-#[reflect(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cooldown {
     length: Duration,
     /// When it's cooled, while it cools.
-    #[reflect(ignore)]
     until: Option<Duration>,
 }
 

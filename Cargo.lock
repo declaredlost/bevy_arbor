@@ -461,6 +461,7 @@ dependencies = [
  "bevy_arbor_macros",
  "bevy_harness",
  "criterion 0.8.2",
+ "fastrand",
  "variadics_please",
 ]
 

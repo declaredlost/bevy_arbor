@@ -6,9 +6,11 @@
 //! branch starts and ends [`Decorate`](crate::decorator::Decorate).
 
 #[doc(no_inline)]
-pub use crate::behavior::{Behavior, Branch, Outcome, Plugged, ScoredBranch, Status, plugged};
+pub use crate::behavior::{
+    Behavior, Branch, Outcome, Plugged, ScoredBranch, Status, plugged, with,
+};
 #[doc(no_inline)]
-pub use crate::condition::{all, any, unless, with};
+pub use crate::condition::{all, any, unless};
 #[doc(no_inline)]
 pub use crate::decorator::{
     Cooldown, Cooling, Decorator, IntoDecorator, cooldown, shared_cooldown,

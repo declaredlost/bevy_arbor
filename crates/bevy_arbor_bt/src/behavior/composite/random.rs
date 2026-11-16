@@ -4,16 +4,22 @@ use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
 use crate::inspect::{Inspect, Inspection};
 
 /// Its children in an order shuffled as it starts, until one succeeds.
-///
-/// The shuffle's rolls come from `roll`.
 pub(in crate::behavior) struct Random {
-    roll: Check<f32>,
+    roll: Roll,
     children: Vec<Behavior>,
     order: Order,
 }
 
+/// Where a [`Random`]'s shuffles come from.
+pub(in crate::behavior) enum Roll {
+    /// A generator of its own, seeded from the agent once it's shuffled.
+    Own(Option<fastrand::Rng>),
+    /// A system taking the agent, rolling from 0 up to 1.
+    System(Check<f32>),
+}
+
 impl Random {
-    pub(in crate::behavior) fn new(roll: Check<f32>, children: Vec<Behavior>) -> Self {
+    pub(in crate::behavior) fn new(roll: Roll, children: Vec<Behavior>) -> Self {
         Self {
             roll,
             children,
@@ -21,12 +27,22 @@ impl Random {
         }
     }
 
-    /// A shuffled order: Fisher-Yates, a roll for each place from the last.
+    /// A shuffled order of its children.
     fn shuffle(&mut self, cx: &mut Context) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.children.len()).collect();
-        for last in (1..order.len()).rev() {
-            let rolled = self.roll.run(cx).unwrap_or(0.0);
-            order.swap(last, pick(rolled, last));
+        match &mut self.roll {
+            Roll::Own(rng) => {
+                let agent = cx.agent();
+                rng.get_or_insert_with(|| fastrand::Rng::with_seed(agent.to_bits()))
+                    .shuffle(&mut order);
+            }
+            // Fisher-Yates, a roll for each place from the last.
+            Roll::System(check) => {
+                for last in (1..order.len()).rev() {
+                    let rolled = check.run(cx).unwrap_or(0.0);
+                    order.swap(last, pick(rolled, last));
+                }
+            }
         }
         order
     }
@@ -51,7 +67,10 @@ impl Behave for Random {
 
 impl Inspect for Random {
     fn inspect(&self, inspection: &mut Inspection<'_>) {
-        inspection.name("Random").param(self.roll.name());
+        inspection.name("Random");
+        if let Roll::System(check) = &self.roll {
+            inspection.param(check.name());
+        }
         for child in &self.children {
             inspection.child(child);
         }
@@ -62,11 +81,14 @@ impl Inspect for Random {
 ///
 /// The roll is scaled to the `last + 1` places and floored: a roll of 1 or more
 /// lands on `last`, below 0 on `0`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "a place among a node's children, clamped to them"
+)]
 fn pick(rolled: f32, last: usize) -> usize {
-    let places = u16::try_from(last + 1).unwrap_or(u16::MAX);
-    let scaled = rolled * f32::from(places);
-    let floor = (1..places).take_while(|&k| f32::from(k) <= scaled).count();
-    floor.min(last)
+    ((rolled * (last + 1) as f32) as usize).min(last)
 }
 
 #[cfg(test)]
@@ -109,6 +131,18 @@ mod tests {
         );
         app.tick();
         assert_eq!(acts(&app), 2);
+        assert_eq!(outcome(&app, npc), Some(false));
+    }
+
+    #[test]
+    fn random_of_its_own_tries_every_child_once() {
+        let mut app = app();
+        let npc = agent(
+            &mut app,
+            behavior_tree! { Random => { act(refuse), act(refuse), act(refuse) } },
+        );
+        app.tick();
+        assert_eq!(acts(&app), 3);
         assert_eq!(outcome(&app, npc), Some(false));
     }
 

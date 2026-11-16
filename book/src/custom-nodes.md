@@ -138,9 +138,10 @@ rules:
 
 - If it skips a tick of a running child, it calls `child.skip(cx)`.
   Otherwise the child's hold lapses for that tick.
-- To switch away from a child that holds, it ticks the child with
-  `child.tick_interrupted(cx)` until the child ends or stops holding. That's
-  what `Select` and `RepeatWhile` do.
+- To switch away from a child, it calls `child.wind_down(cx)` first. While
+  the child holds, that ticks it asked to stop and gives `WindDown::Holding`:
+  wait, and switch on a later tick. Once it gives `Ended(outcome)` or `Free`,
+  cancel the child and switch. That's what `Select` and `RepeatWhile` do.
 - While `cx.is_interrupted()` is true, it starts nothing new. It goes on with
   the running child, and ends when that child does.
 

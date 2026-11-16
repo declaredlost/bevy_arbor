@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use bevy::utils::prelude::ShortName;
 
 pub use self::plugged::{Plugged, plugged};
-use crate::behavior::{Behave, Behavior, Context, Outcome, Status};
+use crate::behavior::{Behave, Behavior, Context, Outcome, Status, WindDown};
 use crate::inspect::{Inspect, Inspection};
 
 /// What's plugged into it on the agent, its [`Plugged<S>`]: swapped as that
@@ -65,12 +65,10 @@ impl<S: Send + Sync + 'static> Behave for Socket<S> {
             let mut ended = None;
             if let Some((child, _)) = &mut self.child {
                 // One holding goes on until it can stop, as in a `Select`.
-                if child.is_holding() {
-                    let status = child.tick_interrupted(cx);
-                    if status == Status::Running && child.is_holding() {
-                        return Status::Running;
-                    }
-                    ended = status.outcome().map(Status::from);
+                match child.wind_down(cx) {
+                    WindDown::Holding => return Status::Running,
+                    WindDown::Ended(outcome) => ended = Some(outcome.into()),
+                    WindDown::Free => {}
                 }
                 child.cancel(cx);
             }

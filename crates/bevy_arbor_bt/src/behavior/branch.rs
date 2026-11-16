@@ -1,5 +1,5 @@
 use super::Behavior;
-use crate::behavior::{Context, Status};
+use crate::behavior::{Context, Outcome, Status, WindDown};
 use crate::decorator::{Decorator, IntoDecorator};
 use crate::inspect::Inspection;
 
@@ -81,9 +81,18 @@ impl Branch {
         }
     }
 
-    /// Whether its node holds.
-    pub(in crate::behavior) fn is_holding(&self) -> bool {
-        self.node.is_holding()
+    /// Winds its node down, as [`Behavior::wind_down`] does, its decorator
+    /// told if it ends.
+    pub(in crate::behavior) fn wind_down(&mut self, cx: &mut Context) -> WindDown {
+        if !self.node.is_holding() {
+            return WindDown::Free;
+        }
+        match self.tick(cx, true) {
+            Status::Running if self.node.is_holding() => WindDown::Holding,
+            Status::Running => WindDown::Free,
+            Status::Success => WindDown::Ended(Outcome::Success),
+            Status::Failure => WindDown::Ended(Outcome::Failure),
+        }
     }
 }
 

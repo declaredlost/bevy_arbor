@@ -44,13 +44,9 @@ pub(crate) fn poll_if_silent(cx: &mut Context, passes: impl FnOnce(&mut Context)
     note = "`all` and `any` take a tuple of up to eight conditions: `all((has_target, armed))`"
 )]
 pub trait IntoConditions<M> {
-    /// The conditions they are.
-    #[doc(hidden)]
-    type Conditions: Conditions;
-
     /// Them, as conditions.
     #[doc(hidden)]
-    fn into_conditions(self) -> Self::Conditions;
+    fn into_conditions(self) -> impl Conditions;
 }
 
 /// Conditions asked in order, as [`all`] and [`any`] ask them.
@@ -72,9 +68,7 @@ macro_rules! conditions {
         impl<$($condition: IntoCondition<$marker>, $marker),*> IntoConditions<($($marker,)*)>
             for ($($condition,)*)
         {
-            type Conditions = ($($condition::Condition,)*);
-
-            fn into_conditions(self) -> Self::Conditions {
+            fn into_conditions(self) -> impl Conditions {
                 ($(self.$index.into_condition(),)*)
             }
         }

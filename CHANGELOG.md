@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Typed conditions: functions of the agent's components (`fn(&Target) -> bool`),
     asked again only once one of them changes.
   - `Insert(bundle) => { .. }`: a bundle on the agent while its branch runs.
+  - `Scored => { score(..) => .. }`: branches tried from the highest score
+    down. A score is a function of the agent's components
+    (`fn(&Hunger) -> f32`), a system taking the agent, or your own `Score`.
+  - `Random => { .. }` shuffles its children with a generator of its own,
+    seeded from the agent, or `Random(roll)` with rolls from a system of yours.
   - Nodes run from `Behave::start`, through `tick`, to `end` (with how they
     went, or `None` if cancelled), called by the tree. How a node, decorator or
     condition shows in a trace is apart from that: its `Inspect`, writing its
@@ -32,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     whose subtree said nothing is ticked every tick.
   - Decorators: what's in `when(..)`, every part of which must pass. Conditions
     only answer: typed ones (functions or closures of the agent's components),
-    system conditions (`with(system, param)` for a parameter), closures over the
+    system conditions (`with(system, param)` for a parameter, as for an act or
+    a score), closures over the
     `Context`, or your own `Condition`, combined with `!`, `&&` and `||`
     (outside the macro, `all((a, b))`, `any((a, b))` and `unless(a)`). Those
     acting as their branch starts and ends go after a comma, never under `!` or

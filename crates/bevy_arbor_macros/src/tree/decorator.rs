@@ -1,21 +1,42 @@
 //! Decorators: `when(has_target && !calm)`, `when(has_target, cooldown(8.0))`.
 
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{BinOp, Error, Expr, Result, UnOp};
 
 /// The code building a decorator from its parts, through `bevy_arbor_bt` at
-/// `bt`.
+/// `bt`: the one part, or a tuple of them.
 ///
 /// Each part is a condition, put together with `!`, `&&` and `||`, or a
-/// decorator acting as its branch starts and ends.
+/// decorator acting as its branch starts and ends. In a tuple, each is made a
+/// decorator on its own, so one that isn't is pointed at.
 pub(super) fn decorator_args(bt: &TokenStream, span: Span, args: &[Expr]) -> Result<TokenStream> {
-    let Some((first, rest)) = args.split_first() else {
-        return Err(Error::new(span, "expected `(decorator, ..)`"));
-    };
-    let first = part(bt, first);
-    let rest = rest.iter().map(|arg| part(bt, arg));
-    Ok(quote! { #bt::decorator::Decorator::new(#first)#(.and(#rest))* })
+    match args {
+        [] => Err(Error::new(span, "expected `(decorator, ..)`")),
+        [one] => Ok(part(bt, one)),
+        _ => {
+            let parts = args
+                .iter()
+                .map(|arg| {
+                    let part = part(bt, arg);
+                    quote_spanned! { arg.span() =>
+                        #bt::decorator::IntoDecorator::into_decorator(#part)
+                    }
+                })
+                .collect();
+            Ok(tuple(parts))
+        }
+    }
+}
+
+/// `parts` as a tuple, the last of eight another tuple of the rest past it.
+fn tuple(mut parts: Vec<TokenStream>) -> TokenStream {
+    if parts.len() > 8 {
+        let rest = tuple(parts.split_off(7));
+        parts.push(rest);
+    }
+    quote! { (#(#parts,)*) }
 }
 
 /// The code building one part: a condition, or what's there as it is.
@@ -136,7 +157,7 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(code.contains("condition :: any"), "{code}");
-        assert_eq!(code.matches(". and (").count(), 2, "{code}");
+        assert_eq!(code.matches("into_decorator").count(), 3, "{code}");
     }
 
     #[test]

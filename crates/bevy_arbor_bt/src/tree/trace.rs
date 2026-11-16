@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use crate::behavior::Behavior;
 use crate::inspect::{Inspect, Inspection};
 
-/// Keeps its agent's tree as it last ticked: each node, its notes, what's
+/// Keeps its agent's tree as it last ticked: each node, its note, what's
 /// running.
 ///
 /// For an inspector, or a test. Each node's index is its id, the same tick to
@@ -72,7 +72,7 @@ pub(crate) fn write_node(
     nodes.push(TraceNode {
         parent,
         label: String::new(),
-        notes: above.into_iter().collect(),
+        note: above,
         running: node.is_running(),
         held: node.is_holding(),
     });
@@ -84,13 +84,13 @@ pub(crate) fn write_node(
 
 impl fmt::Display for BehaviorTreeTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // How deep each is written: a child with notes goes a step deeper,
-        // its notes in between.
+        // How deep each is written: a child with a note goes a step deeper,
+        // its note in between.
         let mut depths = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
-            let noted = usize::from(!node.notes.is_empty());
+            let noted = usize::from(node.note.is_some());
             let depth = node.parent.map_or(0, |parent| depths[parent] + 1 + noted);
-            for note in &node.notes {
+            if let Some(note) = &node.note {
                 writeln!(f, "  {:indent$}{note}", "", indent = (depth - 1) * 2)?;
             }
             let mark = if node.running { ">" } else { " " };
@@ -101,14 +101,14 @@ impl fmt::Display for BehaviorTreeTrace {
     }
 }
 
-/// One node of a [`BehaviorTreeTrace`]: its label, notes and parent, and
+/// One node of a [`BehaviorTreeTrace`]: its label, note and parent, and
 /// whether it runs.
 #[derive(Reflect, Debug, Clone, PartialEq, Eq)]
 #[reflect(Debug, PartialEq)]
 pub struct TraceNode {
     pub(crate) parent: Option<usize>,
     pub(crate) label: String,
-    pub(crate) notes: Vec<String>,
+    pub(crate) note: Option<String>,
     pub(crate) running: bool,
     pub(crate) held: bool,
 }
@@ -126,10 +126,11 @@ impl TraceNode {
         &self.label
     }
 
-    /// What's written above it: the decorator or score of the branch it is.
+    /// What's written above it, if anything: the decorator or score of the
+    /// branch it is.
     #[must_use]
-    pub fn notes(&self) -> &[String] {
-        &self.notes
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
     }
 
     /// Whether it's running.
@@ -183,19 +184,19 @@ mod tests {
         let nodes: Vec<_> = trace(&app, npc)
             .nodes()
             .iter()
-            .map(|node| (node.parent(), node.label(), node.notes().len()))
+            .map(|node| (node.parent(), node.label(), node.note().is_some()))
             .collect();
         assert_eq!(
             nodes,
             [
-                (None, "Select", 0),
-                (Some(0), "Sequence", 1),
-                (Some(1), "Work", 0),
-                (Some(1), "Wait(1s)", 0),
-                (Some(0), "Other", 0),
+                (None, "Select", false),
+                (Some(0), "Sequence", true),
+                (Some(1), "Work", false),
+                (Some(1), "Wait(1s)", false),
+                (Some(0), "Other", false),
             ]
         );
-        assert_eq!(trace(&app, npc).get(1).unwrap().notes(), ["when high"]);
+        assert_eq!(trace(&app, npc).get(1).unwrap().note(), Some("when high"));
     }
 
     #[test]
